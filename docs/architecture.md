@@ -41,7 +41,7 @@ number, `.release/*_NEXT.md`, ops parity tests, and `.claude/context` kept true.
 
 **S1. Device listener and pairing** (the foundation; everything remote depends on it)
 - **New listener** `device_server`: TLS 1.3 only, terminated by the daemon itself with OpenSSL 3 through Boost.Asio
-  `ssl::stream`, on port **36971** **[D1]**. It is independent of nginx, Let's Encrypt and browser cookies. It is on
+  `ssl::stream`, on port **36972** **[D1]**. It is independent of nginx, Let's Encrypt and browser cookies. It is on
   by default on loopback; "enable remote connections" (web console or `vh device remote enable`, an
   `ops::config` write) rebinds it to all interfaces and it stays that way.
   - Server identity: an ECDSA P-256 self-signed certificate whose key is sealed through `KeyProvider`. Clients pin
@@ -149,7 +149,7 @@ docs/                   this plan, the pairing protocol, release notes
    self-signed certificate, giving a Keychain `SecIdentity`. The device id is the SPKI SHA-256.
 2. **Open a window.** In the web console ("Pair a device") or with `vh device pair`, a signed-in user opens a pairing
    window. It lasts 10 minutes and belongs to that user.
-3. **Request.** Desktop connects over TLS to `host:36971` with its certificate and sends `device.pair.request`
+3. **Request.** Desktop connects over TLS to `host:36972` with its certificate and sends `device.pair.request`
    with its name, platform, version and a *commitment* to its nonce. It records the server's SPKI (not trusted
    yet). The daemon refuses while no window is open and answers with its own nonce; Desktop then reveals its nonce
    (`device.pair.confirm`). Committing first stops a man in the middle from grinding the 6-digit code.

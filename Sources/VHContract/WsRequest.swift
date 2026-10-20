@@ -17,6 +17,10 @@ public enum WsAuth: String, Sendable, CaseIterable {
     case human
     /// A share-link session.
     case share
+    /// A pairing-only connection on the device listener: a certificate the daemon doesn't know yet (docs/pairing.md §2).
+    case pairing
+    /// A paired device's own session on the device listener (key rotation, server identity).
+    case device
 }
 
 /// The payload of a command whose handler reads nothing from it (contract input `none` or `token`). It is sent as

@@ -58,7 +58,7 @@ public struct NodeID: RawRepresentable, Codable, Hashable, Sendable, CustomStrin
 
 /// Where the daemon's device listener answers (docs/architecture.md §2, S1).
 public struct NodeEndpoint: Codable, Hashable, Sendable, CustomStringConvertible {
-    public static let defaultDevicePort: UInt16 = 36971
+    public static let defaultDevicePort: UInt16 = 36972
 
     public var host: String
     public var port: UInt16

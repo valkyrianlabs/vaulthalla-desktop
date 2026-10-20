@@ -18,7 +18,7 @@ and "MAY" are normative. All hashes are SHA-256.
 
 ## 2. Transport and certificate profile
 
-**Listener.** `device_server` on port 36971: loopback only by default, all interfaces after
+**Listener.** `device_server` on port 36972: loopback only by default, all interfaces after
 `vh device remote enable` (D1). TLS 1.3 only (`SSL_CTX_set_min/max_proto_version(TLS1_3_VERSION)`), signature
 algorithm `ecdsa_secp256r1_sha256` MUST be offered (Secure Enclave keys sign nothing else).
 

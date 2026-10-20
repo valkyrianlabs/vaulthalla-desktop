@@ -124,7 +124,7 @@ enum DebugPairing {
         case "denied": return .denied
         case "expired": return .expired
         case "noWindow": return .failed(.noPairingWindow)
-        case "unreachable": return .failed(.unreachable(endpoint: "vh-storage.local:36971"))
+        case "unreachable": return .failed(.unreachable(endpoint: "vh-storage.local:36972"))
         case "changed": return .failed(.serverIdentityChanged)
         default:
             // The docs/pairing.md §8 test vector: 680 179.

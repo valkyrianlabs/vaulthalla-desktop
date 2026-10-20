@@ -42,7 +42,7 @@ SWIFT_OUT = ROOT / "Sources" / "VHContract" / "Generated" / "WsContract.swift"
 SAMPLES_OUT = ROOT / "Tests" / "VHContractTests" / "Generated" / "ContractSamples.swift"
 LINE_LIMIT = 120
 
-AUTH_LEVELS = {"public", "session", "human", "share"}
+AUTH_LEVELS = {"public", "session", "human", "share", "pairing", "device"}
 INPUTS = {"payload", "none", "token"}
 
 SWIFT_KEYWORDS = {

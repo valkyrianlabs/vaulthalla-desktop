@@ -5,7 +5,7 @@ import VHCore
     @Test(arguments: [
         ("vh-storage", "vh-storage", NodeEndpoint.defaultDevicePort),
         ("10.0.0.33:4443", "10.0.0.33", 4443),
-        ("https://vault.example.com:36971/ws", "vault.example.com", 36971),
+        ("https://vault.example.com:36972/ws", "vault.example.com", 36972),
         ("[fe80::1]:9000", "fe80::1", 9000),
         ("fe80::1", "fe80::1", NodeEndpoint.defaultDevicePort),
         ("  host.local  ", "host.local", NodeEndpoint.defaultDevicePort),

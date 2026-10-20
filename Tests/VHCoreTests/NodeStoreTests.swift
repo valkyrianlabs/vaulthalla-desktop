@@ -140,7 +140,7 @@ import VHCore
 @Suite struct NodeRecordCompatibilityTests {
     @Test func recordsWithoutTheNewerMembersStillLoad() throws {
         let json = """
-            {"id": "local-1", "displayName": "vh-storage", "endpoint": {"host": "vh-storage.local", "port": 36971},
+            {"id": "local-1", "displayName": "vh-storage", "endpoint": {"host": "vh-storage.local", "port": 36972},
              "pairing": {"unpaired": {}}}
             """
         let node = try JSONDecoder().decode(Node.self, from: Data(json.utf8))

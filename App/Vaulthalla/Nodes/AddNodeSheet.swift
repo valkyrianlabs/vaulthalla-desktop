@@ -150,7 +150,7 @@ struct AddNodeSheet: View {
         let text = address.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return (nil, nil) }
         guard let endpoint = NodeEndpoint(parsing: text), !endpoint.host.contains(where: \.isWhitespace) else {
-            return (nil, "Enter a host name or IP address, optionally with a port, like vh-storage.local:36971.")
+            return (nil, "Enter a host name or IP address, optionally with a port, like vh-storage.local:36972.")
         }
         if let existing = model.existingNode(at: endpoint) {
             return (nil, "This Mac already has \(endpoint.description) as “\(existing.displayName)”.")

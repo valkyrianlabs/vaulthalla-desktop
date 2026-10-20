@@ -39,7 +39,7 @@ struct DesignSystemGallery: View {
 
                 HStack(alignment: .top, spacing: 16) {
                     Panel(title: "Card", subtitle: "14 pt corners", size: .card) {
-                        DefinitionList(items: [("Term", "Value"), ("Address", "host.local:36971")], monospacedValues: ["Address"])
+                        DefinitionList(items: [("Term", "Value"), ("Address", "host.local:36972")], monospacedValues: ["Address"])
                     }
                     Panel(title: "Panel", subtitle: "20 pt corners") {
                         Callout(tone: .info, systemImage: "info.circle") {
