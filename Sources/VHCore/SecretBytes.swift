@@ -1,4 +1,4 @@
-public import Foundation
+import Foundation
 
 /// Key material in memory. It never prints, never encodes, and zeroes its buffer when the last reference goes away.
 /// Use it for anything that must stay out of logs, caches and agent context (vault keys above all).
