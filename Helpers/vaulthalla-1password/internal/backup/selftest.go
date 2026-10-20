@@ -35,7 +35,11 @@ func SelfTest(ctx context.Context, c store.Connector, account, vaultTitle string
 	if err != nil {
 		return fail("list vaults", err)
 	}
-	say("ok    connected; %d vaults visible", len(vaults))
+	noun := "vaults"
+	if len(vaults) == 1 {
+		noun = "vault"
+	}
+	say("ok    connected; %d %s visible", len(vaults), noun)
 
 	var matches []store.Vault
 	for _, v := range vaults {

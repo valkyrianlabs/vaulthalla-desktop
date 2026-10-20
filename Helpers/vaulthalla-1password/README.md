@@ -131,3 +131,7 @@ A local build is ad-hoc signed by the Go linker without the hardened runtime, so
 without the entitlement. If 1Password declines an ad-hoc-signed caller, sign the binary with your development
 certificate and try again. Useful runs: normal (expect `ok` lines), with 1Password locked, with “Integrate with
 other apps” off, and declining the prompt once; each failure should print its code and hint.
+
+Verified 2026-10-20 on macOS 27.0.1 with 1Password 8.12.40 and SDK v0.4.1: an ad-hoc-signed local build connects
+through desktop-app authorization (normal run). The locked, integration-off and declined cases are still unverified,
+so their codes rest on keyword matching until someone runs them.
