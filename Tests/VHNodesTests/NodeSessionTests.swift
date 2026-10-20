@@ -136,6 +136,7 @@ extension KeychainSuite {
                 if case .offline(let reason) = $0.status { reason.contains("different server key") } else { false }
             }
             #expect(offline != nil)
+            #expect(await events.first { if case .pairingRequired = $0 { true } else { false } } != nil)
             // Never trusts a new key on its own: no request reached the other server.
             #expect(!fixture.daemon.commands.contains { $0.epoch > 0 })
             await session.stop()

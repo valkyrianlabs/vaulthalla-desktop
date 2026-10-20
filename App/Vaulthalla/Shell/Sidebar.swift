@@ -62,8 +62,8 @@ struct Sidebar: View {
     @ViewBuilder
     private func contextMenu(for node: Node) -> some View {
         Button("Rename…") { model.nodePendingRename = node }
-        if !node.pairing.isPaired {
-            Button("Pair This Mac…") { model.presentPairing(for: node.id) }
+        if !node.pairing.isPaired || model.needsPairingAgain(node.id) {
+            Button(node.pairing.isPaired ? "Pair Again…" : "Pair This Mac…") { model.presentPairing(for: node.id) }
         }
         Button("Copy Address") {
             NSPasteboard.general.clearContents()

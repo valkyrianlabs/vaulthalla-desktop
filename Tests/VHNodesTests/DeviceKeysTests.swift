@@ -49,6 +49,7 @@ extension KeychainSuite {
                 if case .offline(let reason) = $0.status { reason.contains("missing") } else { false }
             }
             #expect(offline != nil)
+            #expect(await events.first { if case .pairingRequired = $0 { true } else { false } } != nil)
             #expect(try await keys.identity(for: "node-r") == nil)
             await session.stop()
         }

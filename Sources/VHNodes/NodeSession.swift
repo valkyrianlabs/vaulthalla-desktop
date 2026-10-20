@@ -30,6 +30,9 @@ public actor NodeSession {
         case recordChanged(pairing: PairingState, nextServerSPKISHA256: Data?)
         /// The identity the session presents, once found, and after each rotation.
         case identity(deviceID: String, backend: KeyBackend)
+        /// The session stopped for good and only pairing again helps: this Mac's key is missing, or the server
+        /// presents a key it never announced. Reported after the `.offline` status that explains it.
+        case pairingRequired
     }
 
     public struct Configuration: Sendable {
@@ -117,6 +120,7 @@ public actor NodeSession {
             do {
                 guard let found = try await keys.identity(for: nodeTag) else {
                     publish(.offline(reason: "This Mac's key for the node is missing. Pair again."))
+                    eventSink.yield(.pairingRequired)
                     return
                 }
                 current = found
@@ -153,6 +157,7 @@ public actor NodeSession {
                         continue
                     }
                     publish(.offline(reason: reason))
+                    eventSink.yield(.pairingRequired)
                     return
                 case .revoked:
                     node.pairing = .revoked(at: .now)

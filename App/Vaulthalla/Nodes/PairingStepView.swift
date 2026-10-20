@@ -1,54 +1,252 @@
+import AppKit
 import SwiftUI
 import VHCore
+import VHIdentity
+import VHNodes
 
-/// Explains pairing (docs/architecture.md §4). The protocol isn't implemented yet, so this is the explanation and an
-/// honest note, not a working flow.
+/// Pairs this Mac with a node (docs/pairing.md §3): shows the six-digit code to approve on the server, waits for the
+/// owner's decision, and explains every way it can end.
 struct PairingStepView: View {
     var node: Node
     var done: () -> Void
+
+    @Environment(AppModel.self) private var model
+    @State private var flow = PairingFlow()
 
     var body: some View {
         VStack(spacing: 0) {
             SheetHeader(
                 systemImage: "lock.laptopcomputer",
                 title: "Pair this Mac with \(node.displayName)",
-                subtitle: "Pairing gives this Mac its own identity on the node. No password is stored."
+                subtitle: "Pairing gives this Mac its own key on the node. No password is stored."
             )
 
-            VStack(alignment: .leading, spacing: 18) {
-                VStack(alignment: .leading, spacing: 14) {
-                    PairingStep(number: 1, title: "Open Vaulthalla on that server", detail: "Sign in to the web console at \(node.endpoint.host).")
-                    PairingStep(number: 2, title: "Go to Devices → Pair a device", detail: "This opens a ten-minute pairing window for your account.")
-                    PairingStep(number: 3, title: "Compare the code", detail: "This Mac and the server each show a six-digit code. Approve only if they match.")
+            VStack(alignment: .leading, spacing: 16) {
+                status
+                if !flow.phase.isFinished {
+                    instructions
                 }
-                .padding(18)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .panelSurface(radius: Theme.radiusCard)
-
-                Callout(tone: .info, systemImage: "info.circle") {
-                    Text("Pairing will be available once the server supports it.")
-                        .fontWeight(.medium)
-                        .foregroundStyle(.fg)
-                    Text("\(node.displayName) is saved in the sidebar. Pair it from its Overview when the server is updated.")
-                        .foregroundStyle(.fgMuted)
+                if flow.backend == .software {
+                    Label(KeyBackend.software.displayName, systemImage: "key")
+                        .font(.caption)
+                        .foregroundStyle(.fgSubtle)
+                        .help("This build can't use the Secure Enclave, so the key is a software key in the login keychain.")
                 }
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 16)
 
-            SheetFooter {
-                Button("Done", action: done)
-                    .keyboardShortcut(.defaultAction)
-                    .buttonStyle(.borderedProminent)
+            SheetFooter { buttons }
+        }
+        .task { flow.start(node: node, model: model) }
+        .onDisappear { flow.cancel() }
+    }
+
+    // MARK: - Status
+
+    @ViewBuilder
+    private var status: some View {
+        switch flow.phase {
+        case .preparing, .connecting:
+            HStack(spacing: 12) {
+                ProgressView().controlSize(.small)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Connecting to \(node.displayName)…")
+                        .fontWeight(.medium)
+                        .foregroundStyle(.fg)
+                    Text(node.endpoint.description)
+                        .font(.callout)
+                        .fontDesign(.monospaced)
+                        .foregroundStyle(.fgSubtle)
+                }
+                Spacer(minLength: 0)
             }
+            .padding(18)
+            .panelSurface(radius: Theme.radiusCard)
+
+        case .awaitingApproval(let code):
+            CodePanel(nodeName: node.displayName, code: code)
+
+        case .approved(let serverName):
+            HStack(alignment: .top, spacing: 14) {
+                Image(systemName: "checkmark.seal.fill")
+                    .font(.system(size: 26))
+                    .foregroundStyle(StatusTone.ok.color)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Paired with \(serverName)")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.fg)
+                    Text("This Mac now connects to \(serverName) with its own key, pinned to the server's.")
+                        .foregroundStyle(.fgMuted)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(18)
+            .panelSurface(radius: Theme.radiusCard)
+
+        case .denied:
+            Callout(tone: .danger, systemImage: "xmark.octagon") {
+                Text("Pairing was declined")
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.fg)
+                Text("The request wasn't approved on \(node.displayName). A wrong code declines it too. Try again for a new code.")
+                    .foregroundStyle(.fgMuted)
+            }
+
+        case .expired:
+            Callout(tone: .warn, systemImage: "clock.badge.exclamationmark") {
+                Text("Pairing timed out")
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.fg)
+                Text("The request expired before it was approved (requests last five minutes, and closing the pairing window ends them). Try again for a new code.")
+                    .foregroundStyle(.fgMuted)
+            }
+
+        case .failed(.noPairingWindow):
+            Callout(tone: .warn, systemImage: "lock.open.display") {
+                Text("Open a pairing window on \(node.displayName) first")
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.fg)
+                Text("In the web console go to Devices → Pair a device, or run this on the server, then try again:")
+                    .foregroundStyle(.fgMuted)
+                CommandText("vh device pair")
+                    .padding(.top, 4)
+            }
+
+        case .failed(.unreachable(let endpoint)):
+            Callout(tone: .warn, systemImage: "bolt.horizontal.circle") {
+                Text("Can't reach \(node.displayName)")
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.fg)
+                Text("Nothing answered at \(endpoint). Check the address, and that the server accepts devices from other machines:")
+                    .foregroundStyle(.fgMuted)
+                CommandText("vh device remote enable")
+                    .padding(.top, 4)
+            }
+
+        case .failed(let failure):
+            Callout(tone: failure == .serverIdentityChanged ? .danger : .warn, systemImage: "exclamationmark.triangle") {
+                Text(failure == .serverIdentityChanged ? "Pairing stopped" : "Pairing didn't finish")
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.fg)
+                Text(failure.message)
+                    .foregroundStyle(.fgMuted)
+            }
+        }
+    }
+
+    // MARK: - Instructions
+
+    private var instructions: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            PairingInstruction(number: 1, title: "Open a pairing window on \(node.displayName)") {
+                let command = Text("vh device pair").font(.callout.monospaced()).foregroundStyle(.fgMuted)
+                Text("In the web console at \(node.endpoint.host), go to Devices → Pair a device. Or run \(command) on the server.")
+            }
+            PairingInstruction(number: 2, title: "Click the matching code") {
+                if case .awaitingApproval(let code) = flow.phase {
+                    let digits = Text(code.formatted).monospacedDigit().foregroundStyle(.accentText)
+                    Text("The server lists “\(PairingFlow.deviceName)” with three codes. Click \(digits). A wrong pick declines the request.")
+                } else {
+                    Text("The server lists this Mac with three codes. Click the one shown here once it appears.")
+                }
+            }
+        }
+        .padding(18)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .panelSurface(radius: Theme.radiusCard)
+    }
+
+    // MARK: - Buttons
+
+    @ViewBuilder
+    private var buttons: some View {
+        switch flow.phase {
+        case .preparing, .connecting, .awaitingApproval:
+            Button("Cancel", role: .cancel) {
+                flow.cancel()
+                done()
+            }
+            .keyboardShortcut(.cancelAction)
+        case .approved:
+            Button("Done", action: done)
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+        case .denied, .expired, .failed:
+            Button("Close", role: .cancel, action: done)
+                .keyboardShortcut(.cancelAction)
+            Button("Try Again") { flow.start(node: node, model: model) }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
         }
     }
 }
 
-private struct PairingStep: View {
+/// The code to approve, large and calm.
+private struct CodePanel: View {
+    var nodeName: String
+    var code: PairingCode
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Text("Approve on \(nodeName)")
+                .font(.callout.weight(.medium))
+                .foregroundStyle(.fgMuted)
+            Text(code.formatted)
+                .font(.system(size: 52, weight: .semibold, design: .rounded))
+                .monospacedDigit()
+                .tracking(3)
+                .foregroundStyle(.accentText)
+                .textSelection(.enabled)
+                .accessibilityLabel("Code \(code.digits.map(String.init).joined(separator: " "))")
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.mini)
+                Text("Waiting for approval…")
+                    .font(.callout)
+                    .foregroundStyle(.fgSubtle)
+            }
+        }
+        .padding(.vertical, 22)
+        .frame(maxWidth: .infinity)
+        .background(.accentSoft.opacity(0.5), in: RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous).strokeBorder(.accentLine, lineWidth: 1)
+        }
+    }
+}
+
+/// A shell command to copy.
+private struct CommandText: View {
+    var command: String
+
+    init(_ command: String) { self.command = command }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Text(command)
+                .font(.callout.monospaced())
+                .foregroundStyle(.fg)
+                .textSelection(.enabled)
+            Spacer(minLength: 0)
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(command, forType: .string)
+            } label: {
+                Image(systemName: "doc.on.doc")
+            }
+            .buttonStyle(.borderless)
+            .help("Copy")
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(.surface2, in: RoundedRectangle(cornerRadius: Theme.radiusControl, style: .continuous))
+    }
+}
+
+private struct PairingInstruction<Detail: View>: View {
     var number: Int
     var title: String
-    var detail: String
+    @ViewBuilder var detail: Detail
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -64,7 +262,7 @@ private struct PairingStep: View {
                 Text(title)
                     .font(.body.weight(.medium))
                     .foregroundStyle(.fg)
-                Text(detail)
+                detail
                     .font(.callout)
                     .foregroundStyle(.fgSubtle)
                     .fixedSize(horizontal: false, vertical: true)
@@ -76,6 +274,7 @@ private struct PairingStep: View {
 #if DEBUG
 #Preview("Pairing step") {
     PairingStepView(node: PreviewSamples.nodes[0]) {}
+        .environment(PreviewSamples.model())
         .frame(width: 560)
         .background(Color.canvasRaised)
         .preferredColorScheme(.dark)

@@ -65,8 +65,14 @@ struct NodeUnavailablePanel: View {
                 EmptyState(
                     "\(node.displayName) isn't connected",
                     systemImage: "bolt.horizontal.circle",
-                    message: "This Mac isn't connected to \(node.endpoint.description). \(section.title) appears here once it is."
-                )
+                    message: model.offlineReason(for: node.id).map { "\($0) \(section.title) appears here once it's connected." }
+                        ?? "This Mac isn't connected to \(node.endpoint.description). \(section.title) appears here once it is."
+                ) {
+                    if model.needsPairingAgain(node.id) {
+                        Button("Pair Again…") { model.presentPairing(for: node.id) }
+                            .buttonStyle(.borderedProminent)
+                    }
+                }
             case .online:
                 EmptyState(
                     "\(section.title) isn't in this build yet",

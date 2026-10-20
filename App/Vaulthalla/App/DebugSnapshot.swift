@@ -9,6 +9,8 @@ import VHCore
 ///         -VHDebugSnapshot /tmp/shell.png
 ///
 /// `-VHDebugSelect` takes `all` or `<node position>:<section>`; `-VHDebugSheet` takes `addNode` or `pair:<position>`.
+/// `-VHDebugRegistry <nodes.json>` uses another node list, and `-VHDebugPairing <phase>` shows the pairing sheet in a
+/// fixed phase without contacting the node (`DebugPairing`).
 /// The window renders itself to the PNG (and the sheet to `<name>.sheet.png`), then the app exits. Glass can't be
 /// captured this way, so it shows as flat gray with its content drawn on top.
 enum DebugSnapshot {

@@ -161,7 +161,9 @@ struct AddNodeSheet: View {
     private func continueIfValid() {
         guard let endpoint = validation.endpoint else { return }
         let displayName = name.isEmpty ? (pickedServer?.displayName ?? endpoint.host) : name
-        guard let node = model.addNode(displayName: displayName, endpoint: endpoint) else { return }
+        // A name filled in from discovery is the server's own; only a typed one is kept over the paired server's.
+        let typed = !name.isEmpty && !browser.servers.contains { $0.displayName == name }
+        guard let node = model.addNode(displayName: displayName, endpoint: endpoint, namedByUser: typed) else { return }
         browser.stop()
         withAnimation(.snappy) { step = .pair(node.id) }
     }

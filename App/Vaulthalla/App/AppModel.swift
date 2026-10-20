@@ -2,6 +2,8 @@ import Foundation
 import Observation
 import SwiftUI
 import VHCore
+import VHIdentity
+import VHNodes
 
 /// App-wide state for the shell: the node registry, what's selected, and each node's connection status.
 @Observable
@@ -30,13 +32,28 @@ final class AppModel {
 
     /// Statuses reported by live connections. Absent means nothing is connected (see `status(for:)`).
     private var liveStatus: [NodeID: NodeConnectionStatus] = [:]
+    /// Why a node with a session is offline, in the session's words.
+    private var offlineReasons: [NodeID: String] = [:]
+    /// Where each node's device key lives, as its session (or pairing) reported it.
+    private(set) var keyBackends: [NodeID: KeyBackend] = [:]
+    /// Paired nodes whose session gave up for good (key missing, unannounced server key): only pairing again helps.
+    private(set) var nodesNeedingPairing: Set<NodeID> = []
 
     @ObservationIgnored let store: NodeStore
+    /// One live session per paired node. nil in previews, which never connect.
+    @ObservationIgnored private(set) var sessions: NodeSessions?
 
-    init(store: NodeStore) {
+    init(store: NodeStore, keys: DeviceKeys? = nil) {
         self.store = store
         loadNodes()
+        if let keys {
+            sessions = NodeSessions(keys: keys) { [weak self] id, event in self?.handle(event, from: id) }
+            syncSessions()
+        }
     }
+
+    /// The device keys pairing creates and sessions present.
+    var deviceKeys: DeviceKeys? { sessions?.keys }
 
     var registryURL: URL { store.fileURL }
 
@@ -62,13 +79,16 @@ final class AppModel {
             self.selectedNodeID = nil
             showsAllNodes = true
         }
+        syncSessions()
     }
 
-    /// Saves a new, unpaired node and selects it.
+    /// Saves a new, unpaired node and selects it. `namedByUser`: the operator typed the name, so pairing keeps it
+    /// instead of taking the server's.
     @discardableResult
-    func addNode(displayName: String, endpoint: NodeEndpoint) -> Node? {
+    func addNode(displayName: String, endpoint: NodeEndpoint, namedByUser: Bool = false) -> Node? {
         let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
-        let node = Node(id: .local(), displayName: name.isEmpty ? endpoint.host : name, endpoint: endpoint)
+        let node = Node(id: .local(), displayName: name.isEmpty ? endpoint.host : name, endpoint: endpoint,
+                        isNamedByUser: namedByUser && !name.isEmpty)
         guard edit({ try store.add(node) }) else { return nil }
         selectNode(node.id, section: .overview)
         return node
@@ -83,6 +103,7 @@ final class AppModel {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty, var node = node(withID: id), node.displayName != trimmed else { return }
         node.displayName = trimmed
+        node.isNamedByUser = true
         edit { try store.update(node) }
     }
 
@@ -90,6 +111,12 @@ final class AppModel {
         let index = nodes.firstIndex { $0.id == id }
         guard edit({ try store.remove(id) }) else { return }
         liveStatus[id] = nil
+        keyBackends[id] = nil
+        nodesNeedingPairing.remove(id)
+        // The key was filed under this node's local id; nothing else can use it.
+        if let keys = deviceKeys {
+            Task { try? await keys.deleteIdentity(for: id.rawValue) }
+        }
         guard selectedNodeID == id else { return }
         if let index, !nodes.isEmpty {
             selectedNodeID = nodes[min(index, nodes.count - 1)].id
@@ -113,15 +140,88 @@ final class AppModel {
         edit { try store.update(node) }
     }
 
+    /// Before a pairing attempt: the node's session (if any) stops, so the old key isn't in use while it's replaced.
+    func prepareForPairing(_ id: NodeID) {
+        sessions?.stop(id)
+        liveStatus[id] = nil
+        offlineReasons[id] = nil
+        nodesNeedingPairing.remove(id)
+    }
+
+    /// Whether the node is paired on paper but needs pairing again to connect.
+    func needsPairingAgain(_ id: NodeID) -> Bool {
+        nodesNeedingPairing.contains(id)
+    }
+
+    /// The owner approved this Mac: pin the server's key, take the server's name unless the operator chose one, and
+    /// connect as a Device session.
+    func pairingApproved(_ id: NodeID, serverNodeID: String, serverName: String, deviceID: String, serverSPKI: Data,
+                         backend: KeyBackend) {
+        guard var node = node(withID: id) else { return }
+        node.pairing = .paired(serverSPKISHA256: serverSPKI, deviceID: deviceID, since: .now)
+        node.serverNodeID = serverNodeID
+        node.nextServerSPKISHA256 = nil
+        let name = serverName.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !node.isNamedByUser, !name.isEmpty { node.displayName = name }
+        keyBackends[id] = backend
+        guard edit({ try store.update(node) }) else { return }
+        selectNode(id, section: .overview)
+    }
+
     @discardableResult
     private func edit(_ change: () throws -> [Node]) -> Bool {
         do {
             nodes = try change()
+            syncSessions()
             return true
         } catch {
             errorMessage = Self.message(for: error)
             return false
         }
+    }
+
+    // MARK: - Sessions
+
+    private func syncSessions() {
+        guard let sessions else { return }
+        sessions.sync(nodes)
+        let live = sessions.nodeIDs
+        for id in liveStatus.keys where !live.contains(id) {
+            liveStatus[id] = nil
+            offlineReasons[id] = nil
+        }
+    }
+
+    private func handle(_ event: NodeSession.Event, from id: NodeID) {
+        switch event {
+        case .status(let status):
+            switch status {
+            case .connecting: setConnectionStatus(.connecting, for: id)
+            case .online: setConnectionStatus(.online, for: id)
+            case .offline(let reason):
+                offlineReasons[id] = reason
+                setConnectionStatus(.offline, for: id)
+            case .revoked: setConnectionStatus(.revoked, for: id)
+            }
+            if case .offline = status {} else {
+                offlineReasons[id] = nil
+                nodesNeedingPairing.remove(id)
+            }
+        case .recordChanged(let pairing, let next):
+            guard var node = node(withID: id) else { return }
+            node.pairing = pairing
+            node.nextServerSPKISHA256 = next
+            edit { try store.update(node) }
+        case .identity(_, let backend):
+            keyBackends[id] = backend
+        case .pairingRequired:
+            nodesNeedingPairing.insert(id)
+        }
+    }
+
+    /// Why a node's session is offline, when it said.
+    func offlineReason(for id: NodeID) -> String? {
+        liveStatus[id] == .offline ? offlineReasons[id] : nil
     }
 
     private static func message(for error: any Error) -> String {

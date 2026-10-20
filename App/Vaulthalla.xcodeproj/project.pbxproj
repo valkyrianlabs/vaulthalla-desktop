@@ -11,6 +11,7 @@
 		7A10000000000000000000A2 /* VHContract in Frameworks */ = {isa = PBXBuildFile; productRef = 7A10000000000000000000C2 /* VHContract */; };
 		7A10000000000000000000A3 /* VHTransport in Frameworks */ = {isa = PBXBuildFile; productRef = 7A10000000000000000000C3 /* VHTransport */; };
 		7A10000000000000000000A4 /* VHIdentity in Frameworks */ = {isa = PBXBuildFile; productRef = 7A10000000000000000000C4 /* VHIdentity */; };
+		7A10000000000000000000A5 /* VHNodes in Frameworks */ = {isa = PBXBuildFile; productRef = 7A10000000000000000000C5 /* VHNodes */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -33,6 +34,7 @@
 				7A10000000000000000000A2 /* VHContract in Frameworks */,
 				7A10000000000000000000A3 /* VHTransport in Frameworks */,
 				7A10000000000000000000A4 /* VHIdentity in Frameworks */,
+				7A10000000000000000000A5 /* VHNodes in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -90,6 +92,7 @@
 				7A10000000000000000000C2 /* VHContract */,
 				7A10000000000000000000C3 /* VHTransport */,
 				7A10000000000000000000C4 /* VHIdentity */,
+				7A10000000000000000000C5 /* VHNodes */,
 			);
 			productName = Vaulthalla;
 			productReference = 7A1000000000000000000010 /* Vaulthalla.app */;
@@ -294,6 +297,10 @@
 		7A10000000000000000000C4 /* VHIdentity */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = VHIdentity;
+		};
+		7A10000000000000000000C5 /* VHNodes */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = VHNodes;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
