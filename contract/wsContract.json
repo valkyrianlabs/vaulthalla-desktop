@@ -1,0 +1,5366 @@
+{
+  "contract_version": 1,
+  "ws": [
+    {
+      "auth": "session",
+      "client_timeout_ms": 15000,
+      "command": "auth.isAuthenticated",
+      "description": "Whether the envelope token is a valid session for this socket.",
+      "input": "token",
+      "operation": null,
+      "payload": [],
+      "refusal_codes": [],
+      "response": [
+        {
+          "name": "isAuthenticated",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "Present when authenticated.",
+          "model": "User",
+          "name": "user",
+          "required": false,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "session",
+      "client_timeout_ms": 20000,
+      "command": "auth.login",
+      "description": "Sign in with a username and password. The access token comes back in the response envelope (`token`), the refresh token as an HttpOnly cookie set at the handshake.",
+      "input": "payload",
+      "operation": "auth.login",
+      "payload": [
+        {
+          "generator": {
+            "attrs": [
+              "name"
+            ],
+            "entity": "user",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "name": "name",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "password",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "error"
+      ],
+      "response": [
+        {
+          "description": "The signed-in user; role permissions reduced to {qualified, value}.",
+          "model": "User",
+          "name": "user",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "session",
+      "client_timeout_ms": 15000,
+      "command": "auth.logout",
+      "description": "End the session (access and refresh tokens).",
+      "input": "none",
+      "operation": null,
+      "payload": [],
+      "refusal_codes": [],
+      "response": [],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "session",
+      "client_timeout_ms": 15000,
+      "command": "auth.refresh",
+      "description": "Issue a new access token from the envelope token or the refresh cookie.",
+      "input": "token",
+      "operation": null,
+      "payload": [],
+      "refusal_codes": [
+        "error"
+      ],
+      "response": [
+        {
+          "model": "User",
+          "name": "user",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "auth.register",
+      "description": "Create a user. role is an admin role name or id; the password is required (only the CLI generates one).",
+      "input": "payload",
+      "operation": "users.create",
+      "payload": [
+        {
+          "generator": {
+            "fresh": true,
+            "kind": "pattern",
+            "pattern": "user_{a}{a}{a}{9}{9}{a}{9}"
+          },
+          "name": "name",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "generator": {
+            "kind": "email"
+          },
+          "name": "email",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "generator": {
+            "kind": "bytes",
+            "max": 24,
+            "min": 16
+          },
+          "name": "password",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "is_active",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "generator": {
+            "attrs": [
+              "name",
+              "id"
+            ],
+            "entity": "role.admin",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "name": "role",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "User",
+          "name": "user",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "auth.security.status",
+      "description": "Security posture warning for the signed-in account: the super admin's initial password file while the generated password is still in use, else null.",
+      "input": "none",
+      "operation": null,
+      "payload": [],
+      "refusal_codes": [
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "name": "initial_password_file",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "auth.user.change_password",
+      "description": "Change (own, with old_password) or reset (another user's) a password.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "user",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "name": "old_password",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "generator": {
+            "kind": "bytes",
+            "max": 24,
+            "min": 16
+          },
+          "name": "new_password",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "User",
+          "name": "user",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "auth.user.delete",
+      "description": "Delete a user. Without confirm the reply is a refusal with data.code 'user_delete' and the question to ask. The user's vaults are destroyed unless transfer_to names who gets them.",
+      "input": "payload",
+      "operation": "users.delete",
+      "payload": [
+        {
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "user",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "name": "confirm",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "user",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "transfer_to",
+          "required": false,
+          "types": [
+            "integer",
+            "null"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized",
+        "user_delete"
+      ],
+      "response": [
+        {
+          "minimum": 0,
+          "name": "user_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "auth.user.get",
+      "description": "One user with its full roles and permissions.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "user",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "User",
+          "name": "user",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "auth.user.get.byName",
+      "description": "One user by name.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "generator": {
+            "attrs": [
+              "name"
+            ],
+            "entity": "user",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "name": "name",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "User",
+          "name": "user",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "auth.user.update",
+      "description": "Patch a user (the caller when id is absent). Role changes and deactivation end the account's sessions. linux_uid, updated_by, protected, is_protected, system_only and password are refused.",
+      "input": "payload",
+      "operation": "users.update",
+      "payload": [
+        {
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "user",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "id",
+          "required": false,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "generator": {
+            "fresh": true,
+            "kind": "pattern",
+            "pattern": "user_{a}{a}{a}{9}{9}{a}{9}"
+          },
+          "name": "name",
+          "required": false,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "generator": {
+            "kind": "email"
+          },
+          "name": "email",
+          "required": false,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "generator": {
+            "attrs": [
+              "name",
+              "id"
+            ],
+            "entity": "role.admin",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "name": "role",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "is_active",
+          "required": false,
+          "types": [
+            "boolean",
+            "null"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "User",
+          "name": "user",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "auth.users.list",
+      "description": "Users visible to the caller, slim projection (admin_role without permissions).",
+      "input": "none",
+      "operation": null,
+      "payload": [],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "items": "object",
+          "model": "User",
+          "name": "users",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "fs.dir.create",
+      "description": "Create a directory (Touch on the path).",
+      "input": "payload",
+      "operation": "fs.mkdir",
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Vault-relative path (\"/docs/a.txt\").",
+          "generator": {
+            "kind": "path",
+            "pattern": "/{a}{a}{a}{9}"
+          },
+          "name": "path",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "name": "path",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "untyped_refusals": [
+        "denied",
+        "conflict"
+      ],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 30000,
+      "command": "fs.dir.list",
+      "description": "List a directory (List on the path).",
+      "input": "payload",
+      "operation": "fs.list",
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Defaults to \"/\".",
+          "generator": {
+            "kind": "path",
+            "pattern": "/{a}{a}{a}{9}"
+          },
+          "name": "path",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "name": "vault",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "path",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "model": "FsEntry",
+          "name": "entry",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        },
+        {
+          "items": "object",
+          "model": "FsEntry",
+          "name": "files",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        }
+      ],
+      "untyped_refusals": [
+        "denied",
+        "not_found"
+      ],
+      "variants": []
+    },
+    {
+      "auth": "share",
+      "client_timeout_ms": 15000,
+      "command": "fs.download.cancel",
+      "description": "Share sessions only: drop a transfer.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "From fs.download.start.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "transfer",
+            "kind": "ref",
+            "scope": "own"
+          },
+          "name": "transfer_id",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "name": "cancelled",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "name": "transfer_id",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "share",
+      "client_timeout_ms": 15000,
+      "command": "fs.download.chunk",
+      "description": "Share sessions only: read the next chunk (base64).",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "From fs.download.start.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "transfer",
+            "kind": "ref",
+            "scope": "own"
+          },
+          "name": "transfer_id",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Byte offset; next_offset of the previous chunk.",
+          "generator": {
+            "kind": "int_range",
+            "max": 0,
+            "min": 0
+          },
+          "minimum": 0,
+          "name": "offset",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "length",
+          "required": false,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "name": "transfer_id",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "offset",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "bytes",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "name": "data_base64",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "next_offset",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "name": "complete",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        }
+      ],
+      "untyped_refusals": [
+        "invalid"
+      ],
+      "variants": []
+    },
+    {
+      "auth": "share",
+      "client_timeout_ms": 15000,
+      "command": "fs.download.start",
+      "description": "Share sessions only: start a chunked download of a file inside the share.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Share-relative path (the share root when absent).",
+          "name": "path",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": false,
+          "types": [
+            "integer",
+            "null"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "name": "transfer_id",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "filename",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "path",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "size_bytes",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "name": "mime_type",
+          "required": false,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "chunk_size",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "untyped_refusals": [
+        "denied",
+        "not_found"
+      ],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 180000,
+      "command": "fs.entry.copy",
+      "description": "Copy an entry or tree: Copy on every source, Read on source files, Write (files) or Touch (directories) at each destination, all checked before anything is written.",
+      "input": "payload",
+      "operation": "fs.copy",
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Vault-relative path (\"/docs/a.txt\").",
+          "generator": {
+            "kind": "path",
+            "pattern": "/{a}{a}{a}{9}"
+          },
+          "name": "from",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Vault-relative path (\"/docs/a.txt\").",
+          "generator": {
+            "kind": "path",
+            "pattern": "/{a}{a}{a}{9}"
+          },
+          "name": "to",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "unauthorized",
+        "not_found"
+      ],
+      "response": [
+        {
+          "name": "from",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "to",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "untyped_refusals": [
+        "denied"
+      ],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 180000,
+      "command": "fs.entry.delete",
+      "description": "Delete a file or directory tree (Delete on the path).",
+      "input": "payload",
+      "operation": "fs.delete",
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Vault-relative path (\"/docs/a.txt\").",
+          "generator": {
+            "kind": "path",
+            "pattern": "/{a}{a}{a}{9}"
+          },
+          "name": "path",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "name": "path",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "untyped_refusals": [
+        "denied",
+        "not_found"
+      ],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 180000,
+      "command": "fs.entry.move",
+      "description": "Move an entry (Move on the source).",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Vault-relative path (\"/docs/a.txt\").",
+          "generator": {
+            "kind": "path",
+            "pattern": "/{a}{a}{a}{9}"
+          },
+          "name": "from",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Vault-relative path (\"/docs/a.txt\").",
+          "generator": {
+            "kind": "path",
+            "pattern": "/{a}{a}{a}{9}"
+          },
+          "name": "to",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "unauthorized",
+        "not_found"
+      ],
+      "response": [
+        {
+          "name": "from",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "to",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "untyped_refusals": [
+        "denied"
+      ],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 60000,
+      "command": "fs.entry.rename",
+      "description": "Rename an entry (Rename on the source).",
+      "input": "payload",
+      "operation": "fs.rename",
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Vault-relative path (\"/docs/a.txt\").",
+          "generator": {
+            "kind": "path",
+            "pattern": "/{a}{a}{a}{9}"
+          },
+          "name": "from",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Vault-relative path (\"/docs/a.txt\").",
+          "generator": {
+            "kind": "path",
+            "pattern": "/{a}{a}{a}{9}"
+          },
+          "name": "to",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "unauthorized",
+        "not_found"
+      ],
+      "response": [
+        {
+          "name": "from",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "to",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "untyped_refusals": [
+        "denied"
+      ],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 30000,
+      "command": "fs.list",
+      "description": "fs.dir.list for console sessions; in a share session the share's view of the directory.",
+      "input": "payload",
+      "operation": "fs.list",
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Defaults to \"/\".",
+          "generator": {
+            "kind": "path",
+            "pattern": "/{a}{a}{a}{9}"
+          },
+          "name": "path",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "name": "vault",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "path",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "model": "FsEntry",
+          "name": "entry",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        },
+        {
+          "items": "object",
+          "model": "FsEntry",
+          "name": "files",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        }
+      ],
+      "untyped_refusals": [
+        "denied",
+        "not_found"
+      ],
+      "variants": [
+        {
+          "description": "In a share session: share-relative paths, entries reduced to the share view.",
+          "mode": "share",
+          "payload": [
+            {
+              "description": "Vault id.",
+              "generator": {
+                "attrs": [
+                  "id"
+                ],
+                "entity": "vault",
+                "kind": "ref",
+                "scope": "any"
+              },
+              "minimum": 0,
+              "name": "vault_id",
+              "required": false,
+              "types": [
+                "integer",
+                "null"
+              ]
+            },
+            {
+              "description": "Share-relative path (the share root when absent).",
+              "name": "path",
+              "required": false,
+              "types": [
+                "string"
+              ]
+            }
+          ],
+          "response": [
+            {
+              "name": "path",
+              "required": true,
+              "types": [
+                "string"
+              ]
+            },
+            {
+              "model": "ShareEntry",
+              "name": "entry",
+              "required": true,
+              "types": [
+                "object"
+              ]
+            },
+            {
+              "items": "object",
+              "model": "ShareEntry",
+              "name": "files",
+              "required": true,
+              "types": [
+                "array"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "fs.metadata",
+      "description": "One entry's metadata (Lookup on the path).",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Defaults to \"/\".",
+          "generator": {
+            "kind": "path",
+            "pattern": "/{a}{a}{a}{9}"
+          },
+          "name": "path",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "name": "vault",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "path",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "model": "FsEntry",
+          "name": "entry",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [
+        "denied",
+        "not_found"
+      ],
+      "variants": [
+        {
+          "description": "In a share session: share-relative paths, entries reduced to the share view.",
+          "mode": "share",
+          "payload": [
+            {
+              "description": "Vault id.",
+              "generator": {
+                "attrs": [
+                  "id"
+                ],
+                "entity": "vault",
+                "kind": "ref",
+                "scope": "any"
+              },
+              "minimum": 0,
+              "name": "vault_id",
+              "required": false,
+              "types": [
+                "integer",
+                "null"
+              ]
+            },
+            {
+              "description": "Share-relative path (the share root when absent).",
+              "name": "path",
+              "required": false,
+              "types": [
+                "string"
+              ]
+            }
+          ],
+          "response": [
+            {
+              "name": "path",
+              "required": true,
+              "types": [
+                "string"
+              ]
+            },
+            {
+              "model": "ShareEntry",
+              "name": "entry",
+              "required": true,
+              "types": [
+                "object"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "fs.upload.cancel",
+      "description": "Abort the session's active ws upload.",
+      "input": "payload",
+      "operation": null,
+      "payload": [],
+      "refusal_codes": [
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "name": "cancelled",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": [
+        {
+          "description": "In a share session.",
+          "mode": "share",
+          "payload": [
+            {
+              "name": "upload_id",
+              "required": false,
+              "types": [
+                "string"
+              ]
+            },
+            {
+              "name": "transfer_id",
+              "required": false,
+              "types": [
+                "string"
+              ]
+            }
+          ],
+          "response": [
+            {
+              "name": "cancelled",
+              "required": true,
+              "types": [
+                "boolean"
+              ]
+            },
+            {
+              "name": "upload_id",
+              "required": true,
+              "types": [
+                "string"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 180000,
+      "command": "fs.upload.finish",
+      "description": "Finish the session's active ws upload.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Vault-relative path (\"/docs/a.txt\").",
+          "generator": {
+            "kind": "path",
+            "pattern": "/{a}{a}{a}{9}"
+          },
+          "name": "path",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "name": "path",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "untyped_refusals": [
+        "denied"
+      ],
+      "variants": [
+        {
+          "description": "In a share session.",
+          "mode": "share",
+          "payload": [
+            {
+              "name": "upload_id",
+              "required": false,
+              "types": [
+                "string"
+              ]
+            },
+            {
+              "name": "transfer_id",
+              "required": false,
+              "types": [
+                "string"
+              ]
+            }
+          ],
+          "response": [
+            {
+              "name": "upload_id",
+              "required": true,
+              "types": [
+                "string"
+              ]
+            },
+            {
+              "name": "complete",
+              "required": true,
+              "types": [
+                "boolean"
+              ]
+            },
+            {
+              "model": "ShareEntry",
+              "name": "entry",
+              "required": true,
+              "types": [
+                "object"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 30000,
+      "command": "fs.upload.start",
+      "description": "Start a chunked ws upload (Write on the path). The console uploads over HTTP instead (POST /upload/session); this is the native ws transfer.",
+      "input": "payload",
+      "operation": "fs.write",
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Vault-relative path (\"/docs/a.txt\").",
+          "generator": {
+            "kind": "path",
+            "pattern": "/{a}{a}{a}{9}"
+          },
+          "name": "path",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "generator": {
+            "kind": "int_range",
+            "max": 65536,
+            "min": 0
+          },
+          "minimum": 0,
+          "name": "size",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "name": "upload_id",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "untyped_refusals": [
+        "denied"
+      ],
+      "variants": [
+        {
+          "description": "In a share session: the share upload surface (target resolved inside the share).",
+          "mode": "share",
+          "payload": [
+            {
+              "description": "Vault id.",
+              "generator": {
+                "attrs": [
+                  "id"
+                ],
+                "entity": "vault",
+                "kind": "ref",
+                "scope": "any"
+              },
+              "minimum": 0,
+              "name": "vault_id",
+              "required": false,
+              "types": [
+                "integer",
+                "null"
+              ]
+            },
+            {
+              "description": "Share-relative path (the share root when absent).",
+              "name": "path",
+              "required": false,
+              "types": [
+                "string"
+              ]
+            },
+            {
+              "name": "filename",
+              "required": false,
+              "types": [
+                "string"
+              ]
+            },
+            {
+              "minimum": 0,
+              "name": "size_bytes",
+              "required": false,
+              "types": [
+                "integer"
+              ]
+            },
+            {
+              "minimum": 0,
+              "name": "size",
+              "required": false,
+              "types": [
+                "integer"
+              ]
+            },
+            {
+              "name": "mime_type",
+              "required": false,
+              "types": [
+                "string",
+                "null"
+              ]
+            },
+            {
+              "enum": [
+                "reject"
+              ],
+              "name": "duplicate_policy",
+              "required": false,
+              "types": [
+                "string"
+              ]
+            }
+          ],
+          "response": [
+            {
+              "name": "upload_id",
+              "required": true,
+              "types": [
+                "string"
+              ]
+            },
+            {
+              "name": "transfer_id",
+              "required": true,
+              "types": [
+                "string"
+              ]
+            },
+            {
+              "name": "path",
+              "required": true,
+              "types": [
+                "string"
+              ]
+            },
+            {
+              "name": "filename",
+              "required": true,
+              "types": [
+                "string"
+              ]
+            },
+            {
+              "minimum": 0,
+              "name": "size_bytes",
+              "required": true,
+              "types": [
+                "integer"
+              ]
+            },
+            {
+              "minimum": 0,
+              "name": "chunk_size",
+              "required": true,
+              "types": [
+                "integer"
+              ]
+            },
+            {
+              "name": "duplicate_policy",
+              "required": true,
+              "types": [
+                "string"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "group.add",
+      "description": "Create a group.",
+      "input": "payload",
+      "operation": "groups.create",
+      "payload": [
+        {
+          "generator": {
+            "fresh": true,
+            "kind": "pattern",
+            "pattern": "group_{a}{a}{a}{9}{9}{a}{9}"
+          },
+          "name": "name",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "generator": {
+            "kind": "pattern",
+            "pattern": "group {a}{a}{a}{a}{a}"
+          },
+          "name": "description",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Positive and unique.",
+          "generator": {
+            "fresh": true,
+            "kind": "int_range",
+            "max": 2999999999,
+            "min": 2900000000
+          },
+          "minimum": 0,
+          "name": "linux_gid",
+          "required": false,
+          "types": [
+            "integer",
+            "null"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "name": "name",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "model": "Group",
+          "name": "group",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "group.get",
+      "description": "One group by id.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "group",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "Group",
+          "name": "group",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "group.get.byName",
+      "description": "One group by name.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "generator": {
+            "attrs": [
+              "name"
+            ],
+            "entity": "group",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "name": "name",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "Group",
+          "name": "group",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "group.member.add",
+      "description": "Add a user to a group.",
+      "input": "payload",
+      "operation": "groups.add_user",
+      "payload": [
+        {
+          "description": "Legacy clients may send groupId instead.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "group",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "group_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Legacy clients may send userId or memberName.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "user",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "user_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "Group",
+          "name": "group",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "group_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Echoed from the request.",
+          "minimum": 0,
+          "name": "user_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "group.member.remove",
+      "description": "Remove a user from a group.",
+      "input": "payload",
+      "operation": "groups.remove_user",
+      "payload": [
+        {
+          "description": "Legacy clients may send groupId instead.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "group",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "group_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Legacy clients may send userId or memberName.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "user",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "user_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "Group",
+          "name": "group",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "group_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Echoed from the request.",
+          "minimum": 0,
+          "name": "user_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "group.remove",
+      "description": "Delete a group.",
+      "input": "payload",
+      "operation": "groups.delete",
+      "payload": [
+        {
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "group",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "minimum": 0,
+          "name": "id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "group.update",
+      "description": "Patch a group: name, description and linux_gid are each optional.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "group",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "generator": {
+            "fresh": true,
+            "kind": "pattern",
+            "pattern": "group_{a}{a}{a}{9}{9}{a}{9}"
+          },
+          "name": "name",
+          "required": false,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "generator": {
+            "kind": "pattern",
+            "pattern": "group {a}{a}{a}{a}{a}"
+          },
+          "name": "description",
+          "required": false,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "Positive and unique.",
+          "generator": {
+            "fresh": true,
+            "kind": "int_range",
+            "max": 2999999999,
+            "min": 2900000000
+          },
+          "minimum": 0,
+          "name": "linux_gid",
+          "required": false,
+          "types": [
+            "integer",
+            "null"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "minimum": 0,
+          "name": "id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "name": "name",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "model": "Group",
+          "name": "group",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "groups.list",
+      "description": "Every group for group viewers; otherwise only the caller's own groups.",
+      "input": "none",
+      "operation": null,
+      "payload": [],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "items": "object",
+          "model": "Group",
+          "name": "groups",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "groups.list.byUser",
+      "description": "The groups a user belongs to.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "user",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "user_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "items": "object",
+          "model": "Group",
+          "name": "groups",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "session",
+      "client_timeout_ms": 15000,
+      "command": "meta.contract.get",
+      "description": "The contract this daemon was built from: contract_version, contract_hash (the whole document vh_usage --json publishes) and ws_hash (the ws command book, what the web console is generated from). Read-only, no secrets; needs a signed-in session (no build fingerprinting before login).",
+      "input": "none",
+      "operation": null,
+      "payload": [],
+      "refusal_codes": [],
+      "response": [
+        {
+          "minimum": 0,
+          "name": "contract_version",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "name": "contract_hash",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "ws_hash",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 60000,
+      "command": "recovery.costs",
+      "description": "The vault's recovery cost panel: versioning surcharge (separate from current object storage), recovery operations, what is not modelled, ranges, basis and catalog freshness. Unknown money is null.",
+      "input": "payload",
+      "operation": "recovery.costs",
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "RecoveryCostReport",
+          "name": "costs",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 30000,
+      "command": "recovery.inspect",
+      "description": "One recovery point with its details; a snapshot lists its members (first page). A point the caller can't read is not_found.",
+      "input": "payload",
+      "operation": "recovery.inspect",
+      "payload": [
+        {
+          "description": "snap-<id> (snapshot), lv-<id> (local version) or pv-<id> (provider version).",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "recovery_point",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "name": "recovery_id",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "RecoveryPointDetail",
+          "name": "detail",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 120000,
+      "command": "recovery.list",
+      "description": "Recovery points of a vault, or of one path (a file's history or the points under a directory): local snapshots, local versions and provider versions. Points the caller can't read are omitted. refresh_provider lists the provider's versions first (metadata only, request-budgeted).",
+      "input": "payload",
+      "operation": "recovery.list",
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Vault-relative path (\"/docs/a.txt\").",
+          "generator": {
+            "kind": "path",
+            "pattern": "/{a}{a}{a}{9}"
+          },
+          "name": "path",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "refresh_provider",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "name": "include_snapshots",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "name": "include_versions",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "name": "include_provider",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "minimum": 1,
+          "name": "limit",
+          "required": false,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "items": "object",
+          "model": "RecoveryPoint",
+          "name": "points",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 180000,
+      "command": "recovery.plan",
+      "description": "Plan a restore (read-only): recovery_id, or vault_id + path + at for a point-in-time reconstruction (never atomic; see consistency_note). Returns the per-item preview, estimate, warnings, blockers and the token recovery.restore takes (stored 30 minutes).",
+      "input": "payload",
+      "operation": "recovery.plan",
+      "payload": [
+        {
+          "description": "snap-<id> (snapshot), lv-<id> (local version) or pv-<id> (provider version).",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "recovery_point",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "name": "recovery_id",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": false,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Vault-relative path (\"/docs/a.txt\").",
+          "generator": {
+            "kind": "path",
+            "pattern": "/{a}{a}{a}{9}"
+          },
+          "name": "path",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "ISO-8601 UTC time or epoch seconds.",
+          "name": "at",
+          "required": false,
+          "types": [
+            "string",
+            "integer"
+          ]
+        },
+        {
+          "description": "Vault-relative path (\"/docs/a.txt\").",
+          "generator": {
+            "kind": "path",
+            "pattern": "/{a}{a}{a}{9}"
+          },
+          "name": "destination",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "prune",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "name": "refresh_provider",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "RecoveryPlan",
+          "name": "plan",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "recovery.plan.get",
+      "description": "A stored restore plan (its state, items and token).",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Restore plan id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "recovery_plan",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 1,
+          "name": "plan_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "RecoveryPlan",
+          "name": "plan",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 60000,
+      "command": "recovery.point.delete",
+      "description": "Delete a snapshot or a local version (filesystem Delete on its path). A refusal with data.code 'recovery_point_delete' asks for confirmation: resend with confirm.",
+      "input": "payload",
+      "operation": "recovery.point.delete",
+      "payload": [
+        {
+          "description": "snap-<id> (snapshot), lv-<id> (local version) or pv-<id> (provider version).",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "recovery_point",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "name": "recovery_id",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "confirm",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized",
+        "recovery_point_delete"
+      ],
+      "response": [
+        {
+          "name": "recovery_id",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 1800000,
+      "command": "recovery.restore",
+      "description": "Run a restore plan: every item is re-authorized and restored as a new current generation; a destination that changed since the plan is a 'conflict' outcome. Resumable. Refusals: 'recovery_restore' (token missing or expired: plan again), 'recovery_unverified_version' (resend with accept_unverified).",
+      "input": "payload",
+      "operation": "recovery.restore",
+      "payload": [
+        {
+          "description": "Restore plan id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "recovery_plan",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 1,
+          "name": "plan_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "name": "token",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "accept_unverified",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized",
+        "recovery_restore",
+        "recovery_plan_expired",
+        "recovery_unverified_version"
+      ],
+      "response": [
+        {
+          "model": "RecoveryRestoreResult",
+          "name": "result",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 300000,
+      "command": "recovery.snapshot.create",
+      "description": "Take a named local snapshot of a file or directory tree (vault mode local_snapshots). Needs Read + Copy on every file and List on every directory of the subtree.",
+      "input": "payload",
+      "operation": "recovery.snapshot.create",
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Vault-relative path (\"/docs/a.txt\").",
+          "generator": {
+            "kind": "path",
+            "pattern": "/{a}{a}{a}{9}"
+          },
+          "name": "path",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "name",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "RecoveryPointDetail",
+          "name": "detail",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "role.vault.assign",
+      "description": "Assign a vault role to a user or group on a vault (one assignment per subject and vault).",
+      "input": "payload",
+      "operation": "roles.vault.assign",
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "enum": [
+            "user",
+            "group"
+          ],
+          "name": "subject_type",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "A user id or a group id, per subject_type.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "subject",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "subject_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "The vault role to assign.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "role.vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "VaultRole",
+          "name": "assignment",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "role.vault.get",
+      "description": "One vault role definition.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "role.vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "VaultRole",
+          "name": "role",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "role.vault.unassign",
+      "description": "Remove a subject's vault role assignment on a vault.",
+      "input": "payload",
+      "operation": "roles.vault.unassign",
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "enum": [
+            "user",
+            "group"
+          ],
+          "name": "subject_type",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "A user id or a group id, per subject_type.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "subject",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "subject_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "name": "unassigned",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "roles.vault.list",
+      "description": "Every vault role definition.",
+      "input": "none",
+      "operation": null,
+      "payload": [],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "items": "object",
+          "model": "VaultRole",
+          "name": "roles",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "roles.vault.list.assigned",
+      "description": "The role assignments on one vault (id is the vault id).",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "items": "object",
+          "model": "VaultRole",
+          "name": "assigned_roles",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "share.link.create",
+      "description": "Create a share link on a file or directory. The public token is returned once.",
+      "input": "payload",
+      "operation": "shares.create",
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "fs.entry",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "root_entry_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "generator": {
+            "attrs": [
+              "path"
+            ],
+            "entity": "fs.entry",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "name": "root_path",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "enum": [
+            "file",
+            "directory"
+          ],
+          "name": "target_type",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "enum": [
+            "download",
+            "upload",
+            "access"
+          ],
+          "name": "link_type",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "enum": [
+            "public",
+            "email_validated"
+          ],
+          "generator": {
+            "kind": "const",
+            "values": [
+              "public"
+            ]
+          },
+          "name": "access_mode",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "A bitmask or a list of operation names.",
+          "generator": {
+            "kind": "one_of",
+            "values": [
+              "metadata",
+              "list",
+              "download"
+            ]
+          },
+          "item_enum": [
+            "metadata",
+            "list",
+            "preview",
+            "download",
+            "upload",
+            "mkdir",
+            "overwrite"
+          ],
+          "items": "string",
+          "name": "allowed_ops",
+          "required": true,
+          "types": [
+            "integer",
+            "array"
+          ]
+        },
+        {
+          "name": "name",
+          "required": false,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "name": "public_label",
+          "required": false,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "name": "description",
+          "required": false,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "name": "expires_at",
+          "required": false,
+          "types": [
+            "string",
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "max_downloads",
+          "required": false,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "max_upload_files",
+          "required": false,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "max_upload_size_bytes",
+          "required": false,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "max_upload_total_bytes",
+          "required": false,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "enum": [
+            "reject",
+            "rename",
+            "overwrite"
+          ],
+          "name": "duplicate_policy",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "items": "string",
+          "name": "allowed_mime_types",
+          "required": false,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "items": "string",
+          "name": "blocked_mime_types",
+          "required": false,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "items": "string",
+          "name": "allowed_extensions",
+          "required": false,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "items": "string",
+          "name": "blocked_extensions",
+          "required": false,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "name": "metadata",
+          "required": false,
+          "types": [
+            "object"
+          ]
+        },
+        {
+          "fields": [
+            {
+              "generator": {
+                "attrs": [
+                  "id"
+                ],
+                "entity": "role.vault",
+                "kind": "ref",
+                "scope": "any"
+              },
+              "minimum": 0,
+              "name": "vault_role_id",
+              "required": false,
+              "types": [
+                "integer"
+              ]
+            },
+            {
+              "name": "vault_role_name",
+              "required": false,
+              "types": [
+                "string"
+              ]
+            },
+            {
+              "description": "{permission_id | permission_qualified | qualified, effect, glob_path | pattern, enabled}",
+              "items": "object",
+              "name": "permission_overrides",
+              "required": false,
+              "types": [
+                "array"
+              ]
+            }
+          ],
+          "name": "public_role_assignment",
+          "required": false,
+          "types": [
+            "object",
+            "null"
+          ]
+        },
+        {
+          "fields": [
+            {
+              "name": "email",
+              "required": true,
+              "types": [
+                "string"
+              ]
+            },
+            {
+              "fields": [
+                {
+                  "generator": {
+                    "attrs": [
+                      "id"
+                    ],
+                    "entity": "role.vault",
+                    "kind": "ref",
+                    "scope": "any"
+                  },
+                  "minimum": 0,
+                  "name": "vault_role_id",
+                  "required": false,
+                  "types": [
+                    "integer"
+                  ]
+                },
+                {
+                  "name": "vault_role_name",
+                  "required": false,
+                  "types": [
+                    "string"
+                  ]
+                },
+                {
+                  "description": "{permission_id | permission_qualified | qualified, effect, glob_path | pattern, enabled}",
+                  "items": "object",
+                  "name": "permission_overrides",
+                  "required": false,
+                  "types": [
+                    "array"
+                  ]
+                }
+              ],
+              "name": "role_assignment",
+              "required": true,
+              "types": [
+                "object"
+              ]
+            }
+          ],
+          "items": "object",
+          "name": "recipient_role_assignments",
+          "required": false,
+          "types": [
+            "array"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "ShareLink",
+          "name": "share",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        },
+        {
+          "name": "public_token",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "public_url_path",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "untyped_refusals": [
+        "invalid"
+      ],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "share.link.revoke",
+      "description": "Revoke a share link; its sessions end on their next request.",
+      "input": "payload",
+      "operation": "shares.revoke",
+      "payload": [
+        {
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "share",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "name": "id",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "name": "revoked",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 180000,
+      "command": "storage.vault.add",
+      "description": "Create a vault. owner_id, description and quota (bytes, 0 = unlimited) are optional; the daemon picks the backing directory. S3 vaults also need api_key_id and bucket. A refusal with data.code 'encryption_waiver' means the bucket already holds data: resend with accept_encryption_waiver once the person accepts. With provision (#237) the daemon creates a managed bucket or adopts an existing one; 'upstream_adoption' asks for provision.accept_adoption.",
+      "input": "payload",
+      "operation": "vaults.create",
+      "payload": [
+        {
+          "generator": {
+            "fresh": true,
+            "kind": "pattern",
+            "pattern": "vault_{a}{a}{a}{9}{9}{a}{9}"
+          },
+          "name": "name",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "enum": [
+            "local",
+            "s3"
+          ],
+          "generator": {
+            "kind": "const",
+            "values": [
+              "local"
+            ]
+          },
+          "name": "type",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "user",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "owner_id",
+          "required": false,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "generator": {
+            "kind": "pattern",
+            "pattern": "vault {a}{a}{a}{a}{a}"
+          },
+          "name": "description",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "generator": {
+            "kind": "const",
+            "values": [
+              "0"
+            ]
+          },
+          "minimum": 0,
+          "name": "quota",
+          "required": false,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "name": "slug",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "fuse_name",
+          "required": false,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "S3 vaults: required.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "api_key",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "api_key_id",
+          "required": false,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "S3 vaults: required.",
+          "name": "bucket",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "storage_tier_id",
+          "required": false,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "name": "encrypt_upstream",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "Sync policy patch: interval, enabled, strategy, conflict_policy, max_remote_index_age_seconds, s3_request_budget.",
+          "name": "sync",
+          "required": false,
+          "types": [
+            "object"
+          ]
+        },
+        {
+          "name": "accept_encryption_waiver",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "S3 vaults with an admin-enabled key (#237): {mode: existing|create|adopt, region, generate_name, lifecycle, events, events_prefix, accept_adoption}. bucket may be empty with generate_name.",
+          "name": "provision",
+          "required": false,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized",
+        "encryption_waiver",
+        "upstream_adoption"
+      ],
+      "response": [
+        {
+          "model": "Vault",
+          "name": "vault",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "storage.vault.get",
+      "description": "One vault with its owner's name (and sync policy for S3 vaults).",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "Vault",
+          "name": "vault",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "storage.vault.list",
+      "description": "Vaults visible to the caller; each row carries the owner's name.",
+      "input": "none",
+      "operation": null,
+      "payload": [],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "items": "object",
+          "model": "Vault",
+          "name": "vaults",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "storage.vault.remove",
+      "description": "Delete a vault: restorable until the retention window ends, or purged on the next pass with `now`. Refusals with data.code 'vault_upstream_key_loss' (resend with accept_key_loss) or 'vault_delete_now' (resend with confirm_now).",
+      "input": "payload",
+      "operation": "vaults.delete",
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "name": "now",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "name": "delete_upstream",
+          "required": false,
+          "types": [
+            "boolean",
+            "null"
+          ]
+        },
+        {
+          "name": "confirm_now",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "name": "accept_key_loss",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized",
+        "vault_upstream_key_loss",
+        "vault_delete_now"
+      ],
+      "response": [
+        {
+          "model": "VaultDeletion",
+          "name": "deletion",
+          "required": true,
+          "types": [
+            "object",
+            "null"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "upstream.admin.disable",
+      "description": "Turn provider administration off. Refused while an event subscription runs through the key.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Upstream API key id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "api_key",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "api_key_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "UpstreamAdminStatus",
+          "name": "admin",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 60000,
+      "command": "upstream.admin.enable",
+      "description": "Turn on provider administration (AWS S3, Cloudflare R2) for an upstream API key after probing it, or store / clear the Cloudflare API token R2 events need. Idempotent. Needs admin.upstream.configure + key edit.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Upstream API key id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "api_key",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "api_key_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Cloudflare account API token (Queues Edit + Workers R2 Storage Edit). Write-only.",
+          "name": "provider_token",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "clear_provider_token",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "UpstreamAdminStatus",
+          "name": "admin",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 60000,
+      "command": "upstream.admin.status",
+      "description": "Administration status and the last capability probe; probe=true re-checks the credential (configure).",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Upstream API key id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "api_key",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "api_key_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "name": "probe",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "UpstreamAdminStatus",
+          "name": "admin",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "upstream.audit.list",
+      "description": "Upstream control-plane audit log (newest first): locks, creations, adoptions, lifecycle, events, cleanup.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "name": "bucket",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "limit",
+          "required": false,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "items": "object",
+          "model": "UpstreamAuditEntry",
+          "name": "entries",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 180000,
+      "command": "upstream.bucket.adopt.preflight",
+      "description": "Read-only admission check of an existing bucket before adoption: object counts, encryption of a sample, versioning, object lock, Vaulthalla manifest, blockers.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Upstream API key id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "api_key",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "api_key_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Bucket name in the key's account.",
+          "generator": {
+            "kind": "pattern",
+            "pattern": "vh-test-{a}{a}{a}{9}{9}"
+          },
+          "name": "bucket",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "max_objects",
+          "required": false,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "sample_heads",
+          "required": false,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "UpstreamAdmissionReport",
+          "name": "report",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 600000,
+      "command": "upstream.bucket.cleanup",
+      "description": "Delete every object version of a bucket Vaulthalla created and (delete_bucket, default) the bucket. Every check runs again first. A refusal with data.code 'upstream_cleanup' means the token is missing, expired or no longer matches the bucket: run the preflight again.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Upstream API key id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "api_key",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "api_key_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Bucket name in the key's account.",
+          "generator": {
+            "kind": "pattern",
+            "pattern": "vh-test-{a}{a}{a}{9}{9}"
+          },
+          "name": "bucket",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "generator": {
+            "kind": "pattern",
+            "pattern": "{a}{a}{a}{a}{9}{9}{9}{9}"
+          },
+          "name": "confirm_token",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "delete_bucket",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized",
+        "upstream_cleanup"
+      ],
+      "response": [
+        {
+          "model": "UpstreamCleanupResult",
+          "name": "result",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 180000,
+      "command": "upstream.bucket.cleanup.preflight",
+      "description": "What cleanup would delete (objects, versions, delete markers, bytes) and anything that blocks it, with a confirm_token valid for 10 minutes. Nothing changes.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Upstream API key id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "api_key",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "api_key_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Bucket name in the key's account.",
+          "generator": {
+            "kind": "pattern",
+            "pattern": "vh-test-{a}{a}{a}{9}{9}"
+          },
+          "name": "bucket",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "UpstreamCleanupPlan",
+          "name": "plan",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 60000,
+      "command": "upstream.bucket.detach",
+      "description": "Give a managed or adopted bucket that no vault uses back: Vaulthalla removes its own rules; data stays.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Upstream API key id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "api_key",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "api_key_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Bucket name in the key's account.",
+          "generator": {
+            "kind": "pattern",
+            "pattern": "vh-test-{a}{a}{a}{9}{9}"
+          },
+          "name": "bucket",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "UpstreamBucketRow",
+          "name": "bucket",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 60000,
+      "command": "upstream.bucket.inspect",
+      "description": "Bucket configuration: region, versioning, object lock, lifecycle and notification rules (ours vs foreign).",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Upstream API key id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "api_key",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "api_key_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Bucket name in the key's account.",
+          "generator": {
+            "kind": "pattern",
+            "pattern": "vh-test-{a}{a}{a}{9}{9}"
+          },
+          "name": "bucket",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "UpstreamInspection",
+          "name": "inspection",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 60000,
+      "command": "upstream.bucket.lifecycle.set",
+      "description": "Set or clear Vaulthalla's lifecycle rule on a managed or adopted bucket; foreign rules are preserved. Expiration is destructive: a refusal with data.code 'upstream_destructive_lifecycle' asks for accept_destructive.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Upstream API key id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "api_key",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "api_key_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Bucket name in the key's account.",
+          "generator": {
+            "kind": "pattern",
+            "pattern": "vh-test-{a}{a}{a}{9}{9}"
+          },
+          "name": "bucket",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "abort_incomplete_multipart_days",
+          "required": false,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "expire_current_days",
+          "required": false,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "expire_noncurrent_days",
+          "required": false,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "name": "prefix",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "clear",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "name": "accept_destructive",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized",
+        "upstream_destructive_lifecycle"
+      ],
+      "response": [
+        {
+          "model": "UpstreamInspection",
+          "name": "inspection",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 60000,
+      "command": "upstream.bucket.list",
+      "description": "One page of the account's buckets (ListBuckets) merged with what Vaulthalla knows: managed, adopted, unmanaged or protected. No bucket-level or object calls.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Upstream API key id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "api_key",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "api_key_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "name": "token",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "max",
+          "required": false,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "enum": [
+            "managed",
+            "adopted",
+            "unmanaged",
+            "protected"
+          ],
+          "name": "state",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "filter",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "UpstreamInventory",
+          "name": "inventory",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "upstream.bucket.protect",
+      "description": "Lock a bucket: Vaulthalla will not probe, adopt, bind, configure, sync, empty or delete it. Audited.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Upstream API key id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "api_key",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "api_key_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Bucket name in the key's account.",
+          "generator": {
+            "kind": "pattern",
+            "pattern": "vh-test-{a}{a}{a}{9}{9}"
+          },
+          "name": "bucket",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "generator": {
+            "kind": "pattern",
+            "pattern": "test lock {a}{a}{a}"
+          },
+          "name": "reason",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "UpstreamBucketRow",
+          "name": "bucket",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "upstream.bucket.unprotect",
+      "description": "Remove a bucket lock (admin.upstream.unprotect). A refusal with data.code 'upstream_unprotect' asks for confirmation: resend with confirm.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Upstream API key id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "api_key",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "api_key_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Bucket name in the key's account.",
+          "generator": {
+            "kind": "pattern",
+            "pattern": "vh-test-{a}{a}{a}{9}{9}"
+          },
+          "name": "bucket",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "confirm",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized",
+        "upstream_unprotect"
+      ],
+      "response": [
+        {
+          "model": "UpstreamBucketRow",
+          "name": "bucket",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 120000,
+      "command": "upstream.events.disable",
+      "description": "Remove the vault's event rule (and the queue when nothing else uses it and Vaulthalla created it).",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "UpstreamEventStatus",
+          "name": "events",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 120000,
+      "command": "upstream.events.enable",
+      "description": "Subscribe an S3 vault's bucket for event-driven sync (AWS S3 → SQS, Cloudflare R2 → Queues).",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "name": "prefix",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "enum": [
+            "import",
+            "ignore"
+          ],
+          "name": "foreign_objects",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "UpstreamEventStatus",
+          "name": "events",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 120000,
+      "command": "upstream.events.repair",
+      "description": "Re-create whatever is missing for the vault's subscription and re-arm it. Safe to repeat.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "UpstreamEventStatus",
+          "name": "events",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "upstream.events.status",
+      "description": "Event subscription, queue health and inbox counts for one vault (vault_id) or every S3 vault the caller may view. A vault without a subscription reports state 'none'.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": false,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "items": "object",
+          "model": "UpstreamEventStatus",
+          "name": "events",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 60000,
+      "command": "vault.recovery.disclosure",
+      "description": "The cost disclosure a person must see before provider versioning is enabled, with the token vault.recovery.update needs (10 minutes). Read-only: at most one admin inspect, no object requests.",
+      "input": "payload",
+      "operation": "recovery.disclosure",
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Provider noncurrent-version retention: \"30d\", 30 (days), \"indefinite\" or {indefinite, days}.",
+          "name": "provider_retention",
+          "required": false,
+          "types": [
+            "string",
+            "integer",
+            "object"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "RecoveryDisclosure",
+          "name": "disclosure",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 60000,
+      "command": "vault.recovery.status",
+      "description": "A vault's recovery mode, local versioning, store usage, upstream backlog and provider versioning state; refresh_provider re-reads the bucket (one admin round trip).",
+      "input": "payload",
+      "operation": "recovery.status",
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "name": "refresh_provider",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "RecoveryStatus",
+          "name": "status",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 60000,
+      "command": "vault.recovery.suspend",
+      "description": "Suspend versioning on the vault's bucket; existing versions are kept and nothing is deleted. A refusal with data.code 'recovery_versioning_suspend' asks for confirmation: resend with confirm.",
+      "input": "payload",
+      "operation": "recovery.suspend",
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "name": "confirm",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized",
+        "recovery_versioning_suspend"
+      ],
+      "response": [
+        {
+          "model": "RecoveryStatus",
+          "name": "status",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 180000,
+      "command": "vault.recovery.update",
+      "description": "Change a vault's recovery settings. mode provider_versioning needs disclosure_token from vault.recovery.disclosure ('recovery_versioning_disclosure'); unpriced costs need accept_unpriced ('recovery_versioning_unpriced'); a shorter retention needs accept_retention_shortening ('recovery_retention_shorten'); the vault's unmanaged bucket needs accept_adoption ('upstream_adoption').",
+      "input": "payload",
+      "operation": "recovery.update",
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "enum": [
+            "off",
+            "local_snapshots",
+            "provider_versioning"
+          ],
+          "name": "mode",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Provider noncurrent-version retention: \"30d\", 30 (days), \"indefinite\" or {indefinite, days}.",
+          "name": "provider_retention",
+          "required": false,
+          "types": [
+            "string",
+            "integer",
+            "object"
+          ]
+        },
+        {
+          "description": "0 = no snapshot quota.",
+          "minimum": 0,
+          "name": "snapshot_quota_bytes",
+          "required": false,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Decimal amount in the catalog currency; \"\" clears it.",
+          "name": "cost_alert_monthly",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "fields": [
+            {
+              "name": "enabled",
+              "required": false,
+              "types": [
+                "boolean"
+              ]
+            },
+            {
+              "minimum": 0,
+              "name": "keep_last",
+              "required": false,
+              "types": [
+                "integer",
+                "null"
+              ]
+            },
+            {
+              "minimum": 0,
+              "name": "max_age_days",
+              "required": false,
+              "types": [
+                "integer",
+                "null"
+              ]
+            },
+            {
+              "minimum": 0,
+              "name": "quota_bytes",
+              "required": false,
+              "types": [
+                "integer",
+                "null"
+              ]
+            }
+          ],
+          "name": "local_versioning",
+          "required": false,
+          "types": [
+            "object"
+          ]
+        },
+        {
+          "name": "disclosure_token",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "accept_unpriced",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "name": "accept_retention_shortening",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "name": "accept_adoption",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized",
+        "recovery_versioning_disclosure",
+        "recovery_versioning_unpriced",
+        "recovery_retention_shorten",
+        "upstream_adoption"
+      ],
+      "response": [
+        {
+          "model": "RecoveryStatus",
+          "name": "status",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "untyped_refusals": [],
+      "variants": []
+    }
+  ],
+  "ws_hash": "5e94c9e36fee0c64c165bcb7d9992484ea5b834ff963e08521f0b8dafb920829"
+}

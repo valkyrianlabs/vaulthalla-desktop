@@ -1,0 +1,10 @@
+.DS_Store
+/.build/
+/.swiftpm/
+/build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+/~/
+/Helpers/*/bin/
+/App/Config/Signing.local.xcconfig

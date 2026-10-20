@@ -1,0 +1,5 @@
+{
+  "server_version": "1.15.0",
+  "server_commit": "a95a1f85",
+  "source": "web/src/util/generated/wsContract.json"
+}

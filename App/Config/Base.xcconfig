@@ -1,0 +1,14 @@
+// Shared app settings. Signing identity is per developer: copy Signing.local.xcconfig.example to
+// Signing.local.xcconfig (gitignored) and set DEVELOPMENT_TEAM. Without it the app is signed to run locally.
+MARKETING_VERSION = 0.1.0
+CURRENT_PROJECT_VERSION = 1
+PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.desktop
+MACOSX_DEPLOYMENT_TARGET = 27.0
+
+CODE_SIGN_STYLE = Automatic
+CODE_SIGN_IDENTITY = -
+ENABLE_HARDENED_RUNTIME = YES
+// Off on purpose: the 1Password desktop integration needs IPC the sandbox blocks (docs/architecture.md, D5).
+ENABLE_APP_SANDBOX = NO
+
+#include? "Signing.local.xcconfig"

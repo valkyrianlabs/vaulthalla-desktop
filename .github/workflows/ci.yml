@@ -1,0 +1,29 @@
+name: CI
+# VaulthallaKit tests and an unsigned app build on Apple Silicon. Nothing here signs or publishes.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    # macOS 27 hosted image (public preview, same label as the server's macOS job).
+    runs-on: xcode-27
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - name: Contract is generated, not edited
+        run: python3 tools/gen-contract.py --check
+      - name: Package tests
+        run: swift test
+      - name: App build (unsigned)
+        run: |
+          xcodebuild -project App/Vaulthalla.xcodeproj -scheme Vaulthalla -configuration Debug \
+            -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO -quiet build
