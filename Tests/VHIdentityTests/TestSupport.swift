@@ -68,21 +68,30 @@ enum TestKeychain {
     }
 }
 
-/// A FIFO async mutex serializing the tests that write to the Keychain.
+/// A FIFO async mutex serializing the tests that write to the Keychain. Other test targets run in the same process
+/// (VHNodesTests writes keys too), so the holder also takes a lock file shared by every target that writes keys.
 actor KeychainLock {
     static let shared = KeychainLock()
     private var held = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
+    private let file = open(
+        FileManager.default.temporaryDirectory.appending(path: "sh.vaulthalla.desktop.test.keychain.lock").path,
+        O_CREAT | O_RDWR, 0o600)
 
     func acquire() async {
-        guard held else {
+        if held {
+            await withCheckedContinuation { waiters.append($0) }
+        } else {
             held = true
-            return
         }
-        await withCheckedContinuation { waiters.append($0) }
+        // Non-blocking with a short sleep, so waiting never parks a cooperative thread.
+        while flock(file, LOCK_EX | LOCK_NB) != 0 {
+            try? await Task.sleep(for: .milliseconds(10))
+        }
     }
 
     func release() {
+        flock(file, LOCK_UN)
         if waiters.isEmpty { held = false } else { waiters.removeFirst().resume() }
     }
 }

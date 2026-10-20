@@ -136,3 +136,24 @@ import VHCore
         #expect(try NodeStore(fileURL: fileURL).load().count == 20)
     }
 }
+
+@Suite struct NodeRecordCompatibilityTests {
+    @Test func recordsWithoutTheNewerMembersStillLoad() throws {
+        let json = """
+            {"id": "local-1", "displayName": "vh-storage", "endpoint": {"host": "vh-storage.local", "port": 36971},
+             "pairing": {"unpaired": {}}}
+            """
+        let node = try JSONDecoder().decode(Node.self, from: Data(json.utf8))
+        #expect(node.displayName == "vh-storage")
+        #expect(!node.isNamedByUser)
+        #expect(node.serverNodeID == nil)
+        #expect(node.nextServerSPKISHA256 == nil)
+    }
+
+    @Test func newerMembersRoundTrip() throws {
+        let node = Node(id: NodeID(rawValue: "local-1"), displayName: "Home lab", endpoint: NodeEndpoint(host: "10.0.0.33"),
+                        isNamedByUser: true, serverNodeID: "node-7f3a", nextServerSPKISHA256: Data(repeating: 7, count: 32))
+        let decoded = try JSONDecoder().decode(Node.self, from: JSONEncoder().encode(node))
+        #expect(decoded == node)
+    }
+}

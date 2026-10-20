@@ -18,6 +18,7 @@ let package = Package(
         .library(name: "VHContract", targets: ["VHContract"]),
         .library(name: "VHTransport", targets: ["VHTransport"]),
         .library(name: "VHIdentity", targets: ["VHIdentity"]),
+        .library(name: "VHNodes", targets: ["VHNodes"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-certificates.git", from: "1.21.0"),
@@ -31,12 +32,22 @@ let package = Package(
             dependencies: ["VHCore", .product(name: "X509", package: "swift-certificates")],
             swiftSettings: strict
         ),
+        .target(
+            name: "VHNodes",
+            dependencies: ["VHCore", "VHContract", "VHTransport", "VHIdentity"],
+            swiftSettings: strict
+        ),
         .testTarget(name: "VHCoreTests", dependencies: ["VHCore"], swiftSettings: strict),
         .testTarget(name: "VHContractTests", dependencies: ["VHContract"], swiftSettings: strict),
         .testTarget(name: "VHTransportTests", dependencies: ["VHTransport"], swiftSettings: strict),
         .testTarget(
             name: "VHIdentityTests",
             dependencies: ["VHIdentity", .product(name: "X509", package: "swift-certificates")],
+            swiftSettings: strict
+        ),
+        .testTarget(
+            name: "VHNodesTests",
+            dependencies: ["VHNodes", "VHCore", "VHContract", "VHTransport", "VHIdentity"],
             swiftSettings: strict
         ),
     ]

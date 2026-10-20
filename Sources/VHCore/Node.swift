@@ -9,12 +9,43 @@ public struct Node: Identifiable, Codable, Hashable, Sendable {
     public var displayName: String
     public var endpoint: NodeEndpoint
     public var pairing: PairingState
+    /// Whether the operator chose `displayName` (typed it, or renamed the node). When false, pairing replaces it with
+    /// the name the daemon reports.
+    public var isNamedByUser: Bool
+    /// The daemon's install id, reported when pairing is approved. `id` stays the local one, because the device key
+    /// in the Keychain is filed under it.
+    public var serverNodeID: String?
+    /// The server key the daemon announced it will switch to (docs/pairing.md §5), accepted as a second pin until
+    /// the switch, then promoted.
+    public var nextServerSPKISHA256: Data?
 
-    public init(id: NodeID, displayName: String, endpoint: NodeEndpoint, pairing: PairingState = .unpaired) {
+    public init(
+        id: NodeID, displayName: String, endpoint: NodeEndpoint, pairing: PairingState = .unpaired,
+        isNamedByUser: Bool = false, serverNodeID: String? = nil, nextServerSPKISHA256: Data? = nil
+    ) {
         self.id = id
         self.displayName = displayName
         self.endpoint = endpoint
         self.pairing = pairing
+        self.isNamedByUser = isNamedByUser
+        self.serverNodeID = serverNodeID
+        self.nextServerSPKISHA256 = nextServerSPKISHA256
+    }
+
+    // Spelled out so records written before a member existed still load: the newer members are optional on disk.
+    private enum CodingKeys: String, CodingKey {
+        case id, displayName, endpoint, pairing, isNamedByUser, serverNodeID, nextServerSPKISHA256
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(NodeID.self, forKey: .id)
+        displayName = try container.decode(String.self, forKey: .displayName)
+        endpoint = try container.decode(NodeEndpoint.self, forKey: .endpoint)
+        pairing = try container.decode(PairingState.self, forKey: .pairing)
+        isNamedByUser = try container.decodeIfPresent(Bool.self, forKey: .isNamedByUser) ?? false
+        serverNodeID = try container.decodeIfPresent(String.self, forKey: .serverNodeID)
+        nextServerSPKISHA256 = try container.decodeIfPresent(Data.self, forKey: .nextServerSPKISHA256)
     }
 }
 
