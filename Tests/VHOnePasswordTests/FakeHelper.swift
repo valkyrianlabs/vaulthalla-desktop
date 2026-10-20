@@ -41,6 +41,11 @@ enum FakeHelper {
         process.currentDirectoryURL = sourceDirectory
         var environment = ProcessInfo.processInfo.environment
         environment["CGO_ENABLED"] = "0" // the fake never loads 1Password's library
+        // A build cache of our own under the temporary directory, kept across runs: the user's
+        // ~/Library/Caches/go-build may not be writable here (sandboxed agents and CI runners).
+        if environment["GOCACHE"] == nil {
+            environment["GOCACHE"] = FileManager.default.temporaryDirectory.appending(path: "vh-op-gocache").path
+        }
         process.environment = environment
         let errors = Pipe()
         process.standardError = errors
