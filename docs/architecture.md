@@ -1,7 +1,6 @@
 # Vaulthalla Desktop: architecture and implementation plan
 
-Status: **proposed** (2026-10-20). Decisions marked **[D#]** need the maintainer's approval before the work that
-depends on them starts. Server paths are relative to the `vaulthalla/vaulthalla` repository.
+Status: **approved** (2026-10-20). Decisions **[D#]** were settled by the maintainer the same day; see §8. Server paths are relative to the `vaulthalla/vaulthalla` repository.
 
 Vaulthalla Desktop is a native Swift 6 / SwiftUI app for macOS 27+ on Apple Silicon. It is the administrative
 cockpit for every Vaulthalla deployment the operator has paired. It covers administration, filesystem browsing, MCP
@@ -42,8 +41,9 @@ number, `.release/*_NEXT.md`, ops parity tests, and `.claude/context` kept true.
 
 **S1. Device listener and pairing** (the foundation; everything remote depends on it)
 - **New listener** `device_server`: TLS 1.3 only, terminated by the daemon itself with OpenSSL 3 through Boost.Asio
-  `ssl::stream`, on the default port **36971** **[D1]**. It is independent of nginx, Let's Encrypt and browser
-  cookies.
+  `ssl::stream`, on port **36971** **[D1]**. It is independent of nginx, Let's Encrypt and browser cookies. It is on
+  by default on loopback; "enable remote connections" (web console or `vh device remote enable`, an
+  `ops::config` write) rebinds it to all interfaces and it stays that way.
   - Server identity: an ECDSA P-256 self-signed certificate whose key is sealed through `KeyProvider`. Clients pin
     its SPKI hash.
   - Client authentication: every client presents a certificate. The verify callback accepts any certificate and then
@@ -142,29 +142,29 @@ docs/                   this plan, the pairing protocol, release notes
   - `Logger` uses `.private` for everything user-derived.
   - Key material is held in a `SecretBytes` type that zeroes on deinit and has no `description`.
 
-## 4. Pairing protocol (summary; full spec in `docs/pairing.md` once S1 is approved)
+## 4. Pairing protocol (summary; the normative spec is `docs/pairing.md`)
 
 1. **Device identity.** Desktop creates one P-256 key per node in the Secure Enclave (`SecKeyCreateRandomKey`,
    `kSecAttrTokenIDSecureEnclave`, `.privateKeyUsage`, so no prompt per handshake). It wraps the key in a
    self-signed certificate, giving a Keychain `SecIdentity`. The device id is the SPKI SHA-256.
 2. **Open a window.** In the web console ("Pair a device") or with `vh device pair`, a signed-in user opens a pairing
    window. It lasts 10 minutes and belongs to that user.
-3. **Request.** Desktop connects over TLS to `host:36971` with its certificate and sends `device.pair.request
-   {name: "Cooper's MacBook Pro", platform, app_version, nonce}`. It records the server's SPKI (not trusted yet). The
-   daemon refuses while no window is open.
-4. **Compare.** Both sides compute `SAS = 6 digits of SHA-256("vh-pair-v1" ‖ server_spki ‖ device_spki ‖ nonce_d ‖
-   nonce_s)`.
-   - Desktop shows "Approve on <node>: **482 913**".
-   - The approval UI shows the device name, platform, source IP and the same code.
-   - A man in the middle would hold different SPKIs on each leg, so the codes would differ.
-5. **Approve.** The window owner clicks Approve (or runs `vh device approve <id>`). The device row is created, bound
-   to that user. Desktop's pending request resolves with the node id and name, and it pins the server SPKI.
+3. **Request.** Desktop connects over TLS to `host:36971` with its certificate and sends `device.pair.request`
+   with its name, platform, version and a *commitment* to its nonce. It records the server's SPKI (not trusted
+   yet). The daemon refuses while no window is open and answers with its own nonce; Desktop then reveals its nonce
+   (`device.pair.confirm`). Committing first stops a man in the middle from grinding the 6-digit code.
+4. **Compare.** Both sides derive the code from both SPKIs and both nonces. Desktop shows "Approve on <node>:
+   **482 913**". The approval UI shows the device name, platform and source IP with three candidate codes; a man
+   in the middle holds a different key on each leg, so his codes can't match.
+5. **Approve with one click.** The window owner clicks the code the Mac shows (number matching; `vh device approve
+   <id>` asks for it). A wrong pick denies the request. The device row is created, bound to that user; Desktop's
+   pending request resolves with the node id and name, and it pins the server SPKI.
 6. **Reconnect.** Every later connection is mutual TLS with pinned SPKIs, with no password, token or cookie. Desktop
    reconnects across network changes, because nothing is bound to IP.
 7. **Rotation.**
    - Desktop rotates its key every 90 days, or on demand, through `device.identity.rotate` on an authenticated
-     session. The new certificate is signed by the old key, and the old SPKI stays valid until the new one is first
-     used.
+     session. The old key signs a proof endorsing the new SPKI, and the old SPKI stays valid until the new one is
+     first used.
    - The daemon rotates its server key by announcing the next SPKI ahead of the switch.
 8. **Revocation.** Revoke in the web console, CLI or Desktop. The daemon closes the device's live sessions and
    refuses its SPKI. Desktop shows "This Mac was unpaired from <node>" and offers to pair again.
@@ -237,19 +237,21 @@ There is no device-scoped permission system.
   - Title `Vaulthalla · <vault> · <node>`.
   - `credential` = the current key (base64).
   - Section "Vaulthalla": vault id, vault name, node name and id, key version, key check, backed-up time.
-  - Section "Previous keys": the versions still needed.
+  - Section "Key versions": one concealed field per version (`v3`, `v2`, …) with its key check. A rotation adds the
+    new version and moves `credential` to it; a version is never overwritten, and none is removed while the daemon
+    still reports it as needed.
   - Tags `vaulthalla`, `vaulthalla/<node>`.
   - Notes: how to restore.
-  - Rotation updates the same item, and 1Password's item history keeps every earlier state.
+  - The item is found by its stable identifiers (node id + vault id fields), never by title, so renames are safe.
 - **Status per vault:** `backed up` (1Password's version and key check equal the daemon's), `needs backup` (never or
   stale after a rotation), `rotating` (waits for the rotation to complete, and keeps the old key in the item
   meanwhile), `mismatch` (key check differs), `unknown` (node offline). A macOS notification fires when vaults need
   backup. One "Sync all" button covers every node.
-- **Restore [D7]:** the daemon has no key import today. Phase 1 restore:
-  - Verify: re-check the stored key against the daemon's key check.
-  - Write the CLI-format export JSON to a file the user chooses, or copy the key to the clipboard with auto-clear.
-    Either feeds today's documented recovery.
-  - A daemon `vh vault keys import` for disaster recovery is a separate security project.
+- **Restore [D7]:** in milestones.
+  1. Verify: re-check the stored key against the daemon's key check.
+  2. Export: write the CLI-format export JSON to a file the user chooses (native save panel; no clipboard).
+  3. Import: Desktop sends the stored versions to the daemon's `vault.keys.import` (S6) over the paired connection,
+     the same operation as `vh vault keys import`. Only then does Desktop call this full recovery support.
 - **Hygiene:** keys never enter MCP results or agent context (the export is refused for MCP at the daemon), logs or
   caches. The 1Password item id is the only thing Desktop stores per vault.
 
@@ -257,33 +259,37 @@ There is no device-scoped permission system.
 
 | # | Workstream | Repo | Depends on | Parallel with |
 |---|---|---|---|---|
-| D1 | Foundation: package, contract codegen, transport, identity primitives, app shell + theme, node registry, Bonjour browse | desktop | none (**started now**) | S1 |
-| S1 | Device listener, TLS, `devices` migration, Device session mode, pairing ops/CLI/ws, web Devices UI | server + web | D1-D4 approved | D1 |
+| D1 | Foundation: package, contract codegen, transport, identity primitives, app shell + theme, node registry, Bonjour browse | desktop | none (in progress) | S1 |
+| S1 | Device listener, TLS, `devices` migration, Device session mode, pairing ops/CLI/ws, web Devices UI | server + web | none (in progress) | D1 |
 | D2 | Pairing client + node onboarding UX, reconnect, revocation handling | desktop | S1 protocol frozen | S4 |
 | S4 | Contract coverage for Desktop's commands; CLI `effect` metadata | server | none | S1, D2 |
 | D3 | Admin features per area (health, vaults, access, shares, conflicts, cost, gateway) | desktop | S4 per area | D4–D6 |
 | D4 | Files browser + transfers over the device HTTP lanes | desktop + server | S1 lanes | D3 |
-| S2 + D5 | Key status/export/confirm; 1Password helper and backup UI | both | S1, [D5-D7] | D3 |
+| S2 + D5 | Key status/export/confirm; 1Password helper and backup UI | both | S1 | D3 |
+| S6 | `vh vault keys import`: restoring a vault's key from a backup (needed before full recovery support is claimed) | server | S2 | D3–D6 |
 | S3 + D6 | MCP catalog, `vh mcp`, `/mcp`, `vh skill install`; Desktop MCP bridge | both | S1 (remote), S4 (effect) | D3 |
-| D7 | Release: signing, notarization, Homebrew cask `vaulthalla-desktop`, updates | desktop + tap | [D8] | any |
+| D7 | Release: signed, notarized DMG, Sparkle updates, optional Homebrew cask `vaulthalla-desktop` | desktop + tap | Developer ID | any |
 
 Each workstream is a self-contained brief for a subagent with disjoint files. Server workstreams go through
 `/verify` and their parity tests. Desktop workstreams prove themselves with `swift test` and `xcodebuild`, plus the
 Xcode MCP (`xcrun mcpbridge`) for previews and UI checks once it is enabled.
 
-## 8. Decisions for the maintainer
+## 8. Decisions (approved 2026-10-20)
 
-- **D1** A daemon-terminated mTLS listener on a new port (36971), on all interfaces when enabled. Default on for new
-  installs, or opt-in via `vh setup devices`?
-- **D2** Pinned self-signed certificates on both sides, with no CA. A device CA is the alternative.
-- **D3** A device acts as its approving user, with full RBAC. No device-scoped permissions.
-- **D4** Key export over ws, allowed **only** on Device sessions (never browser, never MCP), plus
-  `export.confirm`-based tracking.
-- **D5** The 1Password integration is a bundled Go helper on the official SDK, which needs `disable-library-validation`
-  on the helper. Desktop ships outside the Mac App Store, because the sandbox blocks the IPC.
-- **D6** Item granularity: one item per (node, vault) with previous versions inside it (recommended), or one item per
-  key version.
-- **D7** Restore in phase 1 is verify + export file/clipboard. A daemon key import is a separate project.
-- **D8** Distribution: Developer ID + notarization needs a paid Apple Developer Program team (this Mac has only a
-  free personal team, enough for local development). Updates via Sparkle or the Homebrew cask only? License: AGPL-3.0
-  like the server? Repository visibility (created private)?
+- **D1. Opt-in remote listener.** The device listener runs by default on loopback only, so a Desktop on the same
+  machine pairs without setup. One action in the web console or CLI (`vh device remote enable`) binds it to all
+  interfaces; it then stays enabled so trusted devices keep reconnecting. No manual configuration.
+- **D2. Self-signed certificates with mutual pinning, no CA.** Generation, renewal and trust persistence are
+  automatic on both sides; the matching pairing code verifies the first handshake.
+- **D3. Devices inherit the approving user's RBAC.** Any authenticated user can pair their own devices. Permission
+  changes, deactivation and deletion propagate to live device sessions automatically (canonical identity objects,
+  `revokeSessions`).
+- **D4. Key export only through paired connections or the local CLI.** Never through the browser or MCP.
+- **D5. A bundled helper on 1Password's official Go SDK**, with desktop-app authorization and Touch ID. No Mac App
+  Store build.
+- **D6. One 1Password item per vault**, keyed by stable identifiers (node id + vault id), holding every key version
+  as versioned fields. A version still needed for restoration is never overwritten or dropped.
+- **D7. Real restoration.** Backup verification and export to a file (preferred over the clipboard) are the first
+  milestones; full recovery support is not claimed until the daemon has `vh vault keys import` (workstream S6).
+- **D8. Public AGPL-3.0 repository, direct distribution:** a signed, notarized DMG with Sparkle updates and an
+  optional Homebrew cask. Local development signing until a paid Apple Developer membership exists.
