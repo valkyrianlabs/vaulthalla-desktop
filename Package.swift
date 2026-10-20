@@ -27,6 +27,7 @@ let package = Package(
         .target(name: "VHCore", swiftSettings: strict),
         .target(name: "VHContract", dependencies: ["VHCore"], swiftSettings: strict),
         .target(name: "VHTransport", dependencies: ["VHCore", "VHContract"], swiftSettings: strict),
+        .target(name: "VHOnePassword", dependencies: ["VHCore"], swiftSettings: strict),
         .target(
             name: "VHIdentity",
             dependencies: ["VHCore", .product(name: "X509", package: "swift-certificates")],
@@ -40,6 +41,7 @@ let package = Package(
         .testTarget(name: "VHCoreTests", dependencies: ["VHCore"], swiftSettings: strict),
         .testTarget(name: "VHContractTests", dependencies: ["VHContract"], swiftSettings: strict),
         .testTarget(name: "VHTransportTests", dependencies: ["VHTransport"], swiftSettings: strict),
+        .testTarget(name: "VHOnePasswordTests", dependencies: ["VHOnePassword", "VHCore"], swiftSettings: strict),
         .testTarget(
             name: "VHIdentityTests",
             dependencies: ["VHIdentity", .product(name: "X509", package: "swift-certificates")],

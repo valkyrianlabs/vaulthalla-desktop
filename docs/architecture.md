@@ -229,11 +229,12 @@ There is no device-scoped permission system.
   off and explains.
 - `vaulthalla-1password` (Go, signed with our team ID, in `Contents/Helpers`, hardened runtime plus
   `disable-library-validation` to load 1Password's IPC dylib) speaks JSON lines on stdin/stdout. It exposes:
-  - `account.check`
+  - `account.check {account}`
   - `vault.ensure {title: "Vaulthalla"}`
-  - `items.list {tag}`, returning metadata fields only
-  - `item.upsert`
-  - `item.reveal`, for restore only
+  - `items.list {vault_id}`, returning metadata fields only
+  - `item.upsert`, returning what 1Password holds after the write (read back)
+  - `item.reveal {vault_id, item_id, versions?}`, for restore only
+  - As built: `Helpers/vaulthalla-1password/README.md` (protocol, item layout, signing) and `Sources/VHOnePassword`.
 - Key bytes cross the pipe only: never argv, environment, disk or logs. The helper is launched for a sync and exits.
 - Rejected alternatives:
   - The `op` CLI: an extra install, a second setting, and text parsing.

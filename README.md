@@ -14,7 +14,8 @@ business logic: every action is an operation the daemon authorizes.
 
 | Path | What |
 |---|---|
-| `Package.swift`, `Sources/`, `Tests/` | VaulthallaKit: `VHCore` (models, secret handling), `VHContract` (generated daemon contract), `VHTransport` (ws client, mTLS), `VHIdentity` (device keys and certificates) |
+| `Package.swift`, `Sources/`, `Tests/` | VaulthallaKit: `VHCore` (models, secret handling), `VHContract` (generated daemon contract), `VHTransport` (ws client, mTLS), `VHIdentity` (device keys and certificates), `VHOnePassword` (1Password helper client, backup status) |
+| `Helpers/vaulthalla-1password/` | the Go helper that backs vault keys up to 1Password (desktop-app authorization); `./build.sh`, see its README |
 | `App/` | the Xcode project: SwiftUI app, design system, features. Source folders are synchronized: add files on disk, no project edits |
 | `contract/` | `wsContract.json` vendored from the server (`SOURCE.json` records the version); `tools/gen-contract.py` turns it into Swift |
 | `docs/` | architecture and protocol documents |
