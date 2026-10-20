@@ -14,8 +14,6 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/signal"
-	"syscall"
 
 	"github.com/vaulthalla/desktop/helpers/vaulthalla-1password/internal/backup"
 	"github.com/vaulthalla/desktop/helpers/vaulthalla-1password/internal/opsdk"
@@ -25,8 +23,9 @@ import (
 var version = "dev"
 
 func main() {
-	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
-	defer stop()
+	// SIGTERM/SIGINT keep their default action (exit at once): the app terminates a helper that is stuck, e.g.
+	// behind a 1Password prompt nobody answered, and a cgo call into 1Password's library can't be interrupted.
+	ctx := context.Background()
 
 	args := os.Args[1:]
 	if len(args) > 0 {
