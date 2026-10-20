@@ -179,21 +179,27 @@ There is no device-scoped permission system.
 ## 5. MCP design
 
 **One catalog, two transports, one execution engine.**
-- **Catalog.** Built in the daemon (`mcp::Catalog`) from the usage book plus the `OperationSpec` catalog.
-  - Typed tools come from operations. Today there are 33, and every new op adds one. Their annotations come from
-    `effect`: `readOnlyHint`, `destructiveHint`, `idempotentHint`.
+- **Catalog.** `mcp::Catalog` in `core/usage` (the library both `vaulthalla-cli` and the daemon link), built from
+  the usage book plus the `OperationSpec` catalog. Compiled in, not fetched: `tools/list` works with the daemon down,
+  and version skew fails closed because an older daemon rejects options it doesn't know.
+  - Typed tools come from operations with a CLI binding (23 of 33 today; every new op adds one). Annotations come
+    from `effect`.
   - `vh_help {path}` browses the usage book and its examples.
-  - `vh_run {command}` runs any CLI leaf. Its annotation comes from the new per-node `effect`.
-  - Never exposed: key and secret export, `secrets update`, `setup`/`teardown`, `set-super-admin-password`, and
-    `fs get|put` (until there is a byte-safe design).
-- **Local.** `vh mcp` runs the MCP server over stdio inside `vaulthalla-cli`. It fetches the catalog over the CLI
-  socket and executes non-interactive CLI frames, so authorization is the existing peer-UID mapping.
+  - `vh_read {command}` runs read-only CLI leaves (`readOnlyHint`, so clients may auto-approve);
+    `vh_run {command}` runs any other leaf (`destructiveHint`). Every CLI leaf declares `effect: read | write |
+    destructive`, and a test enforces it.
+  - Never exposed (`mcp::exclusions()`, pinned by a test): key and secret export, `secrets update`,
+    `setup`/`teardown` (incl. `set-super-admin-password`), and `fs get|put` (until there is a byte-safe design).
+- **Local.** `vh mcp` runs the MCP server over stdio inside `vaulthalla-cli` and executes non-interactive CLI frames,
+  so authorization is the existing peer-UID mapping.
 - **Remote.** `/mcp` (Streamable HTTP) on the device listener, authenticated by the device certificate, executes
-  through `Router::executeLine(line, deviceUser)`.
-- **Confirmations.** A tool never prompts silently.
-  - A `NeedsConfirmation` refusal returns a structured result `{needs_confirmation: code, how: "re-call with
-    confirm: \"<code>\""}`. The skill tells the agent to ask the human first.
-  - Clients that support MCP elicitation get the prompt directly.
+  the same catalog through `Router::executeLine(line, deviceUser)`.
+- **Confirmations.** A tool never prompts and never passes bypass flags on its own.
+  - A refusal for want of confirmation returns `{needs_confirmation, message, how_to_confirm}`; the agent re-calls
+    with an explicit `confirm` argument, which the skill says needs the human's approval first.
+  - Any destructive leaf additionally needs `confirm.destructive`, enforced in the MCP layer whatever the command's
+    own prompt does.
+  - Clients that support MCP elicitation may get the prompt directly later.
 - **External clients and future embedded agents.** Most MCP clients can't present a client certificate. Desktop
   therefore ships a `vaulthalla-mcp` stdio bridge in `Contents/Helpers`.
   - It shares the app's Keychain access group, so it uses the device identities.
@@ -203,8 +209,10 @@ There is no device-scoped permission system.
 - **Agent skills.** `vh skill install --agent <claude|codex> [--scope user|project]` runs on the client side and
   needs no daemon.
   - It writes a `vaulthalla` skill: hand-written safety guidance plus references generated from the catalog.
-  - It registers the MCP server through the agent's own CLI when one is present (`claude mcp add …`, Codex
-    `config.toml`), and prints the command otherwise.
+  - Locations: Claude Code `~/.claude/skills/vaulthalla` (project: `.claude/skills/`); Codex
+    `~/.agents/skills/vaulthalla` (project: `.agents/skills/`).
+  - It registers the MCP server through the agent's own CLI when one is present (`claude mcp add …`,
+    `codex mcp add …`), and otherwise prints the command (or the Codex TOML stanza).
   - The guidance covers: read before you write, never bypass confirmations without the human, prefer typed tools,
     and keys are never handled by agents.
 - **Spec target.** MCP 2025-11-25, the version `modelcontextprotocol/swift-sdk` 0.12.x implements. The daemon side is
