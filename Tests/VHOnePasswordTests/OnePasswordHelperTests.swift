@@ -8,13 +8,24 @@ import VHCore
 struct OnePasswordHelperTests {
     private static func key(_ byte: UInt8, count: Int = 32) -> [UInt8] { [UInt8](repeating: byte, count: count) }
 
-    private static func version(_ n: Int, _ byte: UInt8, needed: Bool = true) -> KeyVersion {
-        KeyVersion(version: n, key: SecretBytes(key(byte)), keyCheck: "check-\(n)-\(byte)", needed: needed)
+    /// The Vaulthalla vault the tests back up: its numeric id, which the key check binds.
+    private static let vaultNumber = "42"
+
+    /// Version `n` holding `key(byte)`, with its real key check (from the helper itself).
+    private static func version(
+        _ helper: OnePasswordHelper, _ n: Int, _ byte: UInt8, needed: Bool = true
+    ) async throws -> KeyVersion {
+        let check = try await helper.testKeyCheck(key(byte), vault: vaultNumber, version: n)
+        return KeyVersion(version: n, key: SecretBytes(key(byte)), keyCheck: check, needed: needed)
+    }
+
+    private static func check(_ helper: OnePasswordHelper, _ n: Int, _ byte: UInt8) async throws -> String {
+        try await helper.testKeyCheck(key(byte), vault: vaultNumber, version: n)
     }
 
     private static func backup(_ vaultID: String, current: Int, _ versions: KeyVersion...) -> BackupUpsert {
         BackupUpsert(
-            onePasswordVaultID: vaultID, nodeID: "node-1", nodeName: "Home Lab", vaultUUID: "vault-uuid-1",
+            onePasswordVaultID: vaultID, nodeID: "node-1", nodeName: "Home Lab", vaultUUID: vaultNumber,
             vaultName: "Photos", currentVersion: current, versions: versions
         )
     }
@@ -43,32 +54,35 @@ struct OnePasswordHelperTests {
         let vault = try await helper.ensureVault()
         #expect(vault.created && vault.title == "Vaulthalla")
         #expect(try await helper.ensureVault().id == vault.id)
+        let (c1, c2) = (try await Self.check(helper, 1, 1), try await Self.check(helper, 2, 2))
 
-        let first = try await helper.upsert(Self.backup(vault.id, current: 1, Self.version(1, 1)))
-        #expect(first.created && first.written && first.currentVersion == 1 && first.keyCheck == "check-1-1")
+        let first = try await helper.upsert(Self.backup(vault.id, current: 1, try await Self.version(helper, 1, 1)))
+        #expect(first.created && first.written && first.currentVersion == 1 && first.keyCheck == c1)
 
-        let second = try await helper.upsert(Self.backup(vault.id, current: 2, Self.version(2, 2), Self.version(1, 1)))
+        let second = try await helper.upsert(Self.backup(
+            vault.id, current: 2, try await Self.version(helper, 2, 2), try await Self.version(helper, 1, 1)))
         #expect(!second.created && second.written && second.itemID == first.itemID)
         #expect(second.storedVersions == [
-            StoredKeyVersion(version: 2, keyCheck: "check-2-2", state: .current),
-            StoredKeyVersion(version: 1, keyCheck: "check-1-1", state: .needed),
+            StoredKeyVersion(version: 2, keyCheck: c2, state: .current),
+            StoredKeyVersion(version: 1, keyCheck: c1, state: .needed),
         ])
 
-        let again = try await helper.upsert(Self.backup(vault.id, current: 2, Self.version(2, 2), Self.version(1, 1)))
+        let again = try await helper.upsert(Self.backup(
+            vault.id, current: 2, try await Self.version(helper, 2, 2), try await Self.version(helper, 1, 1)))
         #expect(!again.written, "an idempotent re-upsert writes nothing")
 
         let items = try await helper.listItems(onePasswordVaultID: vault.id)
         let item = try #require(items.first)
         #expect(items.count == 1)
-        #expect(item.itemID == first.itemID && item.nodeID == "node-1" && item.vaultUUID == "vault-uuid-1")
+        #expect(item.itemID == first.itemID && item.nodeID == "node-1" && item.vaultUUID == Self.vaultNumber)
         #expect(item.title == "Vaulthalla · Photos · Home Lab" && item.currentVersion == 2 && item.issues.isEmpty)
         #expect(item.backedUpAt != nil && item.updatedAt != nil)
 
-        let daemon = DaemonKeyStatus(vaultUUID: "vault-uuid-1", version: 2, exportedVersion: 1, keyCheck: "check-2-2", neededVersions: [1])
+        let daemon = DaemonKeyStatus(vaultUUID: Self.vaultNumber, version: 2, exportedVersion: 1, keyCheck: c2, neededVersions: [1])
         #expect(BackupStatus.evaluate(daemon: daemon, item: item) == .backedUp(confirmed: false))
 
         let revealed = try await helper.reveal(onePasswordVaultID: vault.id, itemID: first.itemID)
-        #expect(revealed.nodeID == "node-1" && revealed.vaultUUID == "vault-uuid-1" && revealed.currentVersion == 2)
+        #expect(revealed.nodeID == "node-1" && revealed.vaultUUID == Self.vaultNumber && revealed.currentVersion == 2)
         #expect(revealed.versions.map(\.version) == [2, 1])
         #expect(revealed.versions[0].key.withUnsafeBytes { Array($0) } == Self.key(2))
         #expect(revealed.versions[1].key.withUnsafeBytes { Array($0) } == Self.key(1))
@@ -76,7 +90,7 @@ struct OnePasswordHelperTests {
         #expect(allNeeded)
 
         let one = try await helper.reveal(onePasswordVaultID: vault.id, itemID: first.itemID, versions: [1])
-        #expect(one.versions.count == 1 && one.versions[0].keyCheck == "check-1-1")
+        #expect(one.versions.count == 1 && one.versions[0].keyCheck == c1)
         await refusal(.notFound) { _ = try await helper.reveal(onePasswordVaultID: vault.id, itemID: first.itemID, versions: [9]) }
 
         // Diagnostics name ops, never keys.
@@ -92,9 +106,10 @@ struct OnePasswordHelperTests {
         defer { Task { await helper.close() } }
         try await helper.checkAccount("Cooper")
         let vault = try await helper.ensureVault()
-        _ = try await helper.upsert(Self.backup(vault.id, current: 1, Self.version(1, 1)))
+        _ = try await helper.upsert(Self.backup(vault.id, current: 1, try await Self.version(helper, 1, 1)))
         do {
-            _ = try await helper.upsert(Self.backup(vault.id, current: 2, Self.version(2, 2), Self.version(1, 9)))
+            _ = try await helper.upsert(Self.backup(
+                vault.id, current: 2, try await Self.version(helper, 2, 2), try await Self.version(helper, 1, 9)))
             Issue.record("conflicting version accepted")
         } catch let OnePasswordHelperError.refused(code, _, hint, _) {
             #expect(code == .versionConflict)
@@ -103,6 +118,17 @@ struct OnePasswordHelperTests {
         let revealed = try await helper.reveal(onePasswordVaultID: vault.id, itemID: try #require(try await helper.listItems(onePasswordVaultID: vault.id).first).itemID)
         #expect(revealed.versions.map(\.version) == [1])
         #expect(revealed.versions[0].key.withUnsafeBytes { Array($0) } == Self.key(1))
+    }
+
+    @Test func aKeyThatDoesNotMatchItsCheckIsRefused() async throws {
+        let helper = try FakeHelper.helper()
+        defer { Task { await helper.close() } }
+        try await helper.checkAccount("Cooper")
+        let vault = try await helper.ensureVault()
+        // key(2) under version 1's check: the helper recomputes the check and refuses before writing anything.
+        let wrong = KeyVersion(version: 1, key: SecretBytes(Self.key(2)), keyCheck: try await Self.check(helper, 1, 1), needed: true)
+        await refusal(.keyCheckMismatch) { _ = try await helper.upsert(Self.backup(vault.id, current: 1, wrong)) }
+        #expect(try await helper.listItems(onePasswordVaultID: vault.id).isEmpty)
     }
 
     @Test(arguments: [

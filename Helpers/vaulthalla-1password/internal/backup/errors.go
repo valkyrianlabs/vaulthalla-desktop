@@ -49,6 +49,8 @@ const (
 	CodeVersionConflict        = "version_conflict"
 	CodeConcurrentModification = "concurrent_modification"
 	CodeVerifyFailed           = "verify_failed"
+	// A key doesn't match its key check (a wrong or damaged key, or a check for another vault or version).
+	CodeKeyCheckMismatch = "key_check_mismatch"
 )
 
 func newError(code, message string) *Error { return &Error{Code: code, Message: message} }
@@ -68,6 +70,7 @@ var hints = map[string]string{
 	CodeRateLimited:            "1Password is rate-limiting requests. Wait a minute and try again.",
 	CodeConcurrentModification: "The item changed in 1Password while syncing. Sync again.",
 	CodeVersionConflict:        "1Password already holds a different key under this version. Nothing was changed; check the item before syncing again.",
+	CodeKeyCheckMismatch:       "The key doesn't match its key check, so it isn't the vault's key. Nothing was written.",
 }
 
 func withHint(e *Error) *Error {

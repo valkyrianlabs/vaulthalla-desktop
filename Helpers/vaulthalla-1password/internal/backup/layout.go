@@ -147,13 +147,20 @@ func parseItem(it store.Item) (parsedItem, bool) {
 		state, _ := it.Field(SectionVersions, stateField(v))
 		p.Versions[v] = storedVersion{Version: v, Value: f.Value, KeyCheck: check.Value, State: state.Value}
 	}
+	vaultNumber := isVaultNumber(p.VaultUUID)
+	if !vaultNumber {
+		p.Issues = append(p.Issues, "the vault id isn't a Vaulthalla vault number, so its key checks can't be verified")
+	}
 	for _, v := range p.sortedVersions() {
 		sv := p.Versions[v]
-		if !validBase64Key(sv.Value) {
+		switch {
+		case !validBase64Key(sv.Value):
 			p.Issues = append(p.Issues, fmt.Sprintf("%s isn't a base64 key", versionField(v)))
-		}
-		if sv.KeyCheck == "" {
+		case sv.KeyCheck == "":
 			p.Issues = append(p.Issues, fmt.Sprintf("%s has no key check", versionField(v)))
+		case vaultNumber && !storedKeyCheckMatches(sv.Value, p.VaultUUID, v, sv.KeyCheck):
+			// Recomputed from the stored key: a hand edit or damage, never trusted for a restore.
+			p.Issues = append(p.Issues, fmt.Sprintf("%s doesn't match its key check", versionField(v)))
 		}
 	}
 	if p.CurrentVersion != 0 {
@@ -227,7 +234,6 @@ func (p *UpsertParams) wipe() {
 }
 
 const (
-	maxKeyBytes   = 1024
 	maxVersions   = 1000
 	maxTextLength = 512
 )
@@ -258,6 +264,9 @@ func (p *UpsertParams) validate() *Error {
 			return e
 		}
 	}
+	if !isVaultNumber(p.VaultUUID) {
+		return newError(CodeBadRequest, "vault_uuid must be the Vaulthalla vault's numeric id (the key check binds it)")
+	}
 	if len(p.Versions) == 0 || len(p.Versions) > maxVersions {
 		return newError(CodeBadRequest, "versions must list between 1 and 1000 key versions")
 	}
@@ -270,11 +279,19 @@ func (p *UpsertParams) validate() *Error {
 			return newError(CodeBadRequest, fmt.Sprintf("version %d is listed twice", v.Version))
 		}
 		seen[v.Version] = true
-		if len(v.Key) == 0 || len(v.Key) > maxKeyBytes {
-			return newError(CodeBadRequest, fmt.Sprintf("version %d: key_b64 must hold 1 to %d bytes", v.Version, maxKeyBytes))
+		if len(v.Key) != KeyBytes {
+			return newError(CodeBadRequest, fmt.Sprintf("version %d: key_b64 must hold a %d-byte key", v.Version, KeyBytes))
 		}
 		if e := validText(fmt.Sprintf("version %d: key_check", v.Version), v.KeyCheck, true); e != nil {
 			return e
+		}
+	}
+	// Only after every version's shape is valid: a key that doesn't match its check is refused before anything is
+	// read from or written to 1Password.
+	for _, v := range p.Versions {
+		if !keyCheckMatches(v.Key, p.VaultUUID, v.Version, v.KeyCheck) {
+			return newError(CodeKeyCheckMismatch,
+				fmt.Sprintf("version %d of vault %s doesn't match its key check", v.Version, p.VaultUUID))
 		}
 	}
 	if !seen[p.CurrentVersion] {

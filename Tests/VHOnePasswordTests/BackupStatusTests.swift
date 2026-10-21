@@ -94,6 +94,103 @@ import VHOnePassword
         #expect(BackupStatus.needsBackup(.neverBackedUp).needsAttention)
         #expect(BackupStatus.mismatch(.wrongItem).needsAttention)
         #expect(BackupStatus.unknown.needsAttention)
+        #expect(BackupStatus.keyUnavailable(.init(reason: "key_missing", detail: nil, versions: [1], backup: .none)).needsAttention)
+    }
+
+    @Test func wantsSync() {
+        #expect(BackupStatus.needsBackup(.neverBackedUp).wantsSync)
+        #expect(BackupStatus.rotating(missingVersions: [4]).wantsSync)
+        #expect(!BackupStatus.rotating(missingVersions: []).wantsSync)
+        #expect(BackupStatus.backedUp(confirmed: false).wantsSync, "only the confirmation is missing")
+        #expect(!BackupStatus.backedUp(confirmed: true).wantsSync)
+        #expect(!BackupStatus.mismatch(.wrongItem).wantsSync, "never synced over")
+        #expect(!BackupStatus.keyUnavailable(.init(reason: "key_missing", detail: nil, versions: [1], backup: .complete)).wantsSync)
+        #expect(!BackupStatus.unknown.wantsSync)
+    }
+
+    // MARK: key_available: false
+
+    /// The daemon can't use the vault's key: `key_check` null for an unreadable current key, `missing_versions` for
+    /// needed versions it doesn't hold, and the reason code.
+    private static func unavailable(
+        _ version: Int, reason: String = "key_unsealable", check: String? = nil, missing: [Int] = [], needed: [Int] = [],
+        neededChecks: [Int: String] = [:], detail: String? = "The key doesn't unseal on this host."
+    ) -> DaemonKeyStatus {
+        DaemonKeyStatus(
+            vaultUUID: vault, version: version, keyCheck: check, neededVersions: needed, neededKeyChecks: neededChecks,
+            keyAvailable: false, unavailableReason: reason, unavailableDetail: detail, missingVersions: missing
+        )
+    }
+
+    struct UnavailableCase: Sendable, CustomTestStringConvertible {
+        let name: String
+        let daemon: DaemonKeyStatus
+        let item: BackupItem?
+        let expected: BackupStatus.KeyUnavailable
+        var testDescription: String { name }
+    }
+
+    static let unavailableCases: [UnavailableCase] = [
+        UnavailableCase(
+            name: "unsealable, backed up", daemon: unavailable(2, needed: [1], neededChecks: [1: "c1"]),
+            item: item(current: 2, versions: [2, 1]),
+            expected: .init(reason: "key_unsealable", detail: "The key doesn't unseal on this host.", versions: [2], backup: .complete)),
+        UnavailableCase(
+            name: "key missing, never backed up", daemon: unavailable(3, reason: "key_missing", detail: nil), item: nil,
+            expected: .init(reason: "key_missing", detail: nil, versions: [3], backup: .none)),
+        UnavailableCase(
+            name: "a needed old version missing, held", daemon: unavailable(3, reason: "version_missing", check: "c3", missing: [2], needed: [2]),
+            item: item(current: 3, versions: [3, 2]),
+            expected: .init(reason: "version_missing", detail: "The key doesn't unseal on this host.", versions: [2], backup: .complete)),
+        UnavailableCase(
+            name: "two versions gone, one held", daemon: unavailable(3, missing: [2], needed: [2]),
+            item: item(current: 2, versions: [2, 1]),
+            expected: .init(reason: "key_unsealable", detail: "The key doesn't unseal on this host.", versions: [3, 2], backup: .partial(missing: [3]))),
+        UnavailableCase(
+            name: "held, but another vault's item", daemon: unavailable(1),
+            item: item(current: 1, versions: [1], vaultUUID: "other"),
+            expected: .init(reason: "key_unsealable", detail: "The key doesn't unseal on this host.", versions: [1], backup: .none)),
+        UnavailableCase(
+            name: "held, but the helper found the item damaged", daemon: unavailable(1),
+            item: item(current: 1, versions: [1], issues: ["v1 doesn't match its key check"]),
+            expected: .init(reason: "key_unsealable", detail: "The key doesn't unseal on this host.", versions: [1], backup: .none)),
+        UnavailableCase(
+            name: "held, but the daemon knows a different check", daemon: unavailable(3, check: "c3", missing: [2], needed: [2], neededChecks: [:]),
+            item: item(current: 3, versions: [3, 2], checks: [3: "c3", 2: "c2"]),
+            expected: .init(reason: "key_unsealable", detail: "The key doesn't unseal on this host.", versions: [2], backup: .complete)),
+        UnavailableCase(
+            name: "a version whose check the daemon still knows must agree",
+            daemon: unavailable(3, reason: "version_missing", check: "c3", missing: [3], needed: [2], neededChecks: [2: "c2"]),
+            item: item(current: 3, versions: [3, 2], checks: [3: "other"]),
+            expected: .init(reason: "version_missing", detail: "The key doesn't unseal on this host.", versions: [3], backup: .none)),
+        UnavailableCase(
+            name: "an unknown reason from a newer daemon", daemon: unavailable(1, reason: "tpm_gone"),
+            item: item(current: 1, versions: [1]),
+            expected: .init(reason: "tpm_gone", detail: "The key doesn't unseal on this host.", versions: [1], backup: .complete)),
+    ]
+
+    @Test(arguments: unavailableCases)
+    func unavailableKeys(_ c: UnavailableCase) {
+        #expect(BackupStatus.evaluate(daemon: c.daemon, item: c.item) == .keyUnavailable(c.expected))
+    }
+
+    @Test func unavailableWinsOverEveryOtherState() {
+        // A rotation, a mismatching item, an unconfirmed export: the vault doesn't run, so that is what shows.
+        var d = Self.unavailable(3, check: "c3", missing: [2], needed: [2])
+        d.rotationInProgress = true
+        let status = BackupStatus.evaluate(daemon: d, item: Self.item(current: 3, versions: [3], checks: [3: "other"]))
+        guard case .keyUnavailable(let k) = status else { Issue.record("got \(status)"); return }
+        #expect(k.versions == [2] && k.backup == .none && !k.canRestore)
+        // Offline still means unknown, never "unavailable".
+        #expect(BackupStatus.evaluate(daemon: nil, item: Self.item(current: 1, versions: [1])) == .unknown)
+    }
+
+    @Test func aDifferingCheckOnANeededVersionIsAMismatch() {
+        let d = DaemonKeyStatus(vaultUUID: Self.vault, version: 3, keyCheck: "c3", neededVersions: [2],
+                                neededKeyChecks: [2: "c2"])
+        #expect(BackupStatus.evaluate(daemon: d, item: Self.item(current: 3, versions: [3, 2], checks: [2: "other"]))
+            == .mismatch(.keyCheckDiffers(version: 2)))
+        #expect(BackupStatus.evaluate(daemon: d, item: Self.item(current: 3, versions: [3, 2])) == .backedUp(confirmed: false))
     }
 
     /// Invariants over every combination of a small state space: the daemon's version, the needed versions, rotation,
@@ -143,6 +240,8 @@ import VHOnePassword
                                 #expect(!required.isSubset(of: held) || item?.currentVersion != version)
                             case .mismatch:
                                 #expect(item != nil)
+                            case .keyUnavailable:
+                                Issue.record("key unavailable while the daemon reads its keys")
                             }
                             // A differing check on the daemon's version is always a mismatch, rotating or not.
                             if let storedCheck, storedCheck != d.keyCheck {

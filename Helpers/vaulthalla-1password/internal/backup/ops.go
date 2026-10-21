@@ -364,6 +364,14 @@ func verify(stored parsedItem, p *UpsertParams) *Error {
 			return fail(versionField(v.Version) + " differs")
 		}
 	}
+	// Every stored version, including ones this request didn't carry, is checked against its key check again, so
+	// the app never confirms a backup whose item holds a key that isn't what its check says.
+	for _, n := range stored.sortedVersions() {
+		sv := stored.Versions[n]
+		if !storedKeyCheckMatches(sv.Value, p.VaultUUID, n, sv.KeyCheck) {
+			return fail(versionField(n) + " doesn't match its key check")
+		}
+	}
 	current, _ := p.incoming(p.CurrentVersion)
 	if stored.CurrentVersion != p.CurrentVersion || stored.KeyCheck != current.KeyCheck || !sameKey(stored.Credential, current.Key) {
 		return fail("current version")
@@ -476,6 +484,12 @@ func (s *Server) itemReveal(ctx context.Context, raw []byte, r *Redactor) (any, 
 			wipe(key)
 			res.wipe()
 			return nil, newError(CodeVerifyFailed, fmt.Sprintf("stored version %d isn't a base64 key", v))
+		}
+		// A restore must never hand the daemon a key that isn't what its check says (a hand edit, damage).
+		if !keyCheckMatches(key, parsed.VaultUUID, v, sv.KeyCheck) {
+			wipe(key)
+			res.wipe()
+			return nil, newError(CodeKeyCheckMismatch, fmt.Sprintf("stored version %d doesn't match its key check", v))
 		}
 		res.Versions = append(res.Versions, RevealedVersion{Version: v, KeyCheck: sv.KeyCheck, State: sv.State, Key: key})
 	}

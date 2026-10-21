@@ -72,13 +72,22 @@ request, is answered with `"id": null` and the stream continues.
 | `item.upsert` | `vault_id, node_id, node_name, vault_uuid, vault_name, current_version, versions: [{version, key_b64, key_check, needed}]` | `item_id, vault_id, created, written, current_version, key_check, stored_versions: [{version, key_check, state}], updated_at`, read back from 1Password after the write |
 | `item.reveal` | `vault_id, item_id, versions?` | `item_id, vault_id, node_id, vault_uuid, current_version, versions: [{version, key_check, state, key_b64}]` (restore/export only) |
 
-`vault_id` is always the 1Password vault; `vault_uuid` is the Vaulthalla vault. Params are strict: unknown fields
-are `bad_request`.
+`vault_id` is always the 1Password vault; `vault_uuid` is the Vaulthalla vault's numeric id as ASCII decimal (the
+key check binds it). Keys are 32 bytes. Params are strict: unknown fields are `bad_request`.
+
+**Key checks.** `key_check` = lowercase hex of BLAKE2b-128 (16-byte digest, `golang.org/x/crypto/blake2b`) keyed by
+the 32 key bytes, over `"vh-key-check-v1" ‖ vault_uuid ‖ UInt32BE(version)`: the daemon's `vault/KeyCheck.hpp`, byte
+for byte (vectors in `internal/backup/keycheck_test.go`). The helper computes it, never the app, so key bytes touch
+as little code as possible: `item.upsert` refuses a version whose key doesn't match its check
+(`key_check_mismatch`, nothing read or written), the read-back after a write recomputes every stored version's check
+(`verify_failed`), `items.list` reports a stored key that doesn't match its check as an issue, and `item.reveal`
+refuses to return one (`key_check_mismatch`).
 
 Error codes: `bad_request`, `unknown_op`, `line_too_long`, `no_session`, `internal`; connection
 `integration_disabled`, `app_not_running`, `app_not_installed`, `library_blocked`, `unsupported_build`, `locked`,
 `denied`, `account_not_found`, `account_switch`, `session_expired`, `rate_limited`, `onepassword_error`; items
-`not_found`, `ambiguous_vault`, `duplicate_item`, `version_conflict`, `concurrent_modification`, `verify_failed`.
+`not_found`, `ambiguous_vault`, `duplicate_item`, `version_conflict`, `concurrent_modification`, `verify_failed`,
+`key_check_mismatch`.
 Connection errors carry a user-facing `hint` (e.g. "In 1Password, open Settings → Developer and turn on “Integrate
 with other apps”.").
 

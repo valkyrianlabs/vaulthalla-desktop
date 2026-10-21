@@ -1,4 +1,5 @@
 import Foundation
+import VHCore
 @testable import VHOnePassword
 
 /// The real Go helper, built once per test run with `-tags fake` (Helpers/vaulthalla-1password/fake_on.go) and
@@ -74,6 +75,22 @@ enum FakeHelper {
 
     static func helper(timeout: Duration = .seconds(20), maxConsecutiveCrashes: Int = 3) throws -> OnePasswordHelper {
         OnePasswordHelper(configuration: try configuration(timeout: timeout, maxConsecutiveCrashes: maxConsecutiveCrashes))
+    }
+}
+
+extension OnePasswordHelper {
+    private struct Check: Decodable, Sendable { let key_check: String }
+
+    /// The key check of a test key (the fake build's `fake.key_check`): Swift never implements BLAKE2b, so tests ask
+    /// the helper, whose own vectors pin it to the daemon's.
+    func testKeyCheck(_ key: [UInt8], vault: String, version: Int) async throws -> String {
+        let secret = SecretBytes(key)
+        return try await send(op: "fake.key_check", as: Check.self) { w in
+            w.key("key_b64")
+            w.base64(secret)
+            w.field("vault_uuid", vault)
+            w.field("version", version)
+        }.key_check
     }
 }
 

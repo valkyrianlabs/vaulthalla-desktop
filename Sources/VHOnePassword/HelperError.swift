@@ -33,6 +33,8 @@ public struct HelperErrorCode: RawRepresentable, Hashable, Sendable, CustomStrin
     public static let versionConflict = Self(rawValue: "version_conflict")
     public static let concurrentModification = Self(rawValue: "concurrent_modification")
     public static let verifyFailed = Self(rawValue: "verify_failed")
+    /// A key doesn't match its key check (the helper computes checks; the app never does).
+    public static let keyCheckMismatch = Self(rawValue: "key_check_mismatch")
 
     /// Codes the user fixes in 1Password itself (turn on the integration, open or unlock the app, approve).
     public var isUserActionable: Bool {

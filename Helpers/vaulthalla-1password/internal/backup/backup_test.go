@@ -128,13 +128,27 @@ type ver struct {
 	Needed   bool   `json:"needed"`
 }
 
+// testVault is the Vaulthalla vault the tests back up (vault_uuid: the vault's numeric id, as the key check binds it).
+const testVault = "42"
+
+// kc is the key check of key(k) as version n of testVault.
+func kc(n int, k byte) string { return kcFor(testVault, n, k) }
+
+func kcFor(vault string, n int, k byte) string {
+	c, ok := KeyCheck(key(k), vault, n)
+	if !ok {
+		return "not-a-check" // inputs KeyCheck refuses (version 0): the request is invalid anyway
+	}
+	return c
+}
+
 func v(n int, k byte) ver {
-	return ver{Version: n, Key: b64(key(k)), KeyCheck: fmt.Sprintf("check-%d-%d", n, k), Needed: true}
+	return ver{Version: n, Key: b64(key(k)), KeyCheck: kc(n, k), Needed: true}
 }
 
 func upsertParams(vaultID string, current int, versions ...ver) map[string]any {
 	return map[string]any{
-		"vault_id": vaultID, "node_id": "node-1", "node_name": "Home Lab", "vault_uuid": "vault-uuid-1",
+		"vault_id": vaultID, "node_id": "node-1", "node_name": "Home Lab", "vault_uuid": testVault,
 		"vault_name": "Photos", "versions": versions, "current_version": current,
 	}
 }
@@ -232,10 +246,10 @@ func TestUpsertCreatesTheItemLayout(t *testing.T) {
 	h, vaultID := connected(t)
 	var res UpsertResult
 	h.ok("item.upsert", upsertParams(vaultID, 1, v(1, 1)), &res)
-	if !res.Created || !res.Written || res.CurrentVersion != 1 || res.KeyCheck != "check-1-1" {
+	if !res.Created || !res.Written || res.CurrentVersion != 1 || res.KeyCheck != kc(1, 1) {
 		t.Fatalf("unexpected result %+v", res)
 	}
-	if len(res.StoredVersions) != 1 || res.StoredVersions[0] != (VersionMeta{1, "check-1-1", StateCurrent}) {
+	if len(res.StoredVersions) != 1 || res.StoredVersions[0] != (VersionMeta{1, kc(1, 1), StateCurrent}) {
 		t.Fatalf("stored versions %+v", res.StoredVersions)
 	}
 
@@ -250,8 +264,8 @@ func TestUpsertCreatesTheItemLayout(t *testing.T) {
 	if cred.Type != store.FieldConcealed || cred.Value != b64(key(1)) {
 		t.Fatalf("credential %+v", cred)
 	}
-	for id, want := range map[string]string{FieldNodeID: "node-1", FieldNodeName: "Home Lab", FieldVaultUUID: "vault-uuid-1",
-		FieldVaultName: "Photos", FieldKeyVersion: "1", FieldKeyCheck: "check-1-1", FieldFormat: Format,
+	for id, want := range map[string]string{FieldNodeID: "node-1", FieldNodeName: "Home Lab", FieldVaultUUID: testVault,
+		FieldVaultName: "Photos", FieldKeyVersion: "1", FieldKeyCheck: kc(1, 1), FieldFormat: Format,
 		FieldBackedUpAt: "2026-10-20T12:00:00Z"} {
 		if got := field(t, it, SectionMeta, id); got != want {
 			t.Errorf("%s = %q, want %q", id, got, want)
@@ -261,7 +275,7 @@ func TestUpsertCreatesTheItemLayout(t *testing.T) {
 	if v1.Type != store.FieldConcealed || v1.Value != b64(key(1)) {
 		t.Fatalf("v1 %+v", v1)
 	}
-	if field(t, it, SectionVersions, "v1_check") != "check-1-1" || field(t, it, SectionVersions, "v1_state") != StateCurrent {
+	if field(t, it, SectionVersions, "v1_check") != kc(1, 1) || field(t, it, SectionVersions, "v1_state") != StateCurrent {
 		t.Fatal("v1 check/state")
 	}
 	if strings.Join(it.Tags, ",") != "vaulthalla,vaulthalla/home-lab" {
@@ -284,10 +298,10 @@ func TestUpsertAddsANewVersionAndMovesTheCredential(t *testing.T) {
 	var first, second UpsertResult
 	h.ok("item.upsert", upsertParams(vaultID, 1, v(1, 1)), &first)
 	h.ok("item.upsert", upsertParams(vaultID, 2, v(2, 2), v(1, 1)), &second)
-	if second.Created || !second.Written || second.ItemID != first.ItemID || second.CurrentVersion != 2 || second.KeyCheck != "check-2-2" {
+	if second.Created || !second.Written || second.ItemID != first.ItemID || second.CurrentVersion != 2 || second.KeyCheck != kc(2, 2) {
 		t.Fatalf("second %+v", second)
 	}
-	want := []VersionMeta{{2, "check-2-2", StateCurrent}, {1, "check-1-1", StateNeeded}}
+	want := []VersionMeta{{2, kc(2, 2), StateCurrent}, {1, kc(1, 1), StateNeeded}}
 	if fmt.Sprint(second.StoredVersions) != fmt.Sprint(want) {
 		t.Fatalf("stored %+v", second.StoredVersions)
 	}
@@ -319,10 +333,10 @@ func TestUpsertRefusesToOverwriteAStoredVersion(t *testing.T) {
 	if e.Hint == "" {
 		t.Fatal("conflict has no hint")
 	}
-	// Same key, different key check: also refused.
+	// Same key, a key check that doesn't match it: refused before 1Password is touched.
 	bad := v(1, 1)
-	bad.KeyCheck = "other"
-	h.fails("item.upsert", upsertParams(vaultID, 1, bad), CodeVersionConflict)
+	bad.KeyCheck = kc(1, 2)
+	h.fails("item.upsert", upsertParams(vaultID, 1, bad), CodeKeyCheckMismatch)
 
 	if h.mem.Writes != writes {
 		t.Fatal("a refused upsert wrote to 1Password")
@@ -359,7 +373,7 @@ func TestUpsertKeepsVersionsTheDaemonNoLongerLists(t *testing.T) {
 	var res UpsertResult
 	h.ok("item.upsert", upsertParams(vaultID, 2, v(2, 2), v(1, 1)), &res)
 	h.ok("item.upsert", upsertParams(vaultID, 3, v(3, 3)), &res) // the daemon finished re-encrypting: only v3
-	want := []VersionMeta{{3, "check-3-3", StateCurrent}, {2, "check-2-2", StateRetired}, {1, "check-1-1", StateRetired}}
+	want := []VersionMeta{{3, kc(3, 3), StateCurrent}, {2, kc(2, 2), StateRetired}, {1, kc(1, 1), StateRetired}}
 	if fmt.Sprint(res.StoredVersions) != fmt.Sprint(want) {
 		t.Fatalf("stored %+v", res.StoredVersions)
 	}
@@ -474,14 +488,21 @@ func TestUpsertVerifiesTheReadBack(t *testing.T) {
 func TestUpsertValidatesParams(t *testing.T) {
 	h, vaultID := connected(t)
 	cases := map[string]map[string]any{
-		"no versions":           upsertParams(vaultID, 1),
-		"current not listed":    upsertParams(vaultID, 2, v(1, 1)),
-		"duplicate version":     upsertParams(vaultID, 1, v(1, 1), v(1, 1)),
-		"zero version":          upsertParams(vaultID, 0, v(0, 1)),
-		"empty key":             upsertParams(vaultID, 1, ver{Version: 1, Key: "", KeyCheck: "c"}),
-		"bad base64":            upsertParams(vaultID, 1, ver{Version: 1, Key: "not base64!", KeyCheck: "c"}),
-		"no key check":          upsertParams(vaultID, 1, ver{Version: 1, Key: b64(key(1))}),
-		"oversize key":          upsertParams(vaultID, 1, ver{Version: 1, Key: b64(bytes.Repeat([]byte{1}, 2000)), KeyCheck: "c"}),
+		"no versions":        upsertParams(vaultID, 1),
+		"current not listed": upsertParams(vaultID, 2, v(1, 1)),
+		"duplicate version":  upsertParams(vaultID, 1, v(1, 1), v(1, 1)),
+		"zero version":       upsertParams(vaultID, 0, v(0, 1)),
+		"empty key":          upsertParams(vaultID, 1, ver{Version: 1, Key: "", KeyCheck: "c"}),
+		"bad base64":         upsertParams(vaultID, 1, ver{Version: 1, Key: "not base64!", KeyCheck: "c"}),
+		"no key check":       upsertParams(vaultID, 1, ver{Version: 1, Key: b64(key(1))}),
+		"oversize key":       upsertParams(vaultID, 1, ver{Version: 1, Key: b64(bytes.Repeat([]byte{1}, 2000)), KeyCheck: "c"}),
+		"short key":          upsertParams(vaultID, 1, ver{Version: 1, Key: b64(bytes.Repeat([]byte{1}, 16)), KeyCheck: "c"}),
+		"vault id not a number": func() map[string]any {
+			p := upsertParams(vaultID, 1, v(1, 1))
+			p["vault_uuid"] = "vault-uuid-1"
+			return p
+		}(),
+		"vault id leading zero": func() map[string]any { p := upsertParams(vaultID, 1, v(1, 1)); p["vault_uuid"] = "042"; return p }(),
 		"control chars in name": func() map[string]any { p := upsertParams(vaultID, 1, v(1, 1)); p["node_name"] = "a\nb"; return p }(),
 		"missing node id":       func() map[string]any { p := upsertParams(vaultID, 1, v(1, 1)); delete(p, "node_id"); return p }(),
 		"unknown field":         func() map[string]any { p := upsertParams(vaultID, 1, v(1, 1)); p["title"] = "x"; return p }(),
@@ -509,8 +530,10 @@ func TestUpsertValidatesParams(t *testing.T) {
 func TestItemsListReturnsMetadataNeverSecrets(t *testing.T) {
 	h, vaultID := connected(t)
 	h.ok("item.upsert", upsertParams(vaultID, 2, v(2, 2), v(1, 1)), nil)
-	p := upsertParams(vaultID, 1, v(1, 7))
-	p["node_id"], p["vault_uuid"] = "node-2", "vault-uuid-2"
+	other := v(1, 7)
+	other.KeyCheck = kcFor("43", 1, 7)
+	p := upsertParams(vaultID, 1, other)
+	p["node_id"], p["vault_uuid"] = "node-2", "43"
 	h.ok("item.upsert", p, nil)
 	h.mem.Put(store.Item{VaultID: vaultID, Category: store.CategoryAPICredentials, Title: "unrelated",
 		Fields: []store.Field{{ID: "credential", Type: store.FieldConcealed, Value: b64(key(5))}}})
@@ -529,9 +552,9 @@ func TestItemsListReturnsMetadataNeverSecrets(t *testing.T) {
 		t.Fatalf("want 2 backup items, got %d", len(res.Items))
 	}
 	m := res.Items[0]
-	if m.NodeID != "node-1" || m.VaultUUID != "vault-uuid-1" || m.CurrentVersion != 2 || m.KeyCheck != "check-2-2" ||
+	if m.NodeID != "node-1" || m.VaultUUID != testVault || m.CurrentVersion != 2 || m.KeyCheck != kc(2, 2) ||
 		m.NodeName != "Home Lab" || m.VaultName != "Photos" || m.UpdatedAt == "" || m.BackedUpAt == "" || len(m.Issues) != 0 ||
-		fmt.Sprint(m.Versions) != fmt.Sprint([]VersionMeta{{2, "check-2-2", StateCurrent}, {1, "check-1-1", StateNeeded}}) {
+		fmt.Sprint(m.Versions) != fmt.Sprint([]VersionMeta{{2, kc(2, 2), StateCurrent}, {1, kc(1, 1), StateNeeded}}) {
 		t.Fatalf("meta %+v", m)
 	}
 }
@@ -578,8 +601,8 @@ func TestRevealReturnsRequestedVersions(t *testing.T) {
 	}
 	var all revealed
 	h.ok("item.reveal", map[string]any{"vault_id": vaultID, "item_id": up.ItemID}, &all)
-	if all.ItemID != up.ItemID || all.NodeID != "node-1" || all.VaultUUID != "vault-uuid-1" || all.CurrentVersion != 2 || len(all.Versions) != 2 ||
-		all.Versions[0].Version != 2 || !bytes.Equal(all.Versions[0].Key, key(2)) || all.Versions[0].KeyCheck != "check-2-2" ||
+	if all.ItemID != up.ItemID || all.NodeID != "node-1" || all.VaultUUID != testVault || all.CurrentVersion != 2 || len(all.Versions) != 2 ||
+		all.Versions[0].Version != 2 || !bytes.Equal(all.Versions[0].Key, key(2)) || all.Versions[0].KeyCheck != kc(2, 2) ||
 		all.Versions[1].Version != 1 || !bytes.Equal(all.Versions[1].Key, key(1)) {
 		t.Fatalf("reveal all: %+v", all)
 	}

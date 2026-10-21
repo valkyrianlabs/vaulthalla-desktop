@@ -20,6 +20,8 @@ import (
 //	fake.sleep {ms}    answers after ms milliseconds (timeouts)
 //	fake.stats {}      {"writes": n}: creates + puts so far
 //	fake.noise {}      writes a junk line before answering (the client must skip lines it can't route)
+//	fake.key_check {key_b64, vault_uuid, version}
+//	                   {"key_check": "..."}: the check of a test key, so the Swift tests needn't implement BLAKE2b
 //
 // Accounts named "fake:<scenario>" fail account.check like the real app would (see store.ScenarioMessages).
 func fakeSetup(s *backup.Server) bool {
@@ -53,6 +55,21 @@ func fakeSetup(s *backup.Server) bool {
 		},
 		"fake.stats": func(context.Context, []byte, *backup.Redactor) (any, error) {
 			return map[string]int{"writes": mem.Writes}, nil
+		},
+		"fake.key_check": func(_ context.Context, raw []byte, _ *backup.Redactor) (any, error) {
+			var p struct {
+				Key       []byte `json:"key_b64"`
+				VaultUUID string `json:"vault_uuid"`
+				Version   int    `json:"version"`
+			}
+			if err := json.Unmarshal(raw, &p); err != nil {
+				return nil, &backup.Error{Code: backup.CodeBadRequest, Message: "invalid params"}
+			}
+			check, ok := backup.KeyCheck(p.Key, p.VaultUUID, p.Version)
+			if !ok {
+				return nil, &backup.Error{Code: backup.CodeBadRequest, Message: "not a 32-byte key, vault number and version"}
+			}
+			return map[string]string{"key_check": check}, nil
 		},
 		"fake.noise": func(context.Context, []byte, *backup.Redactor) (any, error) {
 			os.Stdout.WriteString("{\"id\":\"noise-" + strconv.Itoa(os.Getpid()) + "\",\"ok\":true,\"result\":{}}\n")
