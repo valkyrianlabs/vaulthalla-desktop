@@ -1,7 +1,7 @@
 public import Foundation
-public import VHContract
+import VHContract
 public import VHCore
-import VHNodes
+public import VHNodes
 public import VHOnePassword
 import VHTransport
 import Darwin
@@ -100,17 +100,20 @@ public struct KeyRestore: Sendable {
     // MARK: 3. Import to the node
 
     public enum ImportOutcome: Sendable, Equatable {
-        /// The daemon answered. `keyAvailable` in it says whether the vault runs again.
-        case imported(WsModel.VaultKeyImportResult)
+        /// The daemon answered. `keyAvailable` in it says whether the vault runs again; versions it couldn't verify as
+        /// the vault's own come back `needs_salvage` (``VaultKeyImportReport/needsSalvage``).
+        case imported(VaultKeyImportReport)
         /// The daemon would write and wants the vault's name typed; `message` says what it would write.
         case needsConfirmation(message: String)
         case failed(String)
     }
 
-    /// Sends the stored versions the node needs (`vault.keys.import`). Without `confirmName` the daemon only plans;
-    /// pass the name the person typed to write.
+    /// Sends the stored versions the node needs (`vault.keys.import`), with their attestations. Without
+    /// `confirmName` the daemon only plans; pass the name the person typed to write. `recover` restores only versions
+    /// whose attestation verifies; `salvage` is the separate, explicitly confirmed fallback for the rest.
     public func importToNode(
-        _ row: VaultKeyRow, on node: KeyBackupNode, in vault: OnePasswordVault, confirmName: String?, exportedBy: String
+        _ row: VaultKeyRow, on node: KeyBackupNode, in vault: OnePasswordVault, mode: VaultKeyImportMode = .recover,
+        confirmName: String?, exportedBy: String
     ) async -> ImportOutcome {
         guard let item = row.item else { return .failed(RestoreError.noBackup.description) }
         // Only what the node needs: its required versions (and what it reports missing) that 1Password holds.
@@ -128,10 +131,10 @@ public struct KeyRestore: Sendable {
             return .failed(KeyBackupWords.onePassword(error))
         }
         do {
-            let result = try await VaultKeyCommands(node.transport).importKeys(set, confirmName: confirmName,
-                                                                             exportedBy: exportedBy)
+            let result = try await VaultKeyCommands(node.transport).importKeys(
+                set, mode: mode, confirmName: confirmName, exportedBy: exportedBy)
             return .imported(result)
-        } catch .needsConfirmation(let code, let message) where code == "vault_key_import" {
+        } catch .needsConfirmation(let code, let message) where code == mode.confirmationCode {
             return .needsConfirmation(message: message)
         } catch {
             return .failed(Self.words(error, node: row.nodeName))
@@ -160,7 +163,8 @@ public struct KeyRestore: Sendable {
             vaultID: row.vaultID, vaultName: row.vaultName, currentVersion: revealed.currentVersion,
             versions: revealed.versions.map {
                 .init(version: $0.version, key: $0.key, keyCheck: $0.keyCheck,
-                      reason: $0.version == revealed.currentVersion ? "current" : nil)
+                      reason: $0.version == revealed.currentVersion ? "current" : nil,
+                      nodeID: $0.nodeID, attestation: $0.attestation)
             })
     }
 

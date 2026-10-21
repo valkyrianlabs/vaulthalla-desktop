@@ -53,6 +53,13 @@ func versionField(v int) string { return "v" + strconv.Itoa(v) }
 func checkField(v int) string   { return versionField(v) + "_check" }
 func stateField(v int) string   { return versionField(v) + "_state" }
 
+// Attestation fields (non-secret metadata next to each version's key): the node that attested the version, and its
+// Ed25519 attestation (key id + signature over "vh-key-attest-v1" ‖ node_id ‖ vault_id ‖ version ‖ key_check). The
+// helper never verifies them (the daemon does on import); it stores and returns them byte for byte.
+func nodeField(v int) string      { return versionField(v) + "_node_id" }
+func attestKeyField(v int) string { return versionField(v) + "_attest_key_id" }
+func attestSigField(v int) string { return versionField(v) + "_attest_sig" }
+
 func itemTitle(vaultName, nodeName string) string {
 	return "Vaulthalla · " + vaultName + " · " + nodeName
 }
@@ -92,6 +99,22 @@ type storedVersion struct {
 	Value    string // base64 key; never leaves the helper except through item.reveal
 	KeyCheck string
 	State    string
+	// Attestation metadata; empty when the version was backed up without one ("best effort" recovery).
+	NodeID      string
+	Attestation *Attestation
+}
+
+// Attestation is a node's signature over a key version's identity (key check). Opaque to the helper.
+type Attestation struct {
+	KeyID     string `json:"key_id"`
+	Signature string `json:"signature"`
+}
+
+func (a *Attestation) equal(b *Attestation) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
 }
 
 // parsedItem is an item read as a Vaulthalla backup.
@@ -145,7 +168,14 @@ func parseItem(it store.Item) (parsedItem, bool) {
 		v, _ := strconv.Atoi(m[1])
 		check, _ := it.Field(SectionVersions, checkField(v))
 		state, _ := it.Field(SectionVersions, stateField(v))
-		p.Versions[v] = storedVersion{Version: v, Value: f.Value, KeyCheck: check.Value, State: state.Value}
+		node, _ := it.Field(SectionVersions, nodeField(v))
+		sv := storedVersion{Version: v, Value: f.Value, KeyCheck: check.Value, State: state.Value, NodeID: node.Value}
+		keyID, _ := it.Field(SectionVersions, attestKeyField(v))
+		sig, _ := it.Field(SectionVersions, attestSigField(v))
+		if keyID.Value != "" || sig.Value != "" {
+			sv.Attestation = &Attestation{KeyID: keyID.Value, Signature: sig.Value}
+		}
+		p.Versions[v] = sv
 	}
 	vaultNumber := isVaultNumber(p.VaultUUID)
 	if !vaultNumber {
@@ -215,6 +245,9 @@ type IncomingVersion struct {
 	Key      []byte `json:"key_b64"`
 	KeyCheck string `json:"key_check"`
 	Needed   bool   `json:"needed"`
+	// Optional: the attesting node and its attestation, stored as given.
+	NodeID      string       `json:"node_id,omitempty"`
+	Attestation *Attestation `json:"attestation,omitempty"`
 }
 
 type UpsertParams struct {
@@ -284,6 +317,16 @@ func (p *UpsertParams) validate() *Error {
 		}
 		if e := validText(fmt.Sprintf("version %d: key_check", v.Version), v.KeyCheck, true); e != nil {
 			return e
+		}
+		if e := validText(fmt.Sprintf("version %d: node_id", v.Version), v.NodeID, false); e != nil {
+			return e
+		}
+		if a := v.Attestation; a != nil {
+			for _, c := range []struct{ name, value string }{{"attestation.key_id", a.KeyID}, {"attestation.signature", a.Signature}} {
+				if e := validText(fmt.Sprintf("version %d: %s", v.Version, c.name), c.value, true); e != nil {
+					return e
+				}
+			}
 		}
 	}
 	// Only after every version's shape is valid: a key that doesn't match its check is refused before anything is
@@ -413,12 +456,29 @@ func merge(base *parsedItem, p *UpsertParams, now time.Time, r *Redactor) (store
 		case listed && in.Needed:
 			state = StateNeeded
 		}
+		// Attestation metadata: the node's latest (a re-backup refreshes it, e.g. one taken before the node attested
+		// keys); otherwise what is stored. The key and its check above never change.
+		node, attestation := sv.NodeID, sv.Attestation
+		if listed && in.NodeID != "" {
+			node = in.NodeID
+		}
+		if listed && in.Attestation != nil {
+			attestation = in.Attestation
+		}
 		name := versionField(v)
 		section = append(section,
 			store.Field{ID: name, Title: name, SectionID: SectionVersions, Type: store.FieldConcealed, Value: value},
 			store.Field{ID: checkField(v), Title: name + " key check", SectionID: SectionVersions, Type: store.FieldText, Value: check},
 			store.Field{ID: stateField(v), Title: name + " state", SectionID: SectionVersions, Type: store.FieldText, Value: state},
 		)
+		if node != "" {
+			section = append(section, store.Field{ID: nodeField(v), Title: name + " node", SectionID: SectionVersions, Type: store.FieldText, Value: node})
+		}
+		if attestation != nil {
+			section = append(section,
+				store.Field{ID: attestKeyField(v), Title: name + " attestation key", SectionID: SectionVersions, Type: store.FieldText, Value: attestation.KeyID},
+				store.Field{ID: attestSigField(v), Title: name + " attestation", SectionID: SectionVersions, Type: store.FieldText, Value: attestation.Signature})
+		}
 	}
 	it.Fields = append(append(others, section...), foreign...)
 
@@ -434,7 +494,11 @@ func isVersionFieldID(id string) bool {
 	if !versionFieldID.MatchString(head) {
 		return false
 	}
-	return tail == "" || tail == "check" || tail == "state"
+	switch tail {
+	case "", "check", "state", "node_id", "attest_key_id", "attest_sig":
+		return true
+	}
+	return false
 }
 
 func mergeTags(tags []string, nodeName string) []string {

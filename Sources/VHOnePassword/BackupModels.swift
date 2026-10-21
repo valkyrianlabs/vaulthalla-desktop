@@ -38,7 +38,7 @@ public struct OnePasswordVault: Sendable, Equatable, Decodable {
     }
 }
 
-/// One key version as 1Password stores it: number, key check and state, never the key.
+/// One key version as 1Password stores it: number, key check, state and attestation, never the key.
 public struct StoredKeyVersion: Sendable, Equatable, Hashable, Decodable {
     public enum State: Sendable, Equatable, Hashable {
         case current, needed, retired
@@ -57,16 +57,22 @@ public struct StoredKeyVersion: Sendable, Equatable, Hashable, Decodable {
     public let version: Int
     public let keyCheck: String
     public let state: State
+    /// The node that attested the version; nil for a version backed up without an attestation.
+    public let nodeID: String?
+    public let attestation: KeyAttestation?
 
-    public init(version: Int, keyCheck: String, state: State) {
+    public init(version: Int, keyCheck: String, state: State, nodeID: String? = nil, attestation: KeyAttestation? = nil) {
         self.version = version
         self.keyCheck = keyCheck
         self.state = state
+        self.nodeID = nodeID
+        self.attestation = attestation
     }
 
     enum CodingKeys: String, CodingKey {
-        case version, state
+        case version, state, attestation
         case keyCheck = "key_check"
+        case nodeID = "node_id"
     }
 
     public init(from decoder: any Decoder) throws {
@@ -74,7 +80,11 @@ public struct StoredKeyVersion: Sendable, Equatable, Hashable, Decodable {
         version = try c.decode(Int.self, forKey: .version)
         keyCheck = try c.decode(String.self, forKey: .keyCheck)
         state = State(try c.decodeIfPresent(String.self, forKey: .state))
+        nodeID = try c.decodeIfPresent(String.self, forKey: .nodeID)
+        attestation = try c.decodeIfPresent(KeyAttestation.self, forKey: .attestation)
     }
+
+    public var isAttested: Bool { attestation != nil }
 }
 
 /// What 1Password holds for one Vaulthalla vault: identifiers and key checks only. Desktop stores just `itemID`.
@@ -169,12 +179,20 @@ public struct KeyVersion: Sendable {
     public let keyCheck: String
     /// The daemon still needs this version to decrypt files.
     public let needed: Bool
+    /// The attesting node and its attestation, passed through untouched (absent: not attested).
+    public let nodeID: String?
+    public let attestation: KeyAttestation?
 
-    public init(version: Int, key: SecretBytes, keyCheck: String, needed: Bool) {
+    public init(
+        version: Int, key: SecretBytes, keyCheck: String, needed: Bool, nodeID: String? = nil,
+        attestation: KeyAttestation? = nil
+    ) {
         self.version = version
         self.key = key
         self.keyCheck = keyCheck
         self.needed = needed
+        self.nodeID = nodeID
+        self.attestation = attestation
     }
 }
 
@@ -283,10 +301,13 @@ struct WireReveal: Decodable {
         let version: Int
         let keyCheck: String
         let state: String?
+        let nodeID: String?
+        let attestation: KeyAttestation?
 
         enum CodingKeys: String, CodingKey {
-            case version, state
+            case version, state, attestation
             case keyCheck = "key_check"
+            case nodeID = "node_id"
         }
     }
 

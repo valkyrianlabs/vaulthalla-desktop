@@ -31,6 +31,9 @@ type VersionMeta struct {
 	Version  int    `json:"version"`
 	KeyCheck string `json:"key_check"`
 	State    string `json:"state,omitempty"`
+	// Non-secret attestation metadata, when the version has it.
+	NodeID      string       `json:"node_id,omitempty"`
+	Attestation *Attestation `json:"attestation,omitempty"`
 }
 
 // ItemMeta is what items.list says about an item: identifiers, versions and key checks. No key values.
@@ -79,7 +82,8 @@ func (p parsedItem) meta() ItemMeta {
 		Issues: append([]string{}, p.Issues...), Versions: []VersionMeta{}}
 	for _, v := range p.sortedVersions() {
 		sv := p.Versions[v]
-		m.Versions = append(m.Versions, VersionMeta{Version: v, KeyCheck: sv.KeyCheck, State: sv.State})
+		m.Versions = append(m.Versions, VersionMeta{Version: v, KeyCheck: sv.KeyCheck, State: sv.State,
+			NodeID: sv.NodeID, Attestation: sv.Attestation})
 	}
 	return m
 }
@@ -363,6 +367,9 @@ func verify(stored parsedItem, p *UpsertParams) *Error {
 		if !sameKey(sv.Value, v.Key) || sv.KeyCheck != v.KeyCheck {
 			return fail(versionField(v.Version) + " differs")
 		}
+		if (v.Attestation != nil && !sv.Attestation.equal(v.Attestation)) || (v.NodeID != "" && sv.NodeID != v.NodeID) {
+			return fail(versionField(v.Version) + "'s attestation differs")
+		}
 	}
 	// Every stored version, including ones this request didn't carry, is checked against its key check again, so
 	// the app never confirms a backup whose item holds a key that isn't what its check says.
@@ -398,10 +405,12 @@ type RevealResult struct {
 }
 
 type RevealedVersion struct {
-	Version  int
-	KeyCheck string
-	State    string
-	Key      []byte
+	Version     int
+	KeyCheck    string
+	State       string
+	NodeID      string
+	Attestation *Attestation
+	Key         []byte
 }
 
 func (rr *RevealResult) appendJSON(buf *secureBuf) error {
@@ -428,6 +437,18 @@ func (rr *RevealResult) appendJSON(buf *secureBuf) error {
 		buf.writeString(`,"state":`)
 		if err := buf.writeJSON(v.State); err != nil {
 			return err
+		}
+		if v.NodeID != "" {
+			buf.writeString(`,"node_id":`)
+			if err := buf.writeJSON(v.NodeID); err != nil {
+				return err
+			}
+		}
+		if v.Attestation != nil {
+			buf.writeString(`,"attestation":`)
+			if err := buf.writeJSON(v.Attestation); err != nil {
+				return err
+			}
 		}
 		buf.writeString(`,"key_b64":`)
 		buf.writeBase64(v.Key)
@@ -491,7 +512,8 @@ func (s *Server) itemReveal(ctx context.Context, raw []byte, r *Redactor) (any, 
 			res.wipe()
 			return nil, newError(CodeKeyCheckMismatch, fmt.Sprintf("stored version %d doesn't match its key check", v))
 		}
-		res.Versions = append(res.Versions, RevealedVersion{Version: v, KeyCheck: sv.KeyCheck, State: sv.State, Key: key})
+		res.Versions = append(res.Versions, RevealedVersion{Version: v, KeyCheck: sv.KeyCheck, State: sv.State,
+			NodeID: sv.NodeID, Attestation: sv.Attestation, Key: key})
 	}
 	return res, nil
 }

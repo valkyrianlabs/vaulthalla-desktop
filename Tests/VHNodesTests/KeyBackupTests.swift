@@ -28,14 +28,27 @@ final class DaemonKeys: Sendable {
         var confirmConflict = false
         /// Exports `current` under another version's check (a corrupt export the helper must refuse).
         var corruptExport = false
+        /// The node attests the keys it exports (`node_id` + `attestation` per version).
+        var attests = false
+        /// Recover-mode imports restore only versions whose attestation verifies (a daemon with attestations).
+        var requiresAttestation = false
+    }
+
+    static let attestingNode = "srv-node-a"
+
+    /// The mock's attestation of a version: "valid" only as the mock itself signs it.
+    static func attestation(_ vault: Int64, _ version: Int) -> JSONValue {
+        ["key_id": "ed25519:node-a", "signature": .string("sig-\(vault)-\(version)")]
     }
 
     let vaults: Mutex<[Int64: Vault]>
     /// The real key of every (vault, version), and its check.
     let truth: [Int64: [Int: [UInt8]]]
     let checks: [String: String]
-    /// What `vault.keys.import` received, per vault and version.
+    /// What `vault.keys.import` received and wrote, per vault and version.
     let imported = Mutex<[Int64: [Int: [UInt8]]]>([:])
+    /// The attestations the last import carried, per vault and version.
+    let receivedAttestations = Mutex<[Int64: [Int: JSONValue]]>([:])
 
     static func key(_ vault: Int64, _ version: Int) -> [UInt8] {
         [UInt8](repeating: UInt8(truncatingIfNeeded: Int(vault) * 16 + version), count: 32)
@@ -127,12 +140,19 @@ final class DaemonKeys: Sendable {
             "key": .string(Data(truth[v.id]![v.current]!).base64EncodedString()), "key_check": .string(currentCheck),
             "key_info": info,
         ]
+        if v.attests {
+            object["node_id"] = .string(Self.attestingNode)
+            object["attestation"] = Self.attestation(v.id, v.current)
+        }
         if !v.needed.isEmpty {
             object["historical_keys"] = .array(v.needed.sorted().map { version in
-                ["key_version": .integer(Int64(version)),
-                 "key": .string(Data(truth[v.id]![version]!).base64EncodedString()),
-                 "key_check": .string(check(v.id, version)), "reason": "rotation",
-                 "created_at": "2026-09-01 10:00:00", "retired_at": .null]
+                var entry: JSONObject = [
+                    "key_version": .integer(Int64(version)),
+                    "key": .string(Data(truth[v.id]![version]!).base64EncodedString()),
+                    "key_check": .string(check(v.id, version)), "reason": "rotation",
+                    "created_at": "2026-09-01 10:00:00", "retired_at": .null]
+                if v.attests { entry["attestation"] = Self.attestation(v.id, version) }
+                return .object(entry)
             })
         }
         return .object(object)
@@ -146,7 +166,9 @@ final class DaemonKeys: Sendable {
         }
         var received: [Int: [UInt8]] = [Int(current): Array(head)]
         var sentChecks: [Int: String] = [:]
+        var attestations: [Int: JSONValue] = [:]
         sentChecks[Int(current)] = keys["key_check"]?.stringValue
+        attestations[Int(current)] = keys["attestation"]
         for entry in keys["historical_keys"]?.arrayValue ?? [] {
             guard let version = entry["key_version"]?.integerValue,
                   let bytes = entry["key"]?.stringValue.flatMap({ Data(base64Encoded: $0) }) else {
@@ -154,27 +176,51 @@ final class DaemonKeys: Sendable {
             }
             received[Int(version)] = Array(bytes)
             sentChecks[Int(version)] = entry["key_check"]?.stringValue
+            attestations[Int(version)] = entry["attestation"]
         }
+        receivedAttestations.withLock { $0[id] = attestations }
         for (version, bytes) in received {
             guard bytes == truth[id]?[version], sentChecks[version] == check(id, version) else {
                 return .refuse("key version \(version) doesn't authenticate this vault's files", code: "invalid")
             }
         }
-        let toWrite = received.keys.filter { !vault.readable.contains($0) }.sorted(by: >)
+        let salvage = payload["mode"]?.stringValue == "salvage"
+        let unreadable = received.keys.filter { !vault.readable.contains($0) }.sorted(by: >)
+        if salvage {
+            guard payload["confirm_name"]?.stringValue == vault.name else {
+                return .refuse("Salvage re-encrypts what versions \(unreadable.map(String.init).joined(separator: ", ")) still decrypt under a new key. Type the vault's name to confirm.",
+                               code: "vault_key_salvage")
+            }
+            update(id) { $0.readable = Set([$0.current + 1]); $0.current += 1; $0.needed = [] }
+            return .ok(["vault_id": .integer(id), "vault_name": .string(vault.name), "deleted": false, "written": true,
+                        "key_available": true, "note": .null,
+                        "versions": .array(unreadable.sorted().map { ["version": .integer(Int64($0)), "outcome": "salvaged",
+                                                                      "detail": "re-encrypted", "verified_files": 0, "failed_files": 0] }),
+                        "salvage": ["new_key_version": .integer(Int64(vault.current + 1)), "recovered_files": 41,
+                                    "unrecoverable_count": 1, "unrecoverable_files": [["path": "/Photos/2019/broken.heic"]]]])
+        }
+        // Recover: with attestations required, a version is restored only when its attestation verifies.
+        let verified = Set(unreadable.filter { !vault.requiresAttestation || attestations[$0] == Self.attestation(id, $0) })
+        let toWrite = unreadable.filter { verified.contains($0) }
         if !toWrite.isEmpty, payload["confirm_name"]?.stringValue != vault.name {
             return .refuse("This writes key versions \(toWrite.map(String.init).joined(separator: ", ")) of vault '\(vault.name)'. Type the vault's name to confirm.",
                            code: "vault_key_import")
         }
-        imported.withLock { $0[id] = received }
-        update(id) { $0.readable.formUnion(received.keys) }
+        imported.withLock { $0[id] = received.filter { toWrite.contains($0.key) || vault.readable.contains($0.key) } }
+        update(id) { $0.readable.formUnion(toWrite) }
         let versions: [JSONValue] = received.keys.sorted().map { version in
             let restored = toWrite.contains(version)
-            return ["version": .integer(Int64(version)), "outcome": .string(restored ? "restored" : "unchanged"),
-                    "detail": .string(restored ? "verified against 3 files" : "this host holds the same key"),
+            let salvageOnly = unreadable.contains(version) && !restored
+            return ["version": .integer(Int64(version)),
+                    "outcome": .string(restored ? "restored" : salvageOnly ? "needs_salvage" : "unchanged"),
+                    "detail": .string(restored ? "verified against 3 files"
+                        : salvageOnly ? "no valid attestation from this node" : "this host holds the same key"),
                     "verified_files": restored ? 3 : 0, "failed_files": 0]
         }
+        let available = vaults.withLock { v in v[id].map { $0.readable.isSuperset(of: Set([$0.current] + $0.needed)) } ?? false }
         return .ok(["vault_id": .integer(id), "vault_name": .string(vault.name), "deleted": false,
-                    "written": .bool(!toWrite.isEmpty), "key_available": true, "note": .null, "versions": .array(versions)])
+                    "written": .bool(!toWrite.isEmpty), "key_available": .bool(available), "note": .null,
+                    "versions": .array(versions)])
     }
 }
 
@@ -454,6 +500,107 @@ struct KeyBackupTests {
             }
             #expect(result.keyAvailable)
             #expect(lab.keys.imported.withLock { $0[7] } == [2: DaemonKeys.key(7, 2)])
+        }
+    }
+
+    // MARK: Attestations (guaranteed recovery) and salvage
+
+    @Test func attestationsTravelFromTheNodeThroughOnePasswordAndBack() async throws {
+        var photos = Self.photos(current: 2, needed: [1], rotating: true)
+        photos.attests = true
+        photos.requiresAttestation = true
+        try await withLab([photos], versions: [7: [1, 2]]) { lab in
+            let vault = try await lab.sync.prepare()
+            #expect(await lab.sync.run([try await lab.row(7, in: vault)], nodes: [lab.node], into: vault)["node-a/7"]
+                == .backedUp(version: 2, written: true))
+            let row = try await lab.row(7, in: vault)
+            // 1Password holds each version's attestation as metadata, byte for byte.
+            let item = try #require(row.item)
+            #expect(item.versions.map(\.attestation) == [
+                KeyAttestation(keyID: "ed25519:node-a", signature: "sig-7-2"),
+                KeyAttestation(keyID: "ed25519:node-a", signature: "sig-7-1"),
+            ])
+            #expect(item.versions.allSatisfy { $0.nodeID == DaemonKeys.attestingNode })
+            #expect(row.recoveryAssurance == .guaranteed)
+
+            // Recover sends them back unchanged, and the daemon restores both versions as the vault's own.
+            lab.keys.update(7) { $0.readable = [] }
+            let broken = try await lab.row(7, in: vault)
+            let outcome = await KeyRestore(store: lab.helper).importToNode(
+                broken, on: lab.node, in: vault, confirmName: "Photos", exportedBy: "test")
+            guard case .imported(let report) = outcome else {
+                Issue.record("got \(outcome)")
+                return
+            }
+            #expect(report.keyAvailable && report.needsSalvage.isEmpty)
+            #expect(lab.keys.receivedAttestations.withLock { $0[7] }
+                == [2: DaemonKeys.attestation(7, 2), 1: DaemonKeys.attestation(7, 1)])
+        }
+    }
+
+    @Test func backingUpAgainAddsAttestationsToAnOlderBackup() async throws {
+        try await withLab([Self.photos(current: 2, needed: [1], rotating: true)], versions: [7: [1, 2]]) { lab in
+            let vault = try await lab.sync.prepare()
+            _ = await lab.sync.run([try await lab.row(7, in: vault)], nodes: [lab.node], into: vault)
+            let before = try await lab.row(7, in: vault)
+            #expect(before.recoveryAssurance == .bestEffort(unattestedVersions: [2, 1]))
+            let keyBefore = try await lab.helper.reveal(onePasswordVaultID: vault.id, itemID: try #require(before.item).itemID)
+                .versions.map { $0.key.withUnsafeBytes { Array($0) } }
+
+            // The node is updated and attests keys now; nothing is "missing", so only a forced backup refreshes them.
+            lab.keys.update(7) { $0.attests = true }
+            #expect(await lab.sync.run([before], nodes: [lab.node], into: vault)["node-a/7"]
+                == .skipped("A key rotation is under way; 1Password already holds every key it needs."))
+            #expect(await lab.sync.run([before], nodes: [lab.node], into: vault, force: true)["node-a/7"]
+                == .backedUp(version: 2, written: true))
+            let after = try await lab.row(7, in: vault)
+            #expect(after.recoveryAssurance == .guaranteed)
+            let keyAfter = try await lab.helper.reveal(onePasswordVaultID: vault.id, itemID: try #require(after.item).itemID)
+                .versions.map { $0.key.withUnsafeBytes { Array($0) } }
+            #expect(keyAfter == keyBefore, "refreshing attestations never touches a stored key")
+        }
+    }
+
+    @Test func recoverReportsWhatNeedsSalvageAndSalvageIsItsOwnConfirmedStep() async throws {
+        var photos = Self.photos(current: 2, needed: [1], rotating: true)
+        photos.requiresAttestation = true // the daemon now wants attestations; this backup predates them
+        try await withLab([photos], versions: [7: [1, 2]]) { lab in
+            let vault = try await lab.sync.prepare()
+            _ = await lab.sync.run([try await lab.row(7, in: vault)], nodes: [lab.node], into: vault)
+            lab.keys.update(7) { $0.readable = [] }
+            let broken = try await lab.row(7, in: vault)
+            #expect(broken.recoveryAssurance == .bestEffort(unattestedVersions: [2, 1]))
+            let restore = KeyRestore(store: lab.helper)
+
+            // Recover: nothing verifies, so nothing is written and no name is asked; both versions need salvage.
+            let recovered = await restore.importToNode(broken, on: lab.node, in: vault, confirmName: nil, exportedBy: "t")
+            guard case .imported(let report) = recovered else {
+                Issue.record("got \(recovered)")
+                return
+            }
+            #expect(!report.keyAvailable && !report.written)
+            #expect(report.needsSalvage.map(\.version) == [1, 2])
+            #expect(lab.keys.imported.withLock { $0[7] }?.isEmpty ?? true)
+
+            // Salvage asks for the vault's name under its own code, then reports what it saved and lost.
+            let asked = await restore.importToNode(broken, on: lab.node, in: vault, mode: .salvage, confirmName: nil,
+                                                   exportedBy: "t")
+            guard case .needsConfirmation(let message) = asked else {
+                Issue.record("got \(asked)")
+                return
+            }
+            #expect(message.contains("Type the vault's name"))
+            let salvaged = await restore.importToNode(broken, on: lab.node, in: vault, mode: .salvage,
+                                                      confirmName: "Photos", exportedBy: "t")
+            guard case .imported(let salvage) = salvaged, let details = salvage.salvage else {
+                Issue.record("got \(salvaged)")
+                return
+            }
+            #expect(salvage.keyAvailable)
+            #expect(details.newKeyVersion == 3 && details.recoveredFiles == 41 && details.unrecoverableCount == 1)
+            #expect(details.unrecoverableFiles == ["/Photos/2019/broken.heic"])
+            #expect(lab.daemon.payloads(of: "vault.keys.import").last?["mode"]?.stringValue == "salvage")
+            #expect(lab.daemon.payloads(of: "vault.keys.import").first?["mode"] == nil, "recover leaves mode out")
         }
     }
 

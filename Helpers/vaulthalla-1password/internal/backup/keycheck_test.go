@@ -114,7 +114,7 @@ func TestVersionsAreNeverDropped(t *testing.T) {
 		t.Fatalf("items %+v", list.Items)
 	}
 	got := list.Items[0]
-	want := []VersionMeta{{4, kc(4, 4), StateCurrent}, {3, kc(3, 3), StateRetired}, {2, kc(2, 2), StateRetired}, {1, kc(1, 1), StateRetired}}
+	want := []VersionMeta{{Version: 4, KeyCheck: kc(4, 4), State: StateCurrent}, {Version: 3, KeyCheck: kc(3, 3), State: StateRetired}, {Version: 2, KeyCheck: kc(2, 2), State: StateRetired}, {Version: 1, KeyCheck: kc(1, 1), State: StateRetired}}
 	if got.CurrentVersion != 4 || got.KeyCheck != kc(4, 4) || len(got.Issues) != 0 || len(got.Versions) != len(want) {
 		t.Fatalf("meta %+v", got)
 	}

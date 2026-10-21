@@ -111,7 +111,10 @@ public actor OnePasswordHelper {
     /// Writes (or updates) the item for one vault. Never changes a stored version: a different key under an existing
     /// version number fails with `version_conflict`.
     public func upsert(_ backup: BackupUpsert) async throws -> BackupUpsertOutcome {
-        let capacity = 1024 + backup.versions.reduce(0) { $0 + ($1.key.count + 2) / 3 * 4 + $1.keyCheck.utf8.count + 96 }
+        let capacity = 1024 + backup.versions.reduce(0) {
+            $0 + ($1.key.count + 2) / 3 * 4 + $1.keyCheck.utf8.count + 96 + ($1.nodeID?.utf8.count ?? 0)
+                + ($1.attestation.map { $0.keyID.utf8.count + $0.signature.utf8.count + 48 } ?? 0)
+        }
         return try await serialized {
             try await exchange("item.upsert", capacity: capacity) { w in
                 w.field("vault_id", backup.onePasswordVaultID)
@@ -130,6 +133,14 @@ public actor OnePasswordHelper {
                     w.field("key_check", version.keyCheck)
                     w.key("needed")
                     w.bool(version.needed)
+                    if let node = version.nodeID { w.field("node_id", node) }
+                    if let attestation = version.attestation {
+                        w.key("attestation")
+                        w.beginObject()
+                        w.field("key_id", attestation.keyID)
+                        w.field("signature", attestation.signature)
+                        w.endObject()
+                    }
                     w.endObject()
                 }
                 w.endArray()
@@ -154,7 +165,8 @@ public actor OnePasswordHelper {
                 throw OnePasswordHelperError.protocolViolation("reveal: \(secrets.count) keys for \(wire.versions.count) versions")
             }
             let keys = zip(wire.versions, secrets).map { v, key in
-                KeyVersion(version: v.version, key: key, keyCheck: v.keyCheck, needed: v.state != "retired")
+                KeyVersion(version: v.version, key: key, keyCheck: v.keyCheck, needed: v.state != "retired",
+                           nodeID: v.nodeID, attestation: v.attestation)
             }
             return RevealedKeys(
                 itemID: wire.itemID, onePasswordVaultID: wire.vaultID, nodeID: wire.nodeID, vaultUUID: wire.vaultUUID,

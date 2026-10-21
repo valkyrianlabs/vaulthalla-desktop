@@ -66,8 +66,10 @@ public struct KeyBackupSync: Sendable {
     }
 
     /// Syncs `rows` (on `nodes`) into `vault`. Rows that don't want a sync come back skipped with the reason.
+    /// `force` backs up vaults that are already backed up again ("Back up again": it refreshes their attestations once
+    /// the node attests keys).
     public func run(
-        _ rows: [VaultKeyRow], nodes: [KeyBackupNode], into vault: OnePasswordVault,
+        _ rows: [VaultKeyRow], nodes: [KeyBackupNode], into vault: OnePasswordVault, force: Bool = false,
         progress: @Sendable (VaultSyncEvent) async -> Void = { _ in }
     ) async -> [String: VaultSyncOutcome] {
         var outcomes: [String: VaultSyncOutcome] = [:]
@@ -76,7 +78,7 @@ public struct KeyBackupSync: Sendable {
             await progress(.started(rowID: row.id))
             let outcome: VaultSyncOutcome
             if let node = nodes.first(where: { $0.id == row.nodeID }) {
-                outcome = await backUp(row, on: node, into: vault)
+                outcome = await backUp(row, on: node, into: vault, force: force)
             } else {
                 outcome = .skipped("The node isn't connected.")
             }
@@ -87,9 +89,13 @@ public struct KeyBackupSync: Sendable {
     }
 
     /// One vault.
-    public func backUp(_ row: VaultKeyRow, on node: KeyBackupNode, into vault: OnePasswordVault) async -> VaultSyncOutcome {
+    public func backUp(
+        _ row: VaultKeyRow, on node: KeyBackupNode, into vault: OnePasswordVault, force: Bool = false
+    ) async -> VaultSyncOutcome {
         let keys = VaultKeyCommands(node.transport)
         switch row.status {
+        case .backedUp where force:
+            break
         case .backedUp(confirmed: true):
             return .skipped("Already backed up.")
         case .backedUp(confirmed: false):
@@ -104,7 +110,7 @@ public struct KeyBackupSync: Sendable {
             return .skipped("\(row.nodeName) can't read this vault's key. Restore it from 1Password instead.")
         case .unknown:
             return .skipped("\(row.nodeName) isn't connected.")
-        case .rotating(let missing) where missing.isEmpty:
+        case .rotating(let missing) where missing.isEmpty && !force:
             return .skipped("A key rotation is under way; 1Password already holds every key it needs.")
         case .needsBackup, .rotating:
             break
@@ -128,7 +134,8 @@ public struct KeyBackupSync: Sendable {
                 onePasswordVaultID: vault.id, nodeID: row.backupNodeID, nodeName: row.nodeName,
                 vaultUUID: String(row.vaultID), vaultName: exported.vaultName, currentVersion: exported.currentVersion,
                 versions: exported.versions.map {
-                    KeyVersion(version: $0.version, key: $0.key, keyCheck: $0.keyCheck, needed: true)
+                    KeyVersion(version: $0.version, key: $0.key, keyCheck: $0.keyCheck, needed: true,
+                               nodeID: $0.nodeID, attestation: $0.attestation)
                 }))
         } catch {
             return .failed(step: .store, message: KeyBackupWords.onePassword(error))

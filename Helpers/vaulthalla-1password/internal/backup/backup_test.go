@@ -126,6 +126,9 @@ type ver struct {
 	Key      string `json:"key_b64"`
 	KeyCheck string `json:"key_check"`
 	Needed   bool   `json:"needed"`
+	// Attestation metadata (attestation_test.go).
+	NodeID      string       `json:"node_id,omitempty"`
+	Attestation *Attestation `json:"attestation,omitempty"`
 }
 
 // testVault is the Vaulthalla vault the tests back up (vault_uuid: the vault's numeric id, as the key check binds it).
@@ -249,7 +252,7 @@ func TestUpsertCreatesTheItemLayout(t *testing.T) {
 	if !res.Created || !res.Written || res.CurrentVersion != 1 || res.KeyCheck != kc(1, 1) {
 		t.Fatalf("unexpected result %+v", res)
 	}
-	if len(res.StoredVersions) != 1 || res.StoredVersions[0] != (VersionMeta{1, kc(1, 1), StateCurrent}) {
+	if len(res.StoredVersions) != 1 || res.StoredVersions[0] != (VersionMeta{Version: 1, KeyCheck: kc(1, 1), State: StateCurrent}) {
 		t.Fatalf("stored versions %+v", res.StoredVersions)
 	}
 
@@ -301,7 +304,7 @@ func TestUpsertAddsANewVersionAndMovesTheCredential(t *testing.T) {
 	if second.Created || !second.Written || second.ItemID != first.ItemID || second.CurrentVersion != 2 || second.KeyCheck != kc(2, 2) {
 		t.Fatalf("second %+v", second)
 	}
-	want := []VersionMeta{{2, kc(2, 2), StateCurrent}, {1, kc(1, 1), StateNeeded}}
+	want := []VersionMeta{{Version: 2, KeyCheck: kc(2, 2), State: StateCurrent}, {Version: 1, KeyCheck: kc(1, 1), State: StateNeeded}}
 	if fmt.Sprint(second.StoredVersions) != fmt.Sprint(want) {
 		t.Fatalf("stored %+v", second.StoredVersions)
 	}
@@ -373,7 +376,7 @@ func TestUpsertKeepsVersionsTheDaemonNoLongerLists(t *testing.T) {
 	var res UpsertResult
 	h.ok("item.upsert", upsertParams(vaultID, 2, v(2, 2), v(1, 1)), &res)
 	h.ok("item.upsert", upsertParams(vaultID, 3, v(3, 3)), &res) // the daemon finished re-encrypting: only v3
-	want := []VersionMeta{{3, kc(3, 3), StateCurrent}, {2, kc(2, 2), StateRetired}, {1, kc(1, 1), StateRetired}}
+	want := []VersionMeta{{Version: 3, KeyCheck: kc(3, 3), State: StateCurrent}, {Version: 2, KeyCheck: kc(2, 2), State: StateRetired}, {Version: 1, KeyCheck: kc(1, 1), State: StateRetired}}
 	if fmt.Sprint(res.StoredVersions) != fmt.Sprint(want) {
 		t.Fatalf("stored %+v", res.StoredVersions)
 	}
@@ -554,7 +557,7 @@ func TestItemsListReturnsMetadataNeverSecrets(t *testing.T) {
 	m := res.Items[0]
 	if m.NodeID != "node-1" || m.VaultUUID != testVault || m.CurrentVersion != 2 || m.KeyCheck != kc(2, 2) ||
 		m.NodeName != "Home Lab" || m.VaultName != "Photos" || m.UpdatedAt == "" || m.BackedUpAt == "" || len(m.Issues) != 0 ||
-		fmt.Sprint(m.Versions) != fmt.Sprint([]VersionMeta{{2, kc(2, 2), StateCurrent}, {1, kc(1, 1), StateNeeded}}) {
+		fmt.Sprint(m.Versions) != fmt.Sprint([]VersionMeta{{Version: 2, KeyCheck: kc(2, 2), State: StateCurrent}, {Version: 1, KeyCheck: kc(1, 1), State: StateNeeded}}) {
 		t.Fatalf("meta %+v", m)
 	}
 }

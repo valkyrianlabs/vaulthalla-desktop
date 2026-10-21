@@ -90,10 +90,28 @@ public struct VaultKeyRow: Identifiable, Sendable, Equatable {
         }
     }
 
+    /// How sure a restore from 1Password is: guaranteed when every version the node needs is in 1Password with the
+    /// node's attestation (the daemon then restores it as the vault's own), best effort otherwise (e.g. backed up
+    /// before the node attested keys: "Back up again" refreshes them). nil without a backup to judge.
+    public var recoveryAssurance: RecoveryAssurance? {
+        guard let item, item.vaultUUID == daemon.vaultUUID else { return nil }
+        let required = daemon.requiredVersions
+        let held = required.compactMap { item.version($0) }
+        guard !held.isEmpty else { return nil }
+        let unattested = required.filter { item.version($0)?.isAttested != true }
+        return unattested.isEmpty ? .guaranteed : .bestEffort(unattestedVersions: unattested)
+    }
+
     /// The badge's count: everything that needs a person, never an offline node.
     public var needsAttention: Bool {
         status != .unknown && status.needsAttention && status != .backedUp(confirmed: false)
     }
+}
+
+public enum RecoveryAssurance: Sendable, Equatable {
+    case guaranteed
+    /// These needed versions are missing from 1Password or carry no attestation (newest first).
+    case bestEffort(unattestedVersions: [Int])
 }
 
 public enum VaultKeyRows {
