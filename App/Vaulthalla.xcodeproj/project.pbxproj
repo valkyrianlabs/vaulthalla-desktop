@@ -6,6 +6,20 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXAggregateTarget section */
+		7A3000000000000000000040 /* vaulthalla-1password */ = {
+			isa = PBXAggregateTarget;
+			buildConfigurationList = 7A3000000000000000000060 /* Build configuration list for PBXAggregateTarget "vaulthalla-1password" */;
+			buildPhases = (
+				7A3000000000000000000034 /* Build 1Password Helper */,
+			);
+			dependencies = (
+			);
+			name = "vaulthalla-1password";
+			productName = "vaulthalla-1password";
+		};
+/* End PBXAggregateTarget section */
+
 /* Begin PBXBuildFile section */
 		7A10000000000000000000A1 /* VHCore in Frameworks */ = {isa = PBXBuildFile; productRef = 7A10000000000000000000C1 /* VHCore */; };
 		7A10000000000000000000A2 /* VHContract in Frameworks */ = {isa = PBXBuildFile; productRef = 7A10000000000000000000C2 /* VHContract */; };
@@ -14,6 +28,9 @@
 		7A10000000000000000000A5 /* VHNodes in Frameworks */ = {isa = PBXBuildFile; productRef = 7A10000000000000000000C5 /* VHNodes */; };
 		7A20000000000000000000A1 /* vaulthalla-mcp in Embed MCP Bridge */ = {isa = PBXBuildFile; fileRef = 7A2000000000000000000010 /* vaulthalla-mcp */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		7A20000000000000000000A2 /* VHMCP in Frameworks */ = {isa = PBXBuildFile; productRef = 7A20000000000000000000C1 /* VHMCP */; };
+		7A30000000000000000000A1 /* VHOnePassword in Frameworks */ = {isa = PBXBuildFile; productRef = 7A30000000000000000000C1 /* VHOnePassword */; };
+		7A30000000000000000000A2 /* VHKeyBackup in Frameworks */ = {isa = PBXBuildFile; productRef = 7A30000000000000000000C2 /* VHKeyBackup */; };
+		7A30000000000000000000A3 /* vaulthalla-1password in Embed 1Password Helper */ = {isa = PBXBuildFile; fileRef = 7A3000000000000000000010 /* vaulthalla-1password */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -23,6 +40,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 7A2000000000000000000040;
 			remoteInfo = "vaulthalla-mcp";
+		};
+		7A3000000000000000000080 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 7A1000000000000000000050 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 7A3000000000000000000040;
+			remoteInfo = "vaulthalla-1password";
 		};
 /* End PBXContainerItemProxy section */
 
@@ -38,6 +62,17 @@
 			name = "Embed MCP Bridge";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		7A3000000000000000000033 /* Embed 1Password Helper */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Contents/Helpers;
+			dstSubfolderSpec = 1;
+			files = (
+				7A30000000000000000000A3 /* vaulthalla-1password in Embed 1Password Helper */,
+			);
+			name = "Embed 1Password Helper";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -46,6 +81,7 @@
 		7A1000000000000000000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		7A1000000000000000000013 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
 		7A2000000000000000000010 /* vaulthalla-mcp */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "vaulthalla-mcp"; sourceTree = BUILT_PRODUCTS_DIR; };
+		7A3000000000000000000010 /* vaulthalla-1password */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "vaulthalla-1password"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -63,6 +99,8 @@
 				7A10000000000000000000A3 /* VHTransport in Frameworks */,
 				7A10000000000000000000A4 /* VHIdentity in Frameworks */,
 				7A10000000000000000000A5 /* VHNodes in Frameworks */,
+				7A30000000000000000000A1 /* VHOnePassword in Frameworks */,
+				7A30000000000000000000A2 /* VHKeyBackup in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -94,6 +132,7 @@
 			children = (
 				7A1000000000000000000010 /* Vaulthalla.app */,
 				7A2000000000000000000010 /* vaulthalla-mcp */,
+				7A3000000000000000000010 /* vaulthalla-1password */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -117,11 +156,13 @@
 				7A1000000000000000000030 /* Frameworks */,
 				7A1000000000000000000032 /* Resources */,
 				7A2000000000000000000033 /* Embed MCP Bridge */,
+				7A3000000000000000000033 /* Embed 1Password Helper */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				7A2000000000000000000081 /* PBXTargetDependency */,
+				7A3000000000000000000081 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				7A1000000000000000000020 /* Vaulthalla */,
@@ -133,6 +174,8 @@
 				7A10000000000000000000C3 /* VHTransport */,
 				7A10000000000000000000C4 /* VHIdentity */,
 				7A10000000000000000000C5 /* VHNodes */,
+				7A30000000000000000000C1 /* VHOnePassword */,
+				7A30000000000000000000C2 /* VHKeyBackup */,
 			);
 			productName = Vaulthalla;
 			productReference = 7A1000000000000000000010 /* Vaulthalla.app */;
@@ -197,6 +240,7 @@
 			targets = (
 				7A1000000000000000000040 /* Vaulthalla */,
 				7A2000000000000000000040 /* vaulthalla-mcp */,
+				7A3000000000000000000040 /* vaulthalla-1password */,
 			);
 		};
 /* End PBXProject section */
@@ -210,6 +254,30 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		7A3000000000000000000034 /* Build 1Password Helper */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Build 1Password Helper";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(BUILT_PRODUCTS_DIR)/vaulthalla-1password",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -eu\n# Builds the 1Password helper (Go, CGO, arm64, version-stamped) for the app to embed in Contents/Helpers.\nhelper=\"$SRCROOT/../Helpers/vaulthalla-1password\"\nout=\"$BUILT_PRODUCTS_DIR/vaulthalla-1password\"\n\"$helper/build.sh\" --output \"$out\"\n# Hardened runtime + disable-library-validation (1Password's IPC library is signed by another team). Ad hoc here;\n# the app's Embed phase re-signs it with the app's identity, keeping these. CODE_SIGNING_ALLOWED=NO (CI): embedded\n# with only the linker's ad-hoc signature.\nif [ \"${CODE_SIGNING_ALLOWED:-YES}\" != \"NO\" ]; then\n    /usr/bin/codesign --force --sign - --options runtime --timestamp=none \\\n        --entitlements \"$helper/helper.entitlements\" \"$out\"\nfi\n";
+			showEnvVarsInLog = 0;
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		7A1000000000000000000031 /* Sources */ = {
@@ -233,6 +301,11 @@
 			isa = PBXTargetDependency;
 			target = 7A2000000000000000000040 /* vaulthalla-mcp */;
 			targetProxy = 7A2000000000000000000080 /* PBXContainerItemProxy */;
+		};
+		7A3000000000000000000081 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 7A3000000000000000000040 /* vaulthalla-1password */;
+			targetProxy = 7A3000000000000000000080 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -360,6 +433,24 @@
 			};
 			name = Release;
 		};
+		7A3000000000000000000072 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Debug;
+		};
+		7A3000000000000000000073 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGNING_ALLOWED = YES;
+				ENABLE_USER_SCRIPT_SANDBOXING = NO;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -386,6 +477,15 @@
 			buildConfigurations = (
 				7A2000000000000000000072 /* Debug */,
 				7A2000000000000000000073 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		7A3000000000000000000060 /* Build configuration list for PBXAggregateTarget "vaulthalla-1password" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				7A3000000000000000000072 /* Debug */,
+				7A3000000000000000000073 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
@@ -423,6 +523,14 @@
 		7A20000000000000000000C1 /* VHMCP */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = VHMCP;
+		};
+		7A30000000000000000000C1 /* VHOnePassword */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = VHOnePassword;
+		};
+		7A30000000000000000000C2 /* VHKeyBackup */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = VHKeyBackup;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

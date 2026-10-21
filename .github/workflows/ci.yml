@@ -19,6 +19,14 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
+      # The app embeds the Go 1Password helper (Helpers/vaulthalla-1password), and the package tests build its fake mode.
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: Helpers/vaulthalla-1password/go.mod
+          cache-dependency-path: Helpers/vaulthalla-1password/go.sum
+      - name: 1Password helper tests
+        working-directory: Helpers/vaulthalla-1password
+        run: go vet ./... && go vet -tags fake ./... && go test ./...
       - name: Contract is generated, not edited
         run: python3 tools/gen-contract.py --check
       - name: Package tests

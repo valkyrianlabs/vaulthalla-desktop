@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- With the hardened runtime, library validation admits only libraries signed by Apple or this team. 1Password's
+	     IPC library (libop_sdk_ipc_client.dylib, team 2BUA8C4S2C) is dlopen()ed by the SDK, so the helper needs
+	     this exemption. Nothing else: no JIT, no unsigned executable memory, no sandbox (README.md). -->
+	<key>com.apple.security.cs.disable-library-validation</key>
+	<true/>
+</dict>
+</plist>

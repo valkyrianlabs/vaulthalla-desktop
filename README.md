@@ -24,6 +24,8 @@ business logic: every action is an operation the daemon authorizes.
 
 ## Build
 
+Needs Xcode 27 and Go (`brew install go`): the app embeds the Go 1Password helper and builds it from source.
+
 ```sh
 swift test                                                  # VaulthallaKit
 VH_LIVE_NODE=<host>:36982 swift test --filter Live         # against a live daemon (docs/interop-testing.md)

@@ -39,9 +39,15 @@ go test ./... && go vet ./... && go vet -tags fake ./...
   1Password locked, and once declining the prompt, to confirm the wording.
 - The SDK module also embeds its 9.5 MB WebAssembly core (used for service accounts), so the binary is ~22 MB.
 
-## Signing and entitlements (for the app bundle; not done here)
+## Signing and entitlements (the app build)
 
-The helper ships in `Vaulthalla.app/Contents/Helpers/vaulthalla-1password`, signed with the app's team ID:
+The helper ships in `Vaulthalla.app/Contents/Helpers/vaulthalla-1password`, signed with the app's team ID. The Xcode
+project's `vaulthalla-1password` aggregate target (the app depends on it) runs `build.sh --output
+$BUILT_PRODUCTS_DIR/vaulthalla-1password` and signs the result ad hoc with the hardened runtime and
+`helper.entitlements`; the app's "Embed 1Password Helper" phase copies it into `Contents/Helpers` and re-signs it with
+the app's identity, keeping those (`--preserve-metadata=identifier,entitlements,flags`), before the app itself is
+signed. A build without Go fails with an error that says so. With `CODE_SIGNING_ALLOWED=NO` (CI) the helper is still
+embedded, with only the Go linker's ad-hoc signature.
 
 - **Hardened runtime** (`codesign --options runtime`), required for notarization.
 - **`com.apple.security.cs.disable-library-validation` = true** on the helper. With the hardened runtime, library
