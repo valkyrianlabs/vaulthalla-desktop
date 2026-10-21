@@ -31,6 +31,7 @@ private struct VaultsScreen: View {
     @State private var showsInspector = true
     @State private var editing: VaultRow?
     @State private var deleting: VaultRow?
+    @State private var creating = false
 
     var body: some View {
         let list = queries.query(Ws.Storage.Vault.List.self)
@@ -85,10 +86,16 @@ private struct VaultsScreen: View {
         }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
+                Button("New Vault", systemImage: "plus") { creating = true }
+                    .help("Create a vault (⇧⌘N)")
+                    .keyboardShortcut("n", modifiers: [.command, .shift])
+            }
+            ToolbarItem(placement: .primaryAction) {
                 Button("Inspector", systemImage: "sidebar.trailing") { showsInspector.toggle() }
                     .help(showsInspector ? "Hide the inspector" : "Show the inspector")
             }
         }
+        .newVaultSheet(isPresented: $creating, node: node, queries: queries) { selection = $0.id }
         .sheet(item: $editing) { row in
             EditVaultSheet(vault: row.vault, queries: queries)
         }
