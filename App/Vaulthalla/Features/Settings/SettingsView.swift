@@ -7,6 +7,9 @@ struct SettingsView: View {
             Tab("General", systemImage: "gearshape") {
                 GeneralSettingsView()
             }
+            Tab("Agents", systemImage: "sparkles") {
+                AgentsSettingsView()
+            }
             Tab("About", systemImage: "info.circle") {
                 AboutView()
             }
