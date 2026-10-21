@@ -2,6 +2,7 @@ public import Foundation
 public import VHCore
 public import VHIdentity
 import VHTransport
+import VHContract
 import Synchronization
 import os
 
@@ -215,12 +216,13 @@ private struct Attempt {
                 throw PairingFailure.local("Couldn't prepare the pairing request: \(error)")
             }
 
-            let request: PairRequestReply
-            let confirm: PairConfirmReply
+            let request: Ws.Device.Pair.Request.Response
+            let confirm: Ws.Device.Pair.Confirm.Response
             do {
                 request = try await link.call { client in
-                    try await client.pairRequest(
-                        PairRequestPayload(
+                    try await client.send(
+                        Ws.Device.Pair.Request.self,
+                        payload: .init(
                             name: String(configuration.deviceName.prefix(64)), platform: configuration.platform,
                             appVersion: configuration.appVersion, commitment: Hex.encode(commitment)),
                         timeout: configuration.requestTimeout)
@@ -229,11 +231,12 @@ private struct Attempt {
                     throw PairingFailure.protocolViolation("nonce_server is not 32 bytes of hex")
                 }
                 confirm = try await link.call { client in
-                    try await client.pairConfirm(
-                        PairConfirmPayload(requestID: request.requestID, nonceDevice: Hex.encode(nonce)),
+                    try await client.send(
+                        Ws.Device.Pair.Confirm.self,
+                        payload: .init(requestID: request.requestID, nonceDevice: Hex.encode(nonce)),
                         timeout: configuration.requestTimeout)
                 }
-                guard confirm.state == "pending" else {
+                guard confirm.state == Ws.Device.Pair.Confirm.Response.State.pending else {
                     throw PairingFailure.protocolViolation("confirm answered \(confirm.state)")
                 }
 
@@ -255,16 +258,15 @@ private struct Attempt {
         let clock = ContinuousClock()
         while true {
             let started = clock.now
-            let status: PairStatusReply
+            let (decision, status): (PairDecision, Ws.Device.Pair.Status.Response)
             do {
-                status = try await link.call(retryingAfterDrop: true) { client in
-                    try await client.pairStatus(PairStatusPayload(requestID: requestID),
-                                                timeout: configuration.statusTimeout)
+                (decision, status) = try await link.call(retryingAfterDrop: true) { client in
+                    try await client.pairStatus(requestID: requestID, timeout: configuration.statusTimeout)
                 }
             } catch PairingFailure.noAnswer {
                 continue  // a held poll that outlived our timeout: ask again
             }
-            switch status.state {
+            switch decision {
             case .pending:
                 if clock.now - started < configuration.immediateReply {
                     try await Task.sleep(for: configuration.statusPause)

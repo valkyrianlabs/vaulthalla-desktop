@@ -2,18 +2,9 @@ public import Foundation
 public import VHTransport
 import VHContract
 
-// The `device.*` commands of docs/pairing.md, typed by hand. They aren't in the vendored contract yet, so they travel
-// as raw JSON through `WsClient.send(command:payload:)`. When the contract is refreshed, replace the bodies below with
-// the generated `Ws.Device.*` requests; the call sites only see these wrappers.
-
-/// Command names (docs/pairing.md §3–§5).
-enum DeviceCommand {
-    static let pairRequest = "device.pair.request"
-    static let pairConfirm = "device.pair.confirm"
-    static let pairStatus = "device.pair.status"
-    static let serverIdentity = "device.server.identity"
-    static let identityRotate = "device.identity.rotate"
-}
+// The `device.*` commands of docs/pairing.md travel as the generated `Ws.Device.*` requests. What lives here is the
+// little the contract doesn't say: the refusal codes the device listener uses, the pairing states as a closed set,
+// and the next-key announcement of §5 on `device.server.identity`.
 
 /// The refusal codes the device listener uses (`data.code` of an error answer).
 public enum DeviceRefusal: String, Sendable, Hashable {
@@ -40,149 +31,42 @@ public enum DeviceRefusal: String, Sendable, Hashable {
     }
 }
 
-// MARK: - Payloads and answers
+/// Where a pairing request stands (`device.pair.status`, §3). The contract types the state as a string.
+enum PairDecision: String, Sendable {
+    case pending, approved, denied, expired
+}
 
-struct PairRequestPayload: Encodable {
-    var name: String
-    var platform: String
-    var appVersion: String
-    /// Lowercase hex of `SHA-256("vh-pair-commit-v1" ‖ device_spki_sha256 ‖ nonce_device)`.
-    var commitment: String
+/// `device.server.identity` with the next-key announcement of docs/pairing.md §5. The vendored contract types only
+/// `spki_sha256` (the daemon doesn't announce a rotation yet); this is the generated command and payload with the two
+/// announcement members as optionals, so both answers decode.
+enum ServerIdentityAnnouncement: WsRequest {
+    static let command = Ws.Device.Server.Identity.command
+    typealias Payload = Ws.Device.Server.Identity.Payload
 
-    enum CodingKeys: String, CodingKey {
-        case name, platform, commitment
-        case appVersion = "app_version"
+    struct Response: Decodable, Sendable {
+        var spkiSHA256: String
+        var nextSPKISHA256: String?
+        var switchAfter: Int64?
+
+        enum CodingKeys: String, CodingKey {
+            case spkiSHA256 = "spki_sha256"
+            case nextSPKISHA256 = "next_spki_sha256"
+            case switchAfter = "switch_after"
+        }
     }
 }
-
-struct PairRequestReply: Decodable {
-    var requestID: String
-    var nonceServer: String
-    var expiresAt: Int64
-
-    enum CodingKeys: String, CodingKey {
-        case requestID = "request_id"
-        case nonceServer = "nonce_server"
-        case expiresAt = "expires_at"
-    }
-}
-
-struct PairConfirmPayload: Encodable {
-    var requestID: String
-    var nonceDevice: String
-
-    enum CodingKeys: String, CodingKey {
-        case requestID = "request_id"
-        case nonceDevice = "nonce_device"
-    }
-}
-
-struct PairConfirmReply: Decodable {
-    var state: String
-    var expiresAt: Int64?
-
-    enum CodingKeys: String, CodingKey {
-        case state
-        case expiresAt = "expires_at"
-    }
-}
-
-struct PairStatusPayload: Encodable {
-    var requestID: String
-
-    enum CodingKeys: String, CodingKey { case requestID = "request_id" }
-}
-
-struct PairStatusReply: Decodable {
-    enum State: String, Decodable {
-        case pending, approved, denied, expired
-    }
-
-    var state: State
-    var nodeID: String?
-    var nodeName: String?
-    var deviceID: String?
-
-    enum CodingKeys: String, CodingKey {
-        case state
-        case nodeID = "node_id"
-        case nodeName = "node_name"
-        case deviceID = "device_id"
-    }
-}
-
-struct ServerIdentityReply: Decodable {
-    var spkiSHA256: String
-    var nextSPKISHA256: String?
-    var switchAfter: Int64?
-
-    enum CodingKeys: String, CodingKey {
-        case spkiSHA256 = "spki_sha256"
-        case nextSPKISHA256 = "next_spki_sha256"
-        case switchAfter = "switch_after"
-    }
-}
-
-struct RotatePayload: Encodable {
-    /// Standard base64 of the new certificate's DER.
-    var certificate: String
-    var timestamp: UInt64
-    /// Standard base64 of the DER ECDSA signature.
-    var signature: String
-}
-
-struct RotateReply: Decodable {
-    var deviceID: String
-
-    enum CodingKeys: String, CodingKey { case deviceID = "device_id" }
-}
-
-// MARK: - Calls
 
 extension WsClient {
-    func pairRequest(_ payload: PairRequestPayload, timeout: Duration) async throws(WsError) -> PairRequestReply {
-        try await device(DeviceCommand.pairRequest, payload, timeout: timeout)
-    }
-
-    func pairConfirm(_ payload: PairConfirmPayload, timeout: Duration) async throws(WsError) -> PairConfirmReply {
-        try await device(DeviceCommand.pairConfirm, payload, timeout: timeout)
-    }
-
-    func pairStatus(_ payload: PairStatusPayload, timeout: Duration) async throws(WsError) -> PairStatusReply {
-        try await device(DeviceCommand.pairStatus, payload, timeout: timeout)
-    }
-
-    func serverIdentity(timeout: Duration) async throws(WsError) -> ServerIdentityReply {
-        try await device(DeviceCommand.serverIdentity, EmptyPayload(), timeout: timeout)
-    }
-
-    func rotateIdentity(_ payload: RotatePayload, timeout: Duration) async throws(WsError) -> RotateReply {
-        try await device(DeviceCommand.identityRotate, payload, timeout: timeout)
-    }
-
-    private func device<P: Encodable, R: Decodable>(_ command: String, _ payload: P, timeout: Duration)
-        async throws(WsError) -> R
+    /// `device.pair.status`, with a state outside the contract's set reported as a contract mismatch.
+    func pairStatus(requestID: String, timeout: Duration) async throws(WsError)
+        -> (decision: PairDecision, reply: Ws.Device.Pair.Status.Response)
     {
-        let raw: JSONValue
-        do {
-            raw = try DeviceCoding.decoder.decode(JSONValue.self, from: DeviceCoding.encoder.encode(payload))
-        } catch {
-            throw .error("The \(command) request could not be encoded.")
+        let reply = try await send(Ws.Device.Pair.Status.self, payload: .init(requestID: requestID), timeout: timeout)
+        guard let decision = PairDecision(rawValue: reply.state) else {
+            throw .contractMismatch("\(WsCommand.devicePairStatus.rawValue): unknown state \(reply.state)")
         }
-        let answer = try await send(command: command, payload: raw, timeout: timeout)
-        do {
-            return try DeviceCoding.decoder.decode(R.self, from: DeviceCoding.encoder.encode(answer))
-        } catch {
-            throw .contractMismatch("\(command): the answer doesn't have the fields docs/pairing.md specifies")
-        }
+        return (decision, reply)
     }
-}
-
-private struct EmptyPayload: Encodable {}
-
-private enum DeviceCoding {
-    static let encoder = JSONEncoder()
-    static let decoder = JSONDecoder()
 }
 
 // MARK: - Encodings (docs/pairing.md §1)

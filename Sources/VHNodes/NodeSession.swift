@@ -2,6 +2,7 @@ public import Foundation
 public import VHCore
 public import VHIdentity
 public import VHTransport
+import VHContract
 import os
 
 /// The live connection to one paired node: a `WsClient` presenting this Mac's device identity and pinning the
@@ -270,9 +271,10 @@ public actor NodeSession {
     /// The checks after each connect. nil keeps the connection.
     private func connected(_ client: WsClient, identity: DeviceIdentity, pin: Data, isPending: Bool,
                            retryRotation: Bool) async -> Ending? {
-        let reply: ServerIdentityReply
+        let reply: ServerIdentityAnnouncement.Response
         do {
-            reply = try await client.serverIdentity(timeout: configuration.requestTimeout)
+            reply = try await client.send(ServerIdentityAnnouncement.self, payload: WsNoPayload(),
+                                          timeout: configuration.requestTimeout)
         } catch {
             if DeviceRefusal(error) == .deviceUnknown {
                 guard isPending, let current = try? await keys.identity(for: nodeTag) else { return .revoked }
@@ -320,9 +322,10 @@ public actor NodeSession {
         }
         let proof = rotation.proof
         do {
-            _ = try await client.rotateIdentity(
-                RotatePayload(certificate: proof.newCertificateDER.base64EncodedString(), timestamp: proof.timestamp,
-                              signature: proof.signature.base64EncodedString()),
+            _ = try await client.send(
+                Ws.Device.Identity.Rotate.self,
+                payload: .init(certificate: proof.newCertificateDER.base64EncodedString(),
+                               timestamp: Int64(proof.timestamp), signature: proof.signature.base64EncodedString()),
                 timeout: configuration.requestTimeout)
         } catch {
             switch error {
@@ -360,7 +363,7 @@ public actor NodeSession {
     }
 
     /// Stores an announced next key, and promotes it once the server presents it.
-    private func recordServerKeys(_ reply: ServerIdentityReply, connectedWith pin: Data) {
+    private func recordServerKeys(_ reply: ServerIdentityAnnouncement.Response, connectedWith pin: Data) {
         guard case .paired(let saved, let deviceID, let since) = node.pairing else { return }
         let serverKey = Hex.decode(reply.spkiSHA256, length: 32)
         let announced = reply.nextSPKISHA256.flatMap { Hex.decode($0, length: 32) }
