@@ -66,6 +66,10 @@ public actor NodeSession {
     private var runTask: Task<Void, Never>?
     /// Rotation failed for a reason a retry won't fix (an older daemon, a refusal): don't try again this run.
     private var rotationSuppressed = false
+    /// ``rotateDeviceKey()`` asked for a rotation that hasn't been attempted yet.
+    private var rotationRequested = false
+    /// Wakes the current connection's loop (a requested rotation); nil between connections.
+    private var signals: AsyncStream<Signal>.Continuation?
 
     private var nodeTag: String { nodeID.rawValue }
 
@@ -83,6 +87,14 @@ public actor NodeSession {
         runTask = Task { await self.run() }
     }
 
+    /// Rotates this Mac's key for the node now (docs/pairing.md §4, "on demand"), on the current connection or as
+    /// soon as one is up, even if an earlier rotation failed. Progress is reported as usual: an ``Event/identity``
+    /// with the new device id and a ``Event/recordChanged`` once the daemon took it.
+    public func rotateDeviceKey() {
+        rotationRequested = true
+        signals?.yield(.rotate)
+    }
+
     /// Closes the connection and ends ``events``.
     public func stop() async {
         runTask?.cancel()
@@ -93,6 +105,12 @@ public actor NodeSession {
     }
 
     // MARK: - Run loop
+
+    /// What the connection loop reacts to: the client's states, and requests from outside.
+    private enum Signal {
+        case state(ConnectionState)
+        case rotate
+    }
 
     /// What ended one connection.
     private enum Ending {
@@ -192,10 +210,33 @@ public actor NodeSession {
         if !isPending { eventSink.yield(.identity(deviceID: identity.deviceID, backend: identity.backend)) }
 
         let states = await made.states()
+        let (stream, sink) = AsyncStream.makeStream(of: Signal.self, bufferingPolicy: .unbounded)
+        let relay = Task {
+            for await state in states { sink.yield(.state(state)) }
+            sink.finish()
+        }
+        signals = sink
+        defer {
+            relay.cancel()
+            sink.finish()
+        }
         await made.connect()
         var failedAttempts = 0
         var ending: Ending = .stopped
-        loop: for await state in states {
+        var ready = false
+        loop: for await signal in stream {
+            guard case .state(let state) = signal else {
+                // A requested rotation: now if this connection is a checked Device session, else after the next
+                // connect (`connected` looks at the flag).
+                guard rotationRequested, ready else { continue }
+                rotationRequested = false
+                if let result = await rotate(on: made, current: identity) {
+                    ending = result
+                    break loop
+                }
+                continue
+            }
+            if case .connected = state {} else { ready = false }
             switch state {
             case .idle:
                 continue
@@ -216,9 +257,11 @@ public actor NodeSession {
                     ending = result
                     break loop
                 }
+                ready = true
             }
             if Task.isCancelled { break }
         }
+        signals = nil
         await made.close()
         if client === made { client = nil }
         return Task.isCancelled ? .stopped : ending
@@ -259,7 +302,9 @@ public actor NodeSession {
         publish(.online)
 
         let age = Date.now.timeIntervalSince(current.notValidBefore)
-        guard retryRotation || (age >= configuration.rotationInterval && !rotationSuppressed) else { return nil }
+        guard retryRotation || rotationRequested || (age >= configuration.rotationInterval && !rotationSuppressed)
+        else { return nil }
+        rotationRequested = false
         return await rotate(on: client, current: current)
     }
 

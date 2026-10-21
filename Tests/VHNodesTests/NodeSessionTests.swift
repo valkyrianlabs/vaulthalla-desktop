@@ -152,6 +152,18 @@ extension KeychainSuite {
         }
     }
 
+    @Test func rotatesAFreshKeyOnDemand() async throws {
+        // A key well inside the rotation interval: only rotateDeviceKey() rotates it, once.
+        try await withPairedNode(keyAge: 3600) { fixture in
+            let (session, events) = await start(fixture)
+            #expect(await online(events))
+            await session.rotateDeviceKey()
+            let rotated = try #require(await rotatedDeviceID(events, from: fixture.identity.deviceID))
+            try await expectRotated(fixture, events: events, to: rotated, rotations: 1)
+            await session.stop()
+        }
+    }
+
     @Test func rotationAnswerLostThenCompletedWithThePendingKey() async throws {
         try await withPairedNode(keyAge: 91 * 24 * 3600) { fixture in
             fixture.daemon.state.withLock { $0.rotateFaults = [.dropAfterProcessing] }
