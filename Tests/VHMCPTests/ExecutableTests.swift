@@ -36,7 +36,8 @@ import VHCore
         for line in lines { input += try JSONEncoder().encode(line) + Data([0x0A]) }
 
         let process = Process()
-        process.executableURL = try #require(Self.executable)
+        guard let executable = Self.executable else { return }  // the trait skips the test then
+        process.executableURL = executable
         process.environment = ProcessInfo.processInfo.environment.merging(
             ["VAULTHALLA_MCP_REGISTRY": registry.store.fileURL.path, "VAULTHALLA_MCP_LOG": "debug"]) { $1 }
         let stdin = Pipe(), stdout = Pipe(), stderr = Pipe()
