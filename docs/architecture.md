@@ -111,7 +111,7 @@ Package.swift           VaulthallaKit: the app's logic as Swift packages (unit-t
   Sources/VHIdentity    device keys (Secure Enclave P-256), self-signed X.509, Keychain identity, SAS
 App/                    Xcode project (thin): SwiftUI scenes, feature views, design system
 contract/               vendored wsContract.json (+ the server version it came from); tools/gen-contract.py
-Helpers/                vaulthalla-1password (Go, §6) and vaulthalla-mcp (Swift, §5): later phases
+Helpers/                vaulthalla-1password (Go, §6); the Swift vaulthalla-mcp bridge (§5) is a package target
 docs/                   this plan, the pairing protocol, release notes
 ```
 
@@ -201,11 +201,50 @@ There is no device-scoped permission system.
     own prompt does.
   - Clients that support MCP elicitation may get the prompt directly later.
 - **External clients and future embedded agents.** Most MCP clients can't present a client certificate. Desktop
-  therefore ships a `vaulthalla-mcp` stdio bridge in `Contents/Helpers`.
-  - It shares the app's Keychain access group, so it uses the device identities.
-  - It aggregates every paired node: tools take a `node` argument, and `nodes.list` comes first.
-  - Registration: `claude mcp add vaulthalla -- "/Applications/Vaulthalla.app/Contents/Helpers/vaulthalla-mcp"`.
-  - Desktop's own future agent uses the same client library in process.
+  therefore ships a `vaulthalla-mcp` stdio bridge at `Vaulthalla.app/Contents/Helpers/vaulthalla-mcp` (as built:
+  `Sources/VHMCP` + `Sources/vaulthalla-mcp`; the Xcode tool target of the same name is embedded by the app's
+  "Embed MCP Bridge" phase and signed on copy with the app's identity when signing is on).
+  - **Trust.** It reads the node registry (`nodes.json`) and presents the device identity the app created for each
+    node (`DeviceKeys`), pinning the server SPKI from the record, exactly like the app's HTTP lanes. It creates,
+    rotates and deletes nothing. A Secure Enclave key lives in the data protection keychain, so the helper must be
+    signed by the same team with the app's `keychain-access-groups` (`$(AppIdentifierPrefix)sh.vaulthalla.desktop`);
+    that entitlement is restricted on macOS and a bare executable can't carry a provisioning profile, so the release
+    build (D7) wraps the helper in a minimal bundle with an embedded profile if the plain binary is refused. Unsigned
+    and development builds use the file-keychain software key, whose access list names the app: the Keychain may
+    ask whether `vaulthalla-mcp` may use it (an ad hoc signature changes with every build).
+  - **One server for every paired node.** `tools/list` returns `nodes_list` (id, name, host, port, pairing state,
+    reachable now?) and each reachable node's tools from its `/mcp`, each with an added required `node` argument
+    (the node id or display name). Annotations pass through unchanged. Tools are listed once per name; when nodes on
+    different versions define a name differently, the variant offered by the most nodes (ties: the first in the
+    operator's order) keeps the name and the others are listed as `<name>_v2`, `_v3`, … with their own unchanged
+    definitions and a note naming their nodes; a call reaches only the nodes that define it that way, so annotations
+    are never merged. The bridge adds no tool besides `nodes_list`, never one the daemon doesn't offer, and drops
+    (defensively; the daemon never offers them) tools named for key or secret export/import, and refuses `vh_run`
+    command lines that would export or import keys.
+  - **Calls.** `tools/call` goes to the named node's `/mcp` with the arguments minus `node`; the node's result
+    (`isError`, structured `needs_confirmation`) or JSON-RPC error comes back verbatim, so the destructive gate and
+    confirmations work exactly as with `vh mcp`.
+  - **Per node:** `initialize` lazily, once per connection; `MCP-Protocol-Version` on every later request; a 400
+    (refused before anything ran) re-initializes and retries once; a 403 retries once on a fresh connection (the
+    app may have rotated the key), then reports that the node no longer accepts this Mac.
+  - **Deadlines and cancellation.** A call is abandoned after `VAULTHALLA_MCP_TIMEOUT` seconds (default 600, `0`:
+    none), the daemon's own variable and default; the node may still finish it. `notifications/cancelled` cancels the
+    call's HTTP request and its answer is never sent. Calls run concurrently; `ping` is always answered.
+  - **Offline nodes** lose their tools; calls to them return an `isError` result that says why. After
+    `notifications/initialized` the bridge polls every 60 s and sends `notifications/tools/list_changed` when the
+    list changes (it advertises `tools.listChanged`).
+  - **Hygiene.** stdout carries only protocol messages; logs go to stderr (`VAULTHALLA_MCP_LOG`) and never include
+    tool arguments or results.
+  - **Implementation choice.** The small JSON-RPC surface (`initialize`, `notifications/initialized`, `ping`,
+    `tools/list`, `tools/call`, `notifications/cancelled`) is implemented directly over `JSONValue` instead of
+    `modelcontextprotocol/swift-sdk`: results must pass through as raw JSON rather than be re-encoded through the
+    SDK's typed models, and the SDK's package graph brings swift-nio, swift-log, swift-system, eventsource and a
+    branch-pinned docc plugin into an app that otherwise depends on swift-certificates alone.
+  - **Registration** (Settings → Agents shows the app's actual path and copies these; Desktop never runs them):
+    `claude mcp add --scope user vaulthalla-desktop -- "/Applications/Vaulthalla.app/Contents/Helpers/vaulthalla-mcp"`
+    and `codex mcp add vaulthalla-desktop -- "/Applications/Vaulthalla.app/Contents/Helpers/vaulthalla-mcp"` (or
+    `[mcp_servers.vaulthalla-desktop]` with `command = "…"` and `tool_timeout_sec = 600` in `~/.codex/config.toml`).
+  - Desktop's own future agent uses the same library (`VHMCP`) in process.
 - **Agent skills.** `vh skill install --agent <claude|codex> [--scope user|project]` runs on the client side and
   needs no daemon.
   - It writes a `vaulthalla` skill: hand-written safety guidance plus references generated from the catalog.
