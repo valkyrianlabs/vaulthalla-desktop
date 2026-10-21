@@ -196,6 +196,11 @@ public struct VaultLanes: Sendable {
     public struct UploadProgress: Sendable, Hashable {
         public var bytes: Int64
         public var files: Int
+
+        public init(bytes: Int64, files: Int) {
+            self.bytes = bytes
+            self.files = files
+        }
     }
 
     /// Splits `files` into sessions of at most `maxFiles` files and `maxBytes` bytes (a file larger than that goes
