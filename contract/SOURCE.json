@@ -1,10 +1,10 @@
 {
   "server_version": "1.15.0",
-  "server_commit": "492cabd8",
+  "server_commit": "950ebe18",
   "server_branch": "feat/desktop-integration",
   "source": "web/src/util/generated/wsContract.json",
   "contract_version": 2,
-  "ws_hash": "6ce95d5ce30adf91c5e3f5b8b0264e286e0e0dc7f1ee8153e1a62ef52f78e552",
-  "models_hash": "8fe71105a27f928773db20d7ed7b9c1cf7a63021b924d494988b0da2cc7322bb",
-  "note": "Vendored from the unmerged server branch feat/desktop-integration (mcp + device pairing + contract v2 + web devices); re-vendor after feat/key-backup merges into it."
+  "ws_hash": "e7f86f48e7d314240589511804acb5a5c8c0aedaed224a09194bf6a3b50f2153",
+  "models_hash": "b88548f68f153d6bc8f93c6a2ebcb00344107aed747eff6594714161cabc6680",
+  "note": "Vendored from the unmerged server branch feat/desktop-integration (mcp, device pairing + lanes + remote MCP, contract v2, web devices, key backup + import)."
 }
