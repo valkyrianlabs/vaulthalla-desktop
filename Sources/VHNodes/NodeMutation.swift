@@ -49,10 +49,11 @@ public final class NodeMutation<R: WsRequest> where R.Payload: Decodable {
         return settle(await store.perform(R.self, payload, invalidating: invalidating, accepting: accepting))
     }
 
-    /// Resends with the pending confirmation accepted.
+    /// Resends with the confirmation accepted: `request`, or the pending one. A dialog passes the request it showed,
+    /// since dismissing it may already have cleared ``confirmation``.
     @discardableResult
-    public func confirm() async -> R.Response? {
-        guard let request = confirmation else { return nil }
+    public func confirm(_ request: ConfirmationRequest<R>? = nil) async -> R.Response? {
+        guard let request = request ?? confirmation else { return nil }
         confirmation = nil
         phase = .running
         return settle(await store.accept(request))

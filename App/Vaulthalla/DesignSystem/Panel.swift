@@ -91,6 +91,8 @@ extension View {
 struct DefinitionList: View {
     var items: [(term: String, value: String)]
     var monospacedValues: Set<String> = []
+    /// A fixed term column, so stacked lists (an inspector's sections) line up.
+    var termWidth: CGFloat?
 
     var body: some View {
         Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 24, verticalSpacing: 10) {
@@ -99,6 +101,7 @@ struct DefinitionList: View {
                     Text(item.term)
                         .foregroundStyle(.fgSubtle)
                         .gridColumnAlignment(.leading)
+                        .frame(width: termWidth, alignment: .leading)
                     Text(item.value)
                         .foregroundStyle(.fg)
                         .fontDesign(monospacedValues.contains(item.term) ? .monospaced : .default)

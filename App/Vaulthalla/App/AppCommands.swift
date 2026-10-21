@@ -17,6 +17,14 @@ struct AppCommands: Commands {
             .keyboardShortcut("s", modifiers: [.command, .option])
         }
 
+        // The visible screen refetches what it shows.
+        CommandGroup(before: .sidebar) {
+            Button("Refresh") { model.refreshVisible() }
+                .keyboardShortcut("r")
+                .disabled(!model.canRefreshVisible)
+            Divider()
+        }
+
         CommandMenu("Node") {
             Button("All Nodes") { model.showAllNodes() }
                 .keyboardShortcut("0")

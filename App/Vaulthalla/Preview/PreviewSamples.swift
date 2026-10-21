@@ -23,6 +23,12 @@ enum PreviewSamples {
             endpoint: NodeEndpoint(host: "vault.example.com"),
             pairing: .revoked(at: Date(timeIntervalSince1970: 1_792_000_000))
         ),
+        Node(
+            id: NodeID(rawValue: "preview-restricted"),
+            displayName: "Studio (preview)",
+            endpoint: NodeEndpoint(host: "studio.local"),
+            pairing: .paired(serverSPKISHA256: Data(repeating: 0xCD, count: 32), deviceID: "preview-device-2", since: Date(timeIntervalSince1970: 1_791_000_000))
+        ),
     ]
 
     static func model(nodes: [Node] = PreviewSamples.nodes, selecting id: NodeID? = nil) -> AppModel {
@@ -32,6 +38,15 @@ enum PreviewSamples {
         for node in nodes { _ = try? store.add(node) }
         let model = AppModel(store: store)
         if let id { model.selectNode(id) }
+        return model
+    }
+
+    /// A model whose paired nodes answer from PREVIEW DATA (`PreviewTransport`): "Home lab" as an admin sees it,
+    /// "Studio" as an account without stats access and no manageable vaults.
+    static func liveModel(selecting id: NodeID? = nil) -> AppModel {
+        let model = model(selecting: id)
+        model.usePreviewData(for: nodes[1].id, transport: PreviewTransport(.full))
+        model.usePreviewData(for: nodes[3].id, transport: PreviewTransport(.restricted))
         return model
     }
 }

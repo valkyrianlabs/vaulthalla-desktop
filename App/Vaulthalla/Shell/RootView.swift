@@ -6,6 +6,7 @@ struct RootView: View {
     @SceneStorage("shell.selection") private var storedSelection = RestorableSelection()
     @State private var restored = false
     @State private var renameText = ""
+    @State private var activity: AppActivity?
 
     var body: some View {
         @Bindable var model = model
@@ -53,6 +54,9 @@ struct RootView: View {
             Text("This Mac forgets the node. Nothing changes on the server, where a paired device stays listed until it's revoked.")
         }
         .onAppear {
+            if activity == nil {
+                activity = AppActivity { [model] active in model.setAppActive(active) }
+            }
             guard !restored else { return }
             restored = true
             model.restorableSelection = storedSelection

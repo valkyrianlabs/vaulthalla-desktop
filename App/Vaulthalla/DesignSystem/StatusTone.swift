@@ -2,7 +2,7 @@ import SwiftUI
 
 /// A status color. Only the backend decides which tone applies; a missing or unrecognized severity is `.unknown`,
 /// which is never green.
-enum StatusTone: String, CaseIterable, Hashable, Sendable {
+nonisolated enum StatusTone: String, CaseIterable, Hashable, Sendable {
     case ok, info, warn, danger, unknown
 
     /// Maps a daemon severity or component status to its tone, mirroring the web console's `severityTone`.

@@ -9,6 +9,8 @@ import VHCore
 ///         -VHDebugSnapshot /tmp/shell.png
 ///
 /// `-VHDebugSelect` takes `all` or `<node position>:<section>`; `-VHDebugSheet` takes `addNode` or `pair:<position>`.
+/// `-VHDebugPreviewData YES` serves the preview nodes from PREVIEW DATA (`PreviewTransport`); with it,
+/// `-VHDebugVault <id>` selects a vault and `-VHDebugDeleteVault YES` opens its delete sheet.
 /// `-VHDebugRegistry <nodes.json>` uses another node list, and `-VHDebugPairing <phase>` shows the pairing sheet in a
 /// fixed phase without contacting the node (`DebugPairing`).
 /// The window renders itself to the PNG (and the sheet to `<name>.sheet.png`), then the app exits. Glass can't be
@@ -36,6 +38,15 @@ enum DebugSnapshot {
         }
 
         Task {
+            // `-VHDebugWindowSize 1280x1400`: resize the window first (taller than the screen is fine for a capture).
+            if let size = defaults.string(forKey: "VHDebugWindowSize")?.split(separator: "x").compactMap({ Double($0) }),
+               size.count == 2 {
+                try? await Task.sleep(for: .milliseconds(300))
+                if let window = NSApp.windows.first(where: { $0.isVisible && $0.sheetParent == nil }) {
+                    window.setFrame(NSRect(origin: window.frame.origin, size: NSSize(width: size[0], height: size[1])),
+                                    display: true)
+                }
+            }
             try? await Task.sleep(for: .seconds(2.5))
             let url = URL(filePath: path)
             if let window = NSApp.windows.first(where: { $0.isVisible && $0.sheetParent == nil && $0.contentView != nil }) {

@@ -5,7 +5,15 @@ import VHNodes
 
 @main
 struct VaulthallaApp: App {
-    @State private var model = AppModel(store: NodeStore(fileURL: Self.registryURL), keys: DeviceKeys.standard())
+    @State private var model = Self.makeModel()
+
+    private static func makeModel() -> AppModel {
+        #if DEBUG
+        // `-VHDebugPreviewData YES`: the preview nodes, answering from PREVIEW DATA, without sessions (DebugSnapshot).
+        if UserDefaults.standard.bool(forKey: "VHDebugPreviewData") { return PreviewSamples.liveModel() }
+        #endif
+        return AppModel(store: NodeStore(fileURL: registryURL), keys: DeviceKeys.standard())
+    }
 
     private static var registryURL: URL {
         #if DEBUG

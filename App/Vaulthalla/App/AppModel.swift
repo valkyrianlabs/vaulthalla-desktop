@@ -42,6 +42,10 @@ final class AppModel {
     @ObservationIgnored let store: NodeStore
     /// One live session per paired node. nil in previews, which never connect.
     @ObservationIgnored private(set) var sessions: NodeSessions?
+    /// Each connected node's server data (`queries(for:)`), kept while its session lives.
+    @ObservationIgnored private var queryStores: [NodeID: NodeQueries] = [:]
+    /// Whether the app is active with a visible window: polling runs only then (`AppActivity`).
+    @ObservationIgnored private var isAppActive = true
 
     init(store: NodeStore, keys: DeviceKeys? = nil) {
         self.store = store
@@ -111,6 +115,7 @@ final class AppModel {
         let index = nodes.firstIndex { $0.id == id }
         guard edit({ try store.remove(id) }) else { return }
         liveStatus[id] = nil
+        queryStores[id] = nil
         keyBackends[id] = nil
         nodesNeedingPairing.remove(id)
         // The key was filed under this node's local id; nothing else can use it.
@@ -145,6 +150,7 @@ final class AppModel {
         sessions?.stop(id)
         liveStatus[id] = nil
         offlineReasons[id] = nil
+        queryStores[id] = nil
         nodesNeedingPairing.remove(id)
     }
 
@@ -190,6 +196,9 @@ final class AppModel {
             liveStatus[id] = nil
             offlineReasons[id] = nil
         }
+        for id in queryStores.keys where !live.contains(id) {
+            queryStores[id] = nil
+        }
     }
 
     private func handle(_ event: NodeSession.Event, from id: NodeID) {
@@ -207,6 +216,7 @@ final class AppModel {
                 offlineReasons[id] = nil
                 nodesNeedingPairing.remove(id)
             }
+            queryStores[id]?.connectionChanged(online: status == .online)
         case .recordChanged(let pairing, let next):
             guard var node = node(withID: id) else { return }
             node.pairing = pairing
@@ -227,6 +237,62 @@ final class AppModel {
     private static func message(for error: any Error) -> String {
         (error as? NodeStore.Failure)?.description ?? error.localizedDescription
     }
+
+    // MARK: - Server data
+
+    /// The node's query store, made on first use while it has a session. Views get it through `liveQueries(for:)`.
+    func queries(for id: NodeID) -> NodeQueries? {
+        if let existing = queryStores[id] { return existing }
+        guard let sessions, sessions.session(for: id) != nil else { return nil }
+        let made = NodeQueries(transport: SessionTransport { [weak sessions] in sessions?.session(for: id) })
+        made.isActive = isAppActive
+        made.connectionChanged(online: liveStatus[id] == .online)
+        queryStores[id] = made
+        return made
+    }
+
+    /// The store a section shows server data from: while the node is online, and through a reconnect once it has
+    /// answered (the views keep the last data with a "reconnecting" banner). nil means the section shows why the
+    /// node isn't available instead.
+    func liveQueries(for node: Node) -> NodeQueries? {
+        switch status(for: node) {
+        case .online:
+            return queries(for: node.id)
+        case .connecting, .offline:
+            guard let existing = queryStores[node.id], existing.hasAnswered else { return nil }
+            return existing
+        case .notPaired, .revoked:
+            return nil
+        }
+    }
+
+    /// The app became active or inactive, or its window was hidden or shown: polling follows.
+    func setAppActive(_ active: Bool) {
+        guard active != isAppActive else { return }
+        isAppActive = active
+        for store in queryStores.values { store.isActive = active }
+    }
+
+    /// ⌘R: refetch what the selected node's visible section shows.
+    func refreshVisible() {
+        guard !showsAllNodes, let node = selectedNode else { return }
+        liveQueries(for: node)?.refreshObserved()
+    }
+
+    var canRefreshVisible: Bool {
+        guard !showsAllNodes, let node = selectedNode else { return false }
+        return status(for: node) == .online
+    }
+
+    #if DEBUG
+    /// PREVIEW DATA: serves `node` from canned answers and reports it online, without a session.
+    func usePreviewData(for id: NodeID, transport: any NodeTransport) {
+        let made = NodeQueries(transport: transport)
+        made.isActive = isAppActive
+        queryStores[id] = made
+        liveStatus[id] = .online
+    }
+    #endif
 
     // MARK: - Connection status
 
