@@ -5,6 +5,7 @@ enum NodeSection: String, CaseIterable, Identifiable, Codable, Sendable {
     case overview
     case files
     case vaults
+    case credentials
     case shares
     case access
     case syncConflicts
@@ -20,6 +21,7 @@ enum NodeSection: String, CaseIterable, Identifiable, Codable, Sendable {
         case .overview: "Overview"
         case .files: "Files"
         case .vaults: "Vaults"
+        case .credentials: "Credentials"
         case .shares: "Shares"
         case .access: "Access"
         case .syncConflicts: "Sync Conflicts"
@@ -35,6 +37,7 @@ enum NodeSection: String, CaseIterable, Identifiable, Codable, Sendable {
         case .overview: "gauge.with.dots.needle.67percent"
         case .files: "folder"
         case .vaults: "lock.rectangle.stack"
+        case .credentials: "key.2.on.ring"
         case .shares: "link"
         case .access: "person.2.badge.key"
         case .syncConflicts: "exclamationmark.arrow.triangle.2.circlepath"
@@ -51,6 +54,7 @@ enum NodeSection: String, CaseIterable, Identifiable, Codable, Sendable {
         case .overview: "Health, storage and activity for this node."
         case .files: "Browse vault files, preview them with Quick Look and drag them to and from Finder."
         case .vaults: "The node's vaults: storage backends, quotas, encryption and key versions."
+        case .credentials: "Access keys for upstream S3 and R2 storage that S3 vaults use to reach their bucket."
         case .shares: "Links and shares people use to reach vault content."
         case .access: "Users, groups and roles, and what each of them can do."
         case .syncConflicts: "Files whose local and remote copies diverged, and how to resolve them."

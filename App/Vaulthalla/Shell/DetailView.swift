@@ -28,6 +28,7 @@ struct DetailView: View {
         case .overview: NodeOverviewView(node: node)
         case .files: FilesView(node: node)
         case .vaults: VaultsView(node: node)
+        case .credentials: CredentialsView(node: node)
         case .shares: SharesView(node: node)
         case .access: AccessView(node: node)
         case .syncConflicts: SyncConflictsView(node: node)
