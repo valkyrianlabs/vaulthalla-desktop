@@ -280,6 +280,54 @@ private func vendoredContract() throws -> JSONValue {
     }
 }
 
+@Suite struct ConfirmationTests {
+    @Test func looksUpTheAcceptField() {
+        #expect(WsCommand.authUserDelete.acceptField(for: "user_delete") == "confirm")
+        #expect(WsCommand.storageVaultAdd.acceptField(for: "upstream_adoption") == "provision.accept_adoption")
+        #expect(WsCommand.storageVaultAdd.acceptField(for: "user_delete") == nil)
+        let expired = WsCommand.recoveryRestore.confirmation("recovery_plan_expired")
+        #expect(expired != nil && expired?.acceptField == nil)
+        #expect(WsCommand.metaContractGet.confirmations.isEmpty)
+        // refusal_codes stays the union of the kinds and the confirmation codes.
+        for command in WsCommand.allCases {
+            #expect(command.refusalCodes == command.refusalKinds + command.confirmations.map(\.code))
+        }
+    }
+
+    @Test func buildsTypedAcceptancePayloads() throws {
+        let delete = try Ws.Auth.User.Delete.payload(.init(id: 2, transferTo: .value(3)), accepting: "user_delete")
+        #expect(delete == .init(id: 2, confirm: true, transferTo: .value(3)))
+
+        // A dotted accept field creates the nested object.
+        let add = try Ws.Storage.Vault.Add.payload(.init(name: "v", type: .s3), accepting: "upstream_adoption")
+        #expect(add.provision == .value(.init(acceptAdoption: .value(true))))
+
+        // A token instead of a flag.
+        let restore = try Ws.Recovery.Restore.payload(.init(planID: 9), accepting: "recovery_restore",
+                                                      value: "tok")
+        #expect(restore.token == "tok")
+    }
+
+    @Test func buildsRawAcceptancePayloads() throws {
+        let payload = try WsCommand.storageVaultAdd.payload(["name": "v", "provision": ["mode": "adopt"]],
+                                                           accepting: "upstream_adoption")
+        #expect(payload == ["name": "v", "provision": ["mode": "adopt", "accept_adoption": true]])
+    }
+
+    @Test func refusesWhatItCannotAccept() {
+        #expect(throws: WsAcceptanceError.unknownCode(command: .authUserDelete, code: "vault_delete_now")) {
+            try WsCommand.authUserDelete.payload([:], accepting: "vault_delete_now")
+        }
+        let expired = WsCommand.recoveryRestore.confirmation("recovery_plan_expired")!
+        #expect(throws: WsAcceptanceError.notAcceptable(expired)) {
+            try WsCommand.recoveryRestore.payload([:], accepting: "recovery_plan_expired")
+        }
+        #expect(throws: WsAcceptanceError.self) {
+            try WsCommand.authUserDelete.payload(.null, accepting: "user_delete")
+        }
+    }
+}
+
 @Suite struct JSONValueTests {
     @Test func keepsIntegersExact() throws {
         let json = Data(#"[9007199254740993, 1.5, true, null, "s"]"#.utf8)
