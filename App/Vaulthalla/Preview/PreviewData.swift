@@ -16,7 +16,11 @@ nonisolated final class PreviewTransport: NodeTransport {
     }
 
     let scenario: Scenario
-    private let vaults = Mutex(PreviewData.vaults)
+    /// The vault list; feature answers may read and change it.
+    let vaults = Mutex(PreviewData.vaults)
+
+    /// Feature folders' own canned answers (`PreviewFeature`), asked in order for commands answered nowhere here.
+    static let features: [any PreviewFeature.Type] = [CostPreviewData.self]
 
     init(_ scenario: Scenario) {
         self.scenario = scenario
@@ -84,6 +88,9 @@ nonisolated final class PreviewTransport: NodeTransport {
             vaults.withLock { $0.removeAll { $0.id == vault.id } }
             return Ws.Storage.Vault.Remove.Response(deletion: nil)
         default:
+            for feature in Self.features {
+                if let answer = try feature.answer(command, payload, from: self) { return answer }
+            }
             throw .notFound("The preview has no answer for \(command.rawValue).")
         }
     }
@@ -94,6 +101,13 @@ nonisolated final class PreviewTransport: NodeTransport {
         }
         return vault
     }
+}
+
+/// A feature folder's PREVIEW DATA: answers the commands it owns, nil for the rest. Register it in
+/// `PreviewTransport.features`.
+nonisolated protocol PreviewFeature {
+    static func answer(_ command: WsCommand, _ payload: some Sendable, from transport: PreviewTransport)
+        throws(WsError) -> Any?
 }
 
 /// The canned answers themselves.
