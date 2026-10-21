@@ -105,7 +105,7 @@ nonisolated final class PreviewTransport: NodeTransport {
 
 /// A feature folder's PREVIEW DATA: answers the commands it owns, nil for the rest. Register it in
 /// `PreviewTransport.features`.
-nonisolated protocol PreviewFeature {
+nonisolated protocol PreviewFeature: SendableMetatype {
     static func answer(_ command: WsCommand, _ payload: some Sendable, from transport: PreviewTransport)
         throws(WsError) -> Any?
 }

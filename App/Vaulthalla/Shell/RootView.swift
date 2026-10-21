@@ -20,6 +20,9 @@ struct RootView: View {
         .frame(minWidth: 980, minHeight: 640)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
+                CostAlertsBell()
+            }
+            ToolbarItem(placement: .primaryAction) {
                 Button("Add Node", systemImage: "plus") { model.presentAddNode() }
                     .help("Add a Vaulthalla node (⌘N)")
             }
