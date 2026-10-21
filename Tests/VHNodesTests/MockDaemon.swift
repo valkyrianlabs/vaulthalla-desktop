@@ -17,6 +17,14 @@ import VHIdentity
 final class MockDaemon: Sendable {
     enum Decision: String, Sendable { case approved, denied, expired }
 
+    /// A scripted answer to a contract command.
+    enum Reply: Sendable {
+        case ok(JSONValue)
+        case refuse(String, code: String)
+    }
+
+    typealias Responder = @Sendable (JSONValue) -> Reply
+
     enum RotateFault: Sendable {
         /// Drop the connection before looking at the request (the daemon never saw it).
         case dropBeforeProcessing
@@ -58,6 +66,10 @@ final class MockDaemon: Sendable {
         var log: [(epoch: Int, device: Bool, command: String)] = []
         var connections = 0
         var rotations: [Data] = []
+        /// Scripted answers to contract commands on Device sessions (``answer(_:after:_:)``); others get `{}`.
+        var responders: [String: (delay: Duration?, respond: Responder)] = [:]
+        /// Every payload a Device session sent, per command.
+        var payloads: [String: [JSONValue]] = [:]
         var peers: [ObjectIdentifier: Peer] = [:]
         var listener: NWListener?
     }
@@ -166,6 +178,21 @@ final class MockDaemon: Sendable {
     }
 
     var commands: [(epoch: Int, device: Bool, command: String)] { state.withLock { $0.log } }
+
+    /// Answers `command` on Device sessions with `respond(payload)`, after `delay` when given.
+    func answer(_ command: String, after delay: Duration? = nil, _ respond: @escaping Responder) {
+        state.withLock { $0.responders[command] = (delay, respond) }
+    }
+
+    /// The payloads Device sessions sent with `command`, in order.
+    func payloads(of command: String) -> [JSONValue] {
+        state.withLock { $0.payloads[command] ?? [] }
+    }
+
+    /// How often Device sessions sent `command`.
+    func count(of command: String) -> Int {
+        state.withLock { state in state.log.filter { $0.device && $0.command == command }.count }
+    }
     var connectionCount: Int { state.withLock { $0.connections } }
 
     // MARK: Listener
@@ -253,7 +280,24 @@ final class MockDaemon: Sendable {
             inbound.ok(.object(data))
         case ("device.identity.rotate", .some(let device)): rotate(inbound, payload, device, session)
         case (_, nil): inbound.refuse("Unknown device.", code: "device_unknown")
-        case (_, .some): inbound.ok(.object([:]))
+        case (let command, .some):
+            let responder = state.withLock { state in
+                state.payloads[command, default: []].append(payload)
+                return state.responders[command]
+            }
+            guard let responder else { return inbound.ok(.object([:])) }
+            let reply = { @Sendable in
+                switch responder.respond(payload) {
+                case .ok(let data): inbound.ok(data)
+                case .refuse(let message, let code): inbound.refuse(message, code: code)
+                }
+            }
+            if let delay = responder.delay {
+                let (seconds, attoseconds) = delay.components
+                queue.asyncAfter(deadline: .now() + Double(seconds) + Double(attoseconds) / 1e18, execute: reply)
+            } else {
+                reply()
+            }
         }
     }
 
