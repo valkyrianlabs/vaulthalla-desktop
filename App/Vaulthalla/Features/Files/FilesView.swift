@@ -55,18 +55,20 @@ private struct FilesScreen: View {
     @State private var problem: String?
 
     var body: some View {
-        let vaults = queries.query(Ws.Storage.Vault.List.self)
+        let vaults = VaultChoices(queries: queries)
         VStack(spacing: 0) {
             if let vaultID = workspace.vaultID {
-                browser(vaultID: vaultID, vaults: vaults)
+                browser(vaultID: vaultID)
             } else {
                 chooseVault(vaults)
             }
         }
-        .observing(vaults)
+        .observing(vaults.accessible)
+        // A daemon without storage.vault.accessible.list: keep the older list fresh instead.
+        .task(id: vaults.usesLegacy) { if vaults.usesLegacy { await vaults.legacy.observe() } }
         .toolbar { toolbar(vaults) }
         .searchable(text: $workspace.filter, placement: .toolbar, prompt: "Search This Folder")
-        .task(id: vaults.value?.vaults.map(\.id)) { pickFirstVault(vaults) }
+        .task(id: vaults.openable.map(\.id)) { pickFirstVault(vaults) }
         .sheet(isPresented: $openingByID) {
             OpenVaultSheet { id in workspace.open(vault: id, name: nil) }
         }
@@ -109,7 +111,7 @@ private struct FilesScreen: View {
     // MARK: Vaults
 
     @ViewBuilder
-    private func chooseVault(_ vaults: NodeQuery<Ws.Storage.Vault.List>) -> some View {
+    private func chooseVault(_ vaults: VaultChoices) -> some View {
         ScrollView {
             Group {
                 switch vaults.state {
@@ -119,20 +121,20 @@ private struct FilesScreen: View {
                     ProblemPanel(problem: QueryProblem(error), node: node, subject: "vaults") {
                         Task { await vaults.refresh() }
                     }
-                case .loaded(let value, _):
-                    if value.vaults.isEmpty {
+                case .loaded(let choices, _):
+                    if choices.contains(where: \.canOpen) {
+                        LoadingPanel(subject: "files")
+                    } else {
                         Panel {
                             EmptyState(
-                                "No vaults listed for this account",
+                                vaults.usesLegacy ? "No vaults listed for this account" : "No vaults to open",
                                 systemImage: "folder.badge.questionmark",
-                                message: "The node lists the vaults this account may manage. Vaults shared with it through a role can still be opened by their ID."
+                                message: Self.noVaultsMessage(choices, legacy: vaults.usesLegacy)
                             ) {
                                 Button("Open Vault by ID…") { openingByID = true }
                                     .buttonStyle(.borderedProminent)
                             }
                         }
-                    } else {
-                        LoadingPanel(subject: "files")
                     }
                 }
             }
@@ -140,15 +142,36 @@ private struct FilesScreen: View {
         }
     }
 
-    private func pickFirstVault(_ vaults: NodeQuery<Ws.Storage.Vault.List>) {
-        guard workspace.vaultID == nil, let first = vaults.value?.vaults.first(where: \.isActive) else { return }
+    private static func noVaultsMessage(_ choices: [VaultChoice], legacy: Bool) -> String {
+        if legacy {
+            return "This node lists only the vaults this account may manage. Vaults shared with it through a role can still be opened by their ID."
+        }
+        let manageOnly = choices.filter { $0.access == .manageOnly }.count
+        if choices.isEmpty {
+            return "No vault is shared with this account. Ask an administrator for a vault role."
+        }
+        if choices.allSatisfy({ $0.access == .browse }) {
+            return "Every vault this account can open is inactive."
+        }
+        if manageOnly == choices.count {
+            return manageOnly == 1
+                ? "This account can manage a vault but can't open its files. A vault role gives file access."
+                : "This account can manage \(manageOnly) vaults but can't open their files. A vault role gives file access."
+        }
+        return choices.count == 1
+            ? "This account reaches a vault, but its roles don't let it open the files. A vault role gives file access."
+            : "This account reaches \(choices.count) vaults, but its roles don't let it open their files. A vault role gives file access."
+    }
+
+    private func pickFirstVault(_ vaults: VaultChoices) {
+        guard workspace.vaultID == nil, let first = vaults.openable.first else { return }
         workspace.open(vault: first.id, name: first.name)
     }
 
     // MARK: Browser
 
     @ViewBuilder
-    private func browser(vaultID: Int64, vaults: NodeQuery<Ws.Storage.Vault.List>) -> some View {
+    private func browser(vaultID: Int64) -> some View {
         let listing = queries.query(Ws.Fs.Dir.List.self, .init(vaultID: vaultID, path: workspace.path.rawValue))
         PathBar(vaultName: workspace.vaultName ?? listing.value?.vault ?? "Vault #\(vaultID)", path: workspace.path,
                 onSelect: { workspace.navigate(to: $0) },
@@ -489,7 +512,7 @@ private struct FilesScreen: View {
     // MARK: Toolbar
 
     @ToolbarContentBuilder
-    private func toolbar(_ vaults: NodeQuery<Ws.Storage.Vault.List>) -> some ToolbarContent {
+    private func toolbar(_ vaults: VaultChoices) -> some ToolbarContent {
         ToolbarItemGroup(placement: .navigation) {
             ControlGroup {
                 Button("Back", systemImage: "chevron.left") { workspace.goBack() }
@@ -539,10 +562,11 @@ private struct FilesScreen: View {
         }
     }
 
-    private func vaultMenu(_ vaults: NodeQuery<Ws.Storage.Vault.List>) -> some View {
+    private func vaultMenu(_ vaults: VaultChoices) -> some View {
         Menu {
-            let list = vaults.value?.vaults ?? []
-            ForEach(list, id: \.id) { vault in
+            let openable = vaults.choices.filter { $0.access == .browse }
+            let others = vaults.choices.filter { $0.access != .browse }
+            ForEach(openable) { vault in
                 Button {
                     workspace.open(vault: vault.id, name: vault.name)
                 } label: {
@@ -553,8 +577,21 @@ private struct FilesScreen: View {
                     }
                 }
                 .disabled(!vault.isActive)
+                .help(vault.reasons)
             }
-            if !list.isEmpty { Divider() }
+            if !others.isEmpty {
+                Section("Can't Open Files") {
+                    ForEach(others) { vault in
+                        Button {} label: {
+                            Text(vault.name)
+                            Text(vault.access == .manageOnly ? "Manage only" : "No file access")
+                        }
+                        .disabled(true)
+                        .help(vault.reasons)
+                    }
+                }
+            }
+            if !vaults.choices.isEmpty { Divider() }
             Button("Open Vault by ID…") { openingByID = true }
         } label: {
             Label(workspace.vaultName ?? (workspace.vaultID.map { "Vault #\($0)" } ?? "Choose a Vault"),

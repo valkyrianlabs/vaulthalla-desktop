@@ -34,6 +34,13 @@ nonisolated final class FilesPreviewTransport: NodeTransport {
         switch command {
         case .storageVaultList:
             return Ws.Storage.Vault.List.Response(vaults: vaults)
+        case .storageVaultAccessibleList:
+            // The last vault is one this account may only manage: the picker lists it without opening it.
+            return Ws.Storage.Vault.Accessible.List.Response(vaults: vaults.enumerated().map { index, vault in
+                let manageOnly = index == vaults.count - 1 && vaults.count > 1
+                return Self.accessible(vault, browse: !manageOnly, manage: index != 1,
+                                       via: manageOnly ? ["admin_policy"] : (index == 1 ? ["vault_role"] : ["owner"]))
+            })
         case .fsDirList:
             guard let list = payload as? Ws.Fs.Dir.List.Payload else { throw .invalid("Bad payload.") }
             guard let vault = vaults.first(where: { $0.id == list.vaultID }) else {
@@ -80,6 +87,16 @@ nonisolated final class FilesPreviewTransport: NodeTransport {
         default:
             throw .notFound("The preview has no answer for \(command.rawValue).")
         }
+    }
+
+    /// A storage.vault.accessible.list row for a preview vault.
+    private static func accessible(_ vault: WsModel.Vault, browse: Bool, manage: Bool,
+                                   via: [String]) -> WsModel.AccessibleVault {
+        WsModel.AccessibleVault(
+            id: vault.id, name: vault.name, slug: vault.slug, effectiveFuseName: vault.effectiveFuseName,
+            type: vault.type, description: vault.description, quota: vault.quota, ownerID: vault.ownerID,
+            owner: vault.owner ?? "", isActive: vault.isActive, createdAt: vault.createdAt, browse: browse,
+            manage: manage, via: via)
     }
 
     private func insert(_ entry: WsModel.FsEntry) throws(WsError) {

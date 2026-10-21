@@ -302,6 +302,133 @@
       "name": "APIKey"
     },
     {
+      "description": "A vault the caller reaches (ops::vaults::toJson(AccessibleVault), core/src/ops/Vaults.cpp): a summary of the vault (no backing directory or upstream details; storage.vault.get has them, behind manage) and what the resolvers that enforce access grant at its root. storage.vault.accessible.list rows, `vh vault list --accessible --json`.",
+      "fields": [
+        {
+          "minimum": 0,
+          "name": "id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "name": "name",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "slug",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "The vault's directory under the FUSE mount.",
+          "name": "effective_fuse_name",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "enum": [
+            "local",
+            "s3"
+          ],
+          "name": "type",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "description",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Bytes, 0 = unlimited.",
+          "minimum": 0,
+          "name": "quota",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "0 when the owner account was deleted.",
+          "minimum": 0,
+          "name": "owner_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "The owner's name; \"\" when it no longer resolves.",
+          "name": "owner",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "is_active",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "ISO-8601 UTC (\"2026-10-20T12:00:00Z\").",
+          "name": "created_at",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Filesystem List at the vault root (rbac::resolver::Vault, FilesystemAction::List on the root's FUSE path): the file browser can open it.",
+          "name": "browse",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "Admin vault View (rbac::resolver::Admin, admin.vaults.<scope>.view): its settings and storage.vault.get.",
+          "name": "manage",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "Every path by which the caller reaches the vault, in this order; never empty. admin_policy: the admin role's vault permissions grant manage, or its global vault filesystem policy grants browse where no vault role applies.",
+          "item_enum": [
+            "owner",
+            "vault_role",
+            "group_role",
+            "admin_policy",
+            "super_admin"
+          ],
+          "items": "string",
+          "name": "via",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        }
+      ],
+      "name": "AccessibleVault"
+    },
+    {
       "description": "An admin role (rbac::role::to_json(Admin), core/src/rbac/role/Admin.cpp): its identity, every admin permission with its value, and the S3 gateway capability summary.",
       "fields": [
         {
@@ -16593,7 +16720,7 @@
       "name": "WebsocketServerConfig"
     }
   ],
-  "models_hash": "b88548f68f153d6bc8f93c6a2ebcb00344107aed747eff6594714161cabc6680",
+  "models_hash": "e3177682637fff82e7987a8e53cd5755df8c1c869645f32ca2781a119dc0ea8d",
   "ws": [
     {
       "auth": "session",
@@ -33584,6 +33711,39 @@
     },
     {
       "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "storage.vault.accessible.list",
+      "confirmations": [],
+      "description": "Every live vault the caller reaches, by any path: as its owner, through a vault role of its own or of one of its groups, or through its admin role (admin.vaults.<scope>.view, or the global vault filesystem policy); a super admin reaches all of them. Each row is a vault summary plus what the enforcing resolvers grant: browse (filesystem List at the vault root, what fs.dir.list {path: \"/\"} needs), manage (admin vault View, what storage.vault.get needs) and via (owner, vault_role, group_role, admin_policy, super_admin; at least one). Unlike storage.vault.list it does not follow the admin role alone. A deactivated account gets an empty list. Read-only; also answers paired devices (`vh vault list --accessible`).",
+      "input": "none",
+      "operation": "vaults.accessible.list",
+      "payload": [],
+      "refusal_codes": [
+        "denied",
+        "unauthorized"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "description": "By vault id.",
+          "items": "object",
+          "model": "AccessibleVault",
+          "name": "vaults",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        }
+      ],
+      "response_model": null,
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
       "client_timeout_ms": 180000,
       "command": "storage.vault.add",
       "confirmations": [
@@ -37494,5 +37654,5 @@
       "variants": []
     }
   ],
-  "ws_hash": "e7f86f48e7d314240589511804acb5a5c8c0aedaed224a09194bf6a3b50f2153"
+  "ws_hash": "da663f0abff78adb72d11244417140be18560f6affe9cf83899fe00ab4e3017b"
 }
