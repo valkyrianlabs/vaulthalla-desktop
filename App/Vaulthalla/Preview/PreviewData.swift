@@ -20,7 +20,7 @@ nonisolated final class PreviewTransport: NodeTransport {
     let vaults = Mutex(PreviewData.vaults)
 
     /// Feature folders' own canned answers (`PreviewFeature`), asked in order for commands answered nowhere here.
-    static let features: [any PreviewFeature.Type] = [CostPreviewData.self]
+    static let features: [any PreviewFeature.Type] = [CostPreviewData.self, AccessPreviewData.self]
 
     init(_ scenario: Scenario) {
         self.scenario = scenario
