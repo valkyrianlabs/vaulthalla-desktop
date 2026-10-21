@@ -56,6 +56,8 @@ struct VaultInspector: View {
                         key(response.plan)
                     }
                 }
+
+                InspectorSection("Access") { VaultAccessSection(vaultID: vault.id, vaultName: vault.name, queries: queries) }
             }
             .padding(16)
         }
