@@ -7,6 +7,12 @@ public struct OnePasswordAccountStatus: Sendable, Equatable, Decodable {
     public let connected: Bool
     public let vaultCount: Int
 
+    public init(account: String, connected: Bool, vaultCount: Int) {
+        self.account = account
+        self.connected = connected
+        self.vaultCount = vaultCount
+    }
+
     enum CodingKeys: String, CodingKey {
         case account, connected
         case vaultCount = "vault_count"
@@ -19,6 +25,12 @@ public struct OnePasswordVault: Sendable, Equatable, Decodable {
     public let title: String
     /// True when `vault.ensure` had to create it.
     public let created: Bool
+
+    public init(id: String, title: String, created: Bool) {
+        self.id = id
+        self.title = title
+        self.created = created
+    }
 
     enum CodingKeys: String, CodingKey {
         case id = "vault_id"
@@ -205,6 +217,20 @@ public struct BackupUpsertOutcome: Sendable, Equatable, Decodable {
     public let storedVersions: [StoredKeyVersion]
     public let updatedAt: Date?
 
+    public init(
+        itemID: String, onePasswordVaultID: String, created: Bool, written: Bool, currentVersion: Int, keyCheck: String,
+        storedVersions: [StoredKeyVersion], updatedAt: Date?
+    ) {
+        self.itemID = itemID
+        self.onePasswordVaultID = onePasswordVaultID
+        self.created = created
+        self.written = written
+        self.currentVersion = currentVersion
+        self.keyCheck = keyCheck
+        self.storedVersions = storedVersions
+        self.updatedAt = updatedAt
+    }
+
     enum CodingKeys: String, CodingKey {
         case itemID = "item_id"
         case onePasswordVaultID = "vault_id"
@@ -237,6 +263,18 @@ public struct RevealedKeys: Sendable {
     public let currentVersion: Int
     /// Newest first (or in the order requested).
     public let versions: [KeyVersion]
+
+    public init(
+        itemID: String, onePasswordVaultID: String, nodeID: String, vaultUUID: String, currentVersion: Int,
+        versions: [KeyVersion]
+    ) {
+        self.itemID = itemID
+        self.onePasswordVaultID = onePasswordVaultID
+        self.nodeID = nodeID
+        self.vaultUUID = vaultUUID
+        self.currentVersion = currentVersion
+        self.versions = versions
+    }
 }
 
 /// The reveal result as decoded from the redacted line; keys are attached from `ResponseLine.secrets`.

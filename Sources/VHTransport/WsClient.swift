@@ -191,14 +191,61 @@ public actor WsClient {
         return try decodeData(JSONValue.self, from: data, command: command)
     }
 
+    /// Sends a command whose payload or answer carries key material (`vault.keys.export`, `vault.keys.import`).
+    ///
+    /// `payload` is the payload object's JSON (build it with `SecretJSONWriter`). The frame is assembled around it in
+    /// memory that is zeroed when the last reference to it goes away, including Network.framework's once the bytes
+    /// are sent. The answer comes back as the whole frame in `SecretBytes`, for the caller to lift the keys out of
+    /// (`SecretJSON.lift`) and decode the rest; refusals still throw `WsError` as for `send`. Nothing is logged but the
+    /// command name.
+    public func sendSensitive(command: String, payload: SecretBytes, timeout: Duration)
+        async throws(WsError) -> SecretBytes
+    {
+        let requestId = UUID().uuidString.lowercased()
+        let head: Data
+        let tail: Data
+        do {
+            head = try Self.encoder.encode(command)
+            let id = try Self.encoder.encode(requestId)
+            let token = try tokens.token.map { try Self.encoder.encode($0) }
+            tail = Data(",\"requestId\":".utf8) + id + (token.map { Data(",\"token\":".utf8) + $0 } ?? Data()) + Data("}".utf8)
+        } catch {
+            throw .error("The request could not be encoded.")
+        }
+        let prefix = Data("{\"command\":".utf8) + head + Data(",\"payload\":".utf8)
+        let count = prefix.count + payload.count + tail.count
+        let storage = UnsafeMutableRawPointer.allocate(byteCount: count, alignment: 1)
+        prefix.copyBytes(to: storage.assumingMemoryBound(to: UInt8.self), count: prefix.count)
+        payload.withUnsafeBytes { raw in
+            if let base = raw.baseAddress { (storage + prefix.count).copyMemory(from: base, byteCount: raw.count) }
+        }
+        tail.copyBytes(to: (storage + prefix.count + payload.count).assumingMemoryBound(to: UInt8.self), count: tail.count)
+        let frame = Data(bytesNoCopy: storage, count: count, deallocator: .custom { pointer, size in
+            pointer.initializeMemory(as: UInt8.self, repeating: 0, count: size)
+            pointer.deallocate()
+        })
+
+        var answer = try await exchange(command: command, requestId: requestId, frame: frame, timeout: timeout)
+        let secret = SecretBytes(answer)
+        answer.resetBytes(in: 0..<answer.count) // zeroes in place when this is the last reference
+        return secret
+    }
+
+    /// Decodes a frame's `data` as `T` (a sensitive answer once its keys were lifted out): the same rules as `send`.
+    public static func decodeAnswer<T: Decodable>(_ type: T.Type, frame: Data, command: String) throws(WsError) -> T {
+        do {
+            if let data = try decoder.decode(DataEnvelope<T>.self, from: frame).data { return data }
+            return try decoder.decode(T.self, from: Data("{}".utf8))
+        } catch {
+            throw .contractMismatch("\(command): the answer doesn't match the contract")
+        }
+    }
+
     // MARK: - Requests
 
     private func exchange(command: String, payload: some Encodable & Sendable, timeout: Duration)
         async throws(WsError) -> Data
     {
-        if Task.isCancelled { throw .cancelled }
-        if case .failed = state { throw .disconnected }
-
         let requestId = UUID().uuidString.lowercased()
         let frame: Data
         do {
@@ -209,6 +256,14 @@ public actor WsClient {
             log.error("could not encode \(command, privacy: .public)")
             throw .error("The request could not be encoded.")
         }
+        return try await exchange(command: command, requestId: requestId, frame: frame, timeout: timeout)
+    }
+
+    private func exchange(command: String, requestId: String, frame: Data, timeout: Duration)
+        async throws(WsError) -> Data
+    {
+        if Task.isCancelled { throw .cancelled }
+        if case .failed = state { throw .disconnected }
         if !wanted { connect() }
 
         let result = await withTaskCancellationHandler {

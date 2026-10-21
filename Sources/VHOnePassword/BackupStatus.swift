@@ -124,12 +124,14 @@ public enum BackupStatus: Sendable, Equatable {
             case partial(missing: [Int])
             /// No usable item (none, another vault's, or one whose stored keys don't match their checks).
             case none
+            /// 1Password's items haven't been read yet (the status rests on the node's own record).
+            case notChecked
         }
 
         public var canRestore: Bool {
             switch backup {
             case .complete, .partial: true
-            case .none: false
+            case .none, .notChecked: false
             }
         }
     }

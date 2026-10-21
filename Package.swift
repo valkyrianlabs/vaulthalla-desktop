@@ -19,6 +19,8 @@ let package = Package(
         .library(name: "VHTransport", targets: ["VHTransport"]),
         .library(name: "VHIdentity", targets: ["VHIdentity"]),
         .library(name: "VHNodes", targets: ["VHNodes"]),
+        .library(name: "VHOnePassword", targets: ["VHOnePassword"]),
+        .library(name: "VHKeyBackup", targets: ["VHKeyBackup"]),
         .library(name: "VHMCP", targets: ["VHMCP"]),
         .executable(name: "vaulthalla-mcp", targets: ["vaulthalla-mcp"]),
     ],
@@ -38,6 +40,12 @@ let package = Package(
         .target(
             name: "VHNodes",
             dependencies: ["VHCore", "VHContract", "VHTransport", "VHIdentity"],
+            swiftSettings: strict
+        ),
+        // Recovery keys (docs/architecture.md §6): vault key backup to 1Password, change detection and restore.
+        .target(
+            name: "VHKeyBackup",
+            dependencies: ["VHCore", "VHContract", "VHTransport", "VHNodes", "VHOnePassword"],
             swiftSettings: strict
         ),
         // The MCP bridge (docs/architecture.md §5): the library, and the stdio helper the app embeds in Contents/Helpers.
@@ -62,7 +70,7 @@ let package = Package(
         ),
         .testTarget(
             name: "VHNodesTests",
-            dependencies: ["VHNodes", "VHCore", "VHContract", "VHTransport", "VHIdentity"],
+            dependencies: ["VHNodes", "VHCore", "VHContract", "VHTransport", "VHIdentity", "VHKeyBackup", "VHOnePassword"],
             swiftSettings: strict
         ),
         .testTarget(
