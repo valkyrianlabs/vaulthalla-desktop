@@ -12,7 +12,8 @@ struct Callout<Content: View>: View {
                 .foregroundStyle(tone.color)
             VStack(alignment: .leading, spacing: 3) { content }
                 .font(.callout)
-                .fixedSize(horizontal: false, vertical: true)
+                // No fixedSize here: above a Table on a page that doesn't scroll, a vertically fixed-size text sends
+                // AppKit's constraint pass into a loop and the app traps. Text wraps inside the bounded width anyway.
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(12)

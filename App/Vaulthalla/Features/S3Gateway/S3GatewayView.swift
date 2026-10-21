@@ -102,6 +102,9 @@ private struct GatewayScreen: View {
         }
         .observing(status, polling: .seconds(30))
         .observing(credentials)
+        // The content's own minimum width must not reach the inspector's split view: a Table's column
+        // minimums plus the inspector can exceed the window, and SwiftUI then loops AppKit's constraint pass.
+        .frame(minWidth: 0, maxWidth: .infinity)
         .inspector(isPresented: Binding(get: { showsInspector && tab == .keys && !(credentials.value?.credentials.isEmpty ?? true) },
                                         set: { showsInspector = $0 })) {
             Group {
@@ -228,7 +231,7 @@ struct GatewaySection<Content: View, Actions: View>: View {
                         Text(subtitle)
                             .font(.callout)
                             .foregroundStyle(.fgSubtle)
-                            .fixedSize(horizontal: false, vertical: true)
+                            // No vertical fixedSize: in a header above a Table it loops AppKit's constraint pass (see Callout).
                     }
                 }
                 Spacer(minLength: 12)

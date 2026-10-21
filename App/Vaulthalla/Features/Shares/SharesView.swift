@@ -128,6 +128,9 @@ private struct SharesScreen: View {
         .observing(users)
         .observing(policyQuery)
         .searchable(text: $filter, placement: .toolbar, prompt: "Filter Links")
+        // The content's own minimum width must not reach the inspector's split view: a Table's column
+        // minimums plus the inspector can exceed the window, and SwiftUI then loops AppKit's constraint pass.
+        .frame(minWidth: 0, maxWidth: .infinity)
         .inspector(isPresented: Binding(get: { showsInspector && !rows.isEmpty }, set: { showsInspector = $0 })) {
             inspector(rows: rows)
                 .inspectorColumnWidth(min: 300, ideal: 340, max: 460)

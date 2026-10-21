@@ -123,6 +123,9 @@ private struct AccessScreen: View {
         }
         .observing(session)
         .searchable(text: $filter, placement: .toolbar, prompt: "Filter \(tab.title)")
+        // The content's own minimum width must not reach the inspector's split view: a Table's column
+        // minimums plus the inspector can exceed the window, and SwiftUI then loops AppKit's constraint pass.
+        .frame(minWidth: 0, maxWidth: .infinity)
         .inspector(isPresented: $showsInspector) {
             inspector(actor: actor)
                 .inspectorColumnWidth(min: 300, ideal: 340, max: 460)
@@ -480,7 +483,7 @@ struct SheetTitle: View {
                     Text(subtitle)
                         .font(.callout)
                         .foregroundStyle(.fgSubtle)
-                        .fixedSize(horizontal: false, vertical: true)
+                        // No vertical fixedSize: in a header above a Table it loops AppKit's constraint pass (see Callout).
                 }
             }
         }
