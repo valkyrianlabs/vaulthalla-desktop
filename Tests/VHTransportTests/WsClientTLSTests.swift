@@ -53,7 +53,7 @@ final class Recorded<Value: Sendable>: Sendable {
     static let serverSPKI = "45a88c7a322a3c2986483f29e4a91414aa16866e77b200cd699fb3d5c12bd723"
     static let clientSPKI = "35837a3e8eb9545e3e2b6fef0e98afaf5cef042c0001e86f5151c16540b5235a"
 
-    private static func identity(_ base64: String) throws -> SecIdentity {
+    static func identity(_ base64: String) throws -> SecIdentity {
         let data = try #require(Data(base64Encoded: base64, options: .ignoreUnknownCharacters))
         let options: [String: Any] = [kSecImportExportPassphrase as String: "test",
                                       kSecImportToMemoryOnly as String: true]
@@ -63,16 +63,16 @@ final class Recorded<Value: Sendable>: Sendable {
         return try #require(first[kSecImportItemIdentity as String].map { $0 as! SecIdentity })
     }
 
-    private static func hex(_ data: Data) -> String { data.map { String(format: "%02x", $0) }.joined() }
+    static func hex(_ data: Data) -> String { data.map { String(format: "%02x", $0) }.joined() }
 
-    private static func data(hex: String) -> Data {
+    static func data(hex: String) -> Data {
         Data(stride(from: 0, to: hex.count, by: 2).map {
             UInt8(hex[hex.index(hex.startIndex, offsetBy: $0)...].prefix(2), radix: 16)!
         })
     }
 
     /// TLS 1.3 server options that require a client certificate and record its SPKI hash.
-    private static func serverTLS(clientSPKI: Recorded<String>) throws -> NWProtocolTLS.Options {
+    static func serverTLS(clientSPKI: Recorded<String>) throws -> NWProtocolTLS.Options {
         let options = NWProtocolTLS.Options()
         let security = options.securityProtocolOptions
         sec_protocol_options_set_min_tls_protocol_version(security, .TLSv13)
