@@ -172,8 +172,9 @@ final class IdentityBox: @unchecked Sendable {
     init(_ value: SecIdentity) { self.value = value }
 }
 
-/// Answers the TLS challenges: the client certificate, and the server's key against the pins.
-private final class TrustDelegate: NSObject, URLSessionDelegate, Sendable {
+/// Answers the TLS challenges: the client certificate, and the server's key against the pins. Shared with
+/// `DeviceTransferClient`, whose streaming session answers the same way.
+final class TrustDelegate: NSObject, URLSessionDelegate, Sendable {
     private let identity: IdentityBox
     private let pins: [Data]
     /// The last SPKI a challenge was refused for, so the failed request reports a pin mismatch.

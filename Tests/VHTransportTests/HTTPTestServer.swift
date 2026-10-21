@@ -18,6 +18,8 @@ final class HTTPTestServer: Sendable {
         var status: Int
         var headers: [String: String] = [:]
         var body = Data()
+        /// Sends the full Content-Length but only this many body bytes, then drops the connection (a lost transfer).
+        var truncateAfter: Int? = nil
     }
 
     typealias Handler = @Sendable (Request) -> Response
@@ -78,6 +80,15 @@ final class HTTPTestServer: Sendable {
         if let (request, rest) = Self.parse(buffer) {
             received.withLock { $0.append(request) }
             let response = handler(request)
+            if let cut = response.truncateAfter {
+                let encoded = Self.encode(response)
+                // Close a moment later: an immediate cancel resets the connection before the client reads the bytes.
+                connection.send(content: encoded.prefix(encoded.count - response.body.count + cut),
+                                completion: .contentProcessed { [queue] _ in
+                                    queue.asyncAfter(deadline: .now() + 0.3) { connection.cancel() }
+                                })
+                return
+            }
             if response.headers["Connection"] == "close" {
                 // Like the daemon: the response, then the connection ends.
                 connection.send(content: Self.encode(response), isComplete: true,
@@ -132,6 +143,8 @@ final class HTTPTestServer: Sendable {
         case 206: "Partial Content"
         case 403: "Forbidden"
         case 404: "Not Found"
+        case 409: "Conflict"
+        case 503: "Service Unavailable"
         case 416: "Range Not Satisfiable"
         default: "Status"
         }
