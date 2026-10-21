@@ -193,14 +193,14 @@ struct LiveInteropTests {
         let vaults = try await ws.send(Ws.Storage.Vault.List.self)
         let cli = try await LiveNode.vhJSON(["vault", "list"])
         let cliIDs = Set((cli.arrayValue ?? []).compactMap { $0["id"]?.integerValue })
-        #expect(Set(vaults.vaults.compactMap { $0["id"]?.integerValue }) == cliIDs, "ws vs CLI vault list")
-        print("[live] storage.vault.list as the device's user: \(vaults.vaults.compactMap { $0["name"]?.stringValue })")
+        #expect(Set(vaults.vaults.map(\.id)) == cliIDs, "ws vs CLI vault list")
+        print("[live] storage.vault.list as the device's user: \(vaults.vaults.map(\.name))")
 
         let top = try await ws.send(Ws.Fs.List.self, payload: .init(vaultID: instance.vaultID, path: "/"))
-        let names = Set(top.files.compactMap { $0["name"]?.stringValue })
+        let names = Set(top.files.map(\.name))
         #expect(names.isSuperset(of: ["hello.txt", "docs"]), "fs.list /: \(names)")
         let docs = try await ws.send(Ws.Fs.List.self, payload: .init(vaultID: instance.vaultID, path: "/docs"))
-        #expect(docs.files.compactMap { $0["name"]?.stringValue } == ["blob.bin"])
+        #expect(docs.files.map(\.name) == ["blob.bin"])
     }
 
     private static func httpLanes(_ http: DeviceHTTPClient, vault: Int64) async throws {

@@ -1,5 +1,5 @@
-/// Any JSON value. The generated types use it where the contract can't say more: unions (`"30d"` or `30`), elements
-/// it leaves untyped, and the raw escape hatch for commands not in the contract yet.
+/// Any JSON value: the raw escape hatch for commands not in the contract yet, and what the generated types fall back
+/// to where the contract can't say more (several JSON types without a `one_of`, array elements it leaves untyped).
 ///
 /// Integers decode as `.integer` (ids are 64-bit and must not round-trip through `Double`); any other number is
 /// `.number`.
@@ -55,7 +55,8 @@ public enum JSONValue: Hashable, Sendable {
     }
 }
 
-/// A JSON object. Server models the contract names but doesn't spell out (`User`, `FsEntry`, ...) decode to this.
+/// A JSON object. The generated types use it for objects the contract leaves open (free-form metadata, audit
+/// details); the models it names are typed (`WsModel.User`, ...).
 public typealias JSONObject = [String: JSONValue]
 
 extension JSONValue: Codable {

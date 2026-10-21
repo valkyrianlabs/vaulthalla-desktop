@@ -56,10 +56,13 @@ private func withServer(_ body: (TestServer, WsClient) async throws -> Void) asy
             #expect(contractRequest.requestId != groupRequest.requestId)
 
             // Answer the later request first.
-            groupRequest.ok(["group": ["id": 7, "name": "ops"]])
-            contractRequest.ok(["contract_version": 1, "contract_hash": "c", "ws_hash": .string(WsContract.wsHash)])
+            groupRequest.ok(["group": [
+                "id": 7, "name": "ops", "description": .null, "created_at": "2026-10-20 12:00:00", "members": [],
+            ]])
+            contractRequest.ok(["contract_version": 2, "contract_hash": "c", "ws_hash": .string(WsContract.wsHash),
+                                "models_hash": .string(WsContract.modelsHash)])
 
-            #expect(try await group.value.group["name"] == "ops")
+            #expect(try await group.value.group.name == "ops")
             #expect(try await contract.value.wsHash == WsContract.wsHash)
         }
     }

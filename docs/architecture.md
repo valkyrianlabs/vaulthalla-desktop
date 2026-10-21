@@ -129,8 +129,8 @@ docs/                   this plan, the pairing protocol, release notes
   - A dark scheme with the web's tokens as named `Color`s and one cyan tint.
   - Native materials (Liquid Glass sidebar and toolbars) over the `#05080d` canvas.
   - Status tones only as the backend reports them; unknown is never green.
-- **Contract:** a Swift `WsCommand` enum, generated `Codable` payload/response types, the auth level and timeouts per
-  command, and the `ws_hash`.
+- **Contract:** a Swift `WsCommand` enum, generated `Codable` payload/response types and server models (`WsModel`),
+  the auth level, timeouts and confirmations per command, and the `ws_hash` and `models_hash`.
   - Desktop compares the `ws_hash` with `meta.contract.get` and degrades per command ("needs Vaulthalla ≥ x"), never
     the whole node.
   - Desktop supports the current and the previous server minor.
