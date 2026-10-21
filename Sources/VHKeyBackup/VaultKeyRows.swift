@@ -95,6 +95,8 @@ public struct VaultKeyRow: Identifiable, Sendable, Equatable {
     /// before the node attested keys: "Back up again" refreshes them). nil without a backup to judge.
     public var recoveryAssurance: RecoveryAssurance? {
         guard let item, item.vaultUUID == daemon.vaultUUID else { return nil }
+        // A backup that disagrees with the node (or looks damaged) guarantees nothing.
+        if case .mismatch = status { return nil }
         let required = daemon.requiredVersions
         let held = required.compactMap { item.version($0) }
         guard !held.isEmpty else { return nil }

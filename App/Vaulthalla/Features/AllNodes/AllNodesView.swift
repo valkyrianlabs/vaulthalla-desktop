@@ -27,7 +27,7 @@ struct AllNodesView: View {
                     StatTile(label: "Nodes", value: "\(model.nodes.count)", systemImage: "server.rack")
                     StatTile(label: "Paired", value: "\(count { $0.pairing.isPaired })", systemImage: "lock.laptopcomputer")
                     StatTile(label: "Online", value: "\(count { model.status(for: $0) == .online })", systemImage: "dot.radiowaves.left.and.right")
-                    StatTile(label: "Key backups", value: nil, systemImage: "key.horizontal")
+                    keyBackupsTile
                 }
 
                 Panel(padded: false) {
@@ -38,6 +38,22 @@ struct AllNodesView: View {
         .padding(Theme.pagePadding)
         .frame(maxWidth: 1100, maxHeight: .infinity, alignment: .topLeading)
         .frame(maxWidth: .infinity)
+    }
+
+    /// Recovery Keys at a glance; opens the cross-node Recovery Keys page. "not available" until a node answered.
+    private var keyBackupsTile: some View {
+        let rows = model.recoveryKeys.rows()
+        let backedUp = rows.filter { if case .backedUp = $0.status { true } else { false } }.count
+        let attention = rows.filter(\.needsAttention).count
+        return Button {
+            model.showAllRecoveryKeys()
+        } label: {
+            StatTile(label: "Key backups",
+                     value: rows.isEmpty ? nil : attention > 0 ? "\(attention) need attention" : "\(backedUp) of \(rows.count) backed up",
+                     systemImage: "key.horizontal", tone: attention > 0 ? .warn : nil)
+        }
+        .buttonStyle(.plain)
+        .help("Recovery Keys across every node")
     }
 
     private var nodeTable: some View {

@@ -47,6 +47,7 @@ enum PreviewSamples {
         let model = model(selecting: id)
         model.usePreviewData(for: nodes[1].id, transport: PreviewTransport(.full))
         model.usePreviewData(for: nodes[3].id, transport: PreviewTransport(.restricted))
+        RecoveryKeysPreviewData.install(on: model)
         return model
     }
 }

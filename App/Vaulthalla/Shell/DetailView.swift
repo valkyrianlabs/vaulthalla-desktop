@@ -12,6 +12,10 @@ struct DetailView: View {
                     .navigationTitle(model.selectedSection.title)
                     .navigationSubtitle(node.displayName)
                     .id(node.id)
+            } else if model.allNodesPage == .recoveryKeys {
+                AllRecoveryKeysView()
+                    .navigationTitle("Recovery Keys")
+                    .navigationSubtitle("All Nodes")
             } else {
                 AllNodesView()
                     .navigationTitle("All Nodes")

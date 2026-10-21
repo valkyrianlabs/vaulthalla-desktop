@@ -8,9 +8,11 @@ import VHCore
 ///     Vaulthalla.app/Contents/MacOS/Vaulthalla -VHDebugSelect 0:files -VHDebugSheet addNode \
 ///         -VHDebugSnapshot /tmp/shell.png
 ///
-/// `-VHDebugSelect` takes `all` or `<node position>:<section>`; `-VHDebugSheet` takes `addNode` or `pair:<position>`.
+/// `-VHDebugSelect` takes `all`, `allKeys` (Recovery Keys across nodes) or `<node position>:<section>`;
+/// `-VHDebugSheet` takes `addNode` or `pair:<position>`.
 /// `-VHDebugPreviewData YES` serves the preview nodes from PREVIEW DATA (`PreviewTransport`); with it,
-/// `-VHDebugVault <id>` selects a vault and `-VHDebugDeleteVault YES` opens its delete sheet.
+/// `-VHDebugVault <id>` selects a vault and `-VHDebugDeleteVault YES` opens its delete sheet;
+/// `-VHDebugRecoveryKeys sync|restore|restore-result|settings` opens a Recovery Keys sheet.
 /// `-VHDebugRegistry <nodes.json>` uses another node list, and `-VHDebugPairing <phase>` shows the pairing sheet in a
 /// fixed phase without contacting the node (`DebugPairing`).
 /// The window renders itself to the PNG (and the sheet to `<name>.sheet.png`), then the app exits. Glass can't be
@@ -24,6 +26,8 @@ enum DebugSnapshot {
             let parts = select.split(separator: ":").map(String.init)
             if parts.first == "all" {
                 model.showAllNodes()
+            } else if parts.first == "allKeys" {
+                model.showAllRecoveryKeys()
             } else if let position = Int(parts[0]) {
                 model.selectNode(atPosition: position)
                 if parts.count > 1, let section = NodeSection(rawValue: parts[1]) { model.select(section) }

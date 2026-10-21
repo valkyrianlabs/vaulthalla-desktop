@@ -6,6 +6,8 @@ import VHCore
 /// section, and the node row marks itself as current.
 enum SidebarItem: Hashable {
     case allNodes
+    /// Recovery Keys across every node.
+    case allRecoveryKeys
     case node(NodeID)
     case section(NodeSection)
 }
@@ -17,6 +19,9 @@ struct Sidebar: View {
         List(selection: selection) {
             Label("All Nodes", systemImage: "square.grid.2x2")
                 .tag(SidebarItem.allNodes)
+            Label("Recovery Keys", systemImage: NodeSection.recoveryKeys.systemImage)
+                .recoveryKeysBadge()
+                .tag(SidebarItem.allRecoveryKeys)
 
             Section("Nodes") {
                 if model.nodes.isEmpty && model.registryProblem == nil {
@@ -35,6 +40,7 @@ struct Sidebar: View {
                     ForEach(NodeSection.allCases) { section in
                         Label(section.title, systemImage: section.systemImage)
                             .syncConflictsBadge(section: section, node: node)
+                            .recoveryKeysBadge(section: section, node: node)
                             .tag(SidebarItem.section(section))
                     }
                 }
@@ -81,12 +87,13 @@ struct Sidebar: View {
     private var selection: Binding<SidebarItem?> {
         Binding(
             get: {
-                if model.showsAllNodes { return .allNodes }
+                if model.showsAllNodes { return model.allNodesPage == .recoveryKeys ? .allRecoveryKeys : .allNodes }
                 return model.selectedNodeID == nil ? nil : .section(model.selectedSection)
             },
             set: { item in
                 switch item {
                 case .allNodes: model.showAllNodes()
+                case .allRecoveryKeys: model.showAllRecoveryKeys()
                 case .node(let id): model.selectNode(id)
                 case .section(let section): model.select(section)
                 case nil: break

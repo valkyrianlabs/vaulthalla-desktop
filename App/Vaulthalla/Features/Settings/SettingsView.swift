@@ -10,6 +10,9 @@ struct SettingsView: View {
             Tab("Agents", systemImage: "sparkles") {
                 AgentsSettingsView()
             }
+            Tab("1Password", systemImage: "key.horizontal") {
+                OnePasswordSettingsView()
+            }
             Tab("About", systemImage: "info.circle") {
                 AboutView()
             }

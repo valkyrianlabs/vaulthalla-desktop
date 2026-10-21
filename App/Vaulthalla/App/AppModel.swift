@@ -20,6 +20,8 @@ final class AppModel {
     private(set) var registryProblem: String?
 
     var showsAllNodes = true
+    /// What "All Nodes" shows: the overview, or Recovery Keys across every node.
+    var allNodesPage: AllNodesPage = .overview
     var selectedNodeID: NodeID?
     var selectedSection: NodeSection = .overview
 
@@ -46,13 +48,21 @@ final class AppModel {
     @ObservationIgnored private var queryStores: [NodeID: NodeQueries] = [:]
     /// Whether the app is active with a visible window: polling runs only then (`AppActivity`).
     @ObservationIgnored private var isAppActive = true
+    /// Vault key backups to 1Password across every node (Recovery Keys).
+    @ObservationIgnored let recoveryKeys: RecoveryKeysModel
+    #if DEBUG
+    @ObservationIgnored private var previewTransports: [NodeID: any NodeTransport] = [:]
+    #endif
 
-    init(store: NodeStore, keys: DeviceKeys? = nil) {
+    init(store: NodeStore, keys: DeviceKeys? = nil, recoveryKeys: RecoveryKeysModel = RecoveryKeysModel()) {
         self.store = store
+        self.recoveryKeys = recoveryKeys
         loadNodes()
+        recoveryKeys.app = self
         if let keys {
             sessions = NodeSessions(keys: keys) { [weak self] id, event in self?.handle(event, from: id) }
             syncSessions()
+            recoveryKeys.start()
         }
     }
 
@@ -206,7 +216,10 @@ final class AppModel {
         case .status(let status):
             switch status {
             case .connecting: setConnectionStatus(.connecting, for: id)
-            case .online: setConnectionStatus(.online, for: id)
+            case .online:
+                let cameOnline = liveStatus[id] != .online
+                setConnectionStatus(.online, for: id)
+                if cameOnline { Task { await recoveryKeys.pollNodes() } }
             case .offline(let reason):
                 offlineReasons[id] = reason
                 setConnectionStatus(.offline, for: id)
@@ -271,6 +284,16 @@ final class AppModel {
         guard active != isAppActive else { return }
         isAppActive = active
         for store in queryStores.values { store.isActive = active }
+        recoveryKeys.appActivityChanged(active)
+    }
+
+    /// How key backup reaches a node: its live session (or PREVIEW DATA), nil while it has none.
+    func keyTransport(for id: NodeID) -> (any NodeTransport)? {
+        #if DEBUG
+        if let preview = previewTransports[id] { return preview }
+        #endif
+        guard let sessions, sessions.session(for: id) != nil else { return nil }
+        return SessionTransport { [weak sessions] in sessions?.session(for: id) }
     }
 
     /// ⌘R: refetch what the selected node's visible section shows.
@@ -291,6 +314,7 @@ final class AppModel {
         made.isActive = isAppActive
         queryStores[id] = made
         liveStatus[id] = .online
+        previewTransports[id] = transport
     }
     #endif
 
@@ -309,6 +333,13 @@ final class AppModel {
 
     func showAllNodes() {
         showsAllNodes = true
+        allNodesPage = .overview
+    }
+
+    /// Recovery Keys across every node (the All Nodes variant; the notification's action).
+    func showAllRecoveryKeys() {
+        showsAllNodes = true
+        allNodesPage = .recoveryKeys
     }
 
     func selectNode(_ id: NodeID, section: NodeSection? = nil) {
@@ -360,6 +391,11 @@ final class AppModel {
             }
         }
     }
+}
+
+enum AllNodesPage: String, Hashable, Sendable {
+    case overview
+    case recoveryKeys
 }
 
 struct RestorableSelection: Codable, Hashable, RawRepresentable {
