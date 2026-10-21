@@ -1,10 +1,10 @@
 {
   "server_version": "1.15.0",
-  "server_commit": "569e4871",
-  "server_branch": "feat/ws-contract-coverage",
+  "server_commit": "492cabd8",
+  "server_branch": "feat/desktop-integration",
   "source": "web/src/util/generated/wsContract.json",
   "contract_version": 2,
-  "ws_hash": "95a3efeee05a1304eceaf7214d5c6b8620a579de69de522bf20f0f778843a5bc",
-  "models_hash": "c904d80541989f2425701f4d1b357f2a48f83399eee5c536ec1423851f7e7dc7",
-  "note": "Vendored from the unmerged server branch feat/ws-contract-coverage (contract v2); re-vendor from the integration branch (which adds the device.* commands and the Device model) once it lands."
+  "ws_hash": "6ce95d5ce30adf91c5e3f5b8b0264e286e0e0dc7f1ee8153e1a62ef52f78e552",
+  "models_hash": "8fe71105a27f928773db20d7ed7b9c1cf7a63021b924d494988b0da2cc7322bb",
+  "note": "Vendored from the unmerged server branch feat/desktop-integration (mcp + device pairing + contract v2 + web devices); re-vendor after feat/key-backup merges into it."
 }
