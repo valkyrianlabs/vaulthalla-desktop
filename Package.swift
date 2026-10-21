@@ -52,5 +52,11 @@ let package = Package(
             dependencies: ["VHNodes", "VHCore", "VHContract", "VHTransport", "VHIdentity"],
             swiftSettings: strict
         ),
+        // Opt-in: runs only with VH_LIVE_NODE set, against a live daemon (docs/interop-testing.md).
+        .testTarget(
+            name: "VHNodesLiveTests",
+            dependencies: ["VHNodes", "VHCore", "VHContract", "VHTransport", "VHIdentity"],
+            swiftSettings: strict
+        ),
     ]
 )
