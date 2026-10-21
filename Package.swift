@@ -19,6 +19,8 @@ let package = Package(
         .library(name: "VHTransport", targets: ["VHTransport"]),
         .library(name: "VHIdentity", targets: ["VHIdentity"]),
         .library(name: "VHNodes", targets: ["VHNodes"]),
+        .library(name: "VHMCP", targets: ["VHMCP"]),
+        .executable(name: "vaulthalla-mcp", targets: ["vaulthalla-mcp"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-certificates.git", from: "1.21.0"),
@@ -38,6 +40,17 @@ let package = Package(
             dependencies: ["VHCore", "VHContract", "VHTransport", "VHIdentity"],
             swiftSettings: strict
         ),
+        // The MCP bridge (docs/architecture.md §5): the library, and the stdio helper the app embeds in Contents/Helpers.
+        .target(
+            name: "VHMCP",
+            dependencies: ["VHCore", "VHContract", "VHTransport", "VHIdentity", "VHNodes"],
+            swiftSettings: strict
+        ),
+        .executableTarget(
+            name: "vaulthalla-mcp",
+            dependencies: ["VHMCP", "VHCore", "VHNodes"],
+            swiftSettings: strict
+        ),
         .testTarget(name: "VHCoreTests", dependencies: ["VHCore"], swiftSettings: strict),
         .testTarget(name: "VHContractTests", dependencies: ["VHContract"], swiftSettings: strict),
         .testTarget(name: "VHTransportTests", dependencies: ["VHTransport"], swiftSettings: strict),
@@ -50,6 +63,11 @@ let package = Package(
         .testTarget(
             name: "VHNodesTests",
             dependencies: ["VHNodes", "VHCore", "VHContract", "VHTransport", "VHIdentity"],
+            swiftSettings: strict
+        ),
+        .testTarget(
+            name: "VHMCPTests",
+            dependencies: ["VHMCP", "VHNodes", "VHCore", "VHContract", "VHTransport", "VHIdentity"],
             swiftSettings: strict
         ),
         // Opt-in: runs only with VH_LIVE_NODE set, against a live daemon (docs/interop-testing.md).
