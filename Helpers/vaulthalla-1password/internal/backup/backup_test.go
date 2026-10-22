@@ -127,7 +127,6 @@ type ver struct {
 	KeyCheck string `json:"key_check"`
 	Needed   bool   `json:"needed"`
 	// Attestation metadata (attestation_test.go).
-	NodeID      string       `json:"node_id,omitempty"`
 	Attestation *Attestation `json:"attestation,omitempty"`
 }
 

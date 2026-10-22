@@ -164,7 +164,7 @@ public struct KeyRestore: Sendable {
             versions: revealed.versions.map {
                 .init(version: $0.version, key: $0.key, keyCheck: $0.keyCheck,
                       reason: $0.version == revealed.currentVersion ? "current" : nil,
-                      nodeID: $0.nodeID, attestation: $0.attestation)
+                      attestation: $0.attestation)
             })
     }
 

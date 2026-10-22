@@ -12,8 +12,8 @@ public struct ExportedVaultKeys: Sendable {
         public let keyCheck: String
         /// `current`, `rotation` (an unfinished rotation's outgoing key), `recovery`, or a newer daemon's word.
         public let reason: String
-        /// The node's attestation of this version, when the daemon attests keys (absent: not attested).
-        public let nodeID: String?
+        /// The node's attestation of this version; nil when it has none recorded (the version can then only be
+        /// salvaged from a backup, never restored as the vault's own).
         public let attestation: KeyAttestation?
     }
 
@@ -34,17 +34,16 @@ public struct VaultKeySet: Sendable {
         public let key: SecretBytes
         public let keyCheck: String?
         public let reason: String?
-        /// Passed back byte for byte, so the daemon can verify the version as its own (recover mode).
-        public let nodeID: String?
+        /// The node's attestation as 1Password stored it, passed back unchanged: the daemon restores the version as
+        /// the vault's own only when it verifies (recover mode).
         public let attestation: KeyAttestation?
 
-        public init(version: Int, key: SecretBytes, keyCheck: String?, reason: String? = nil, nodeID: String? = nil,
+        public init(version: Int, key: SecretBytes, keyCheck: String?, reason: String? = nil,
                     attestation: KeyAttestation? = nil) {
             self.version = version
             self.key = key
             self.keyCheck = keyCheck
             self.reason = reason
-            self.nodeID = nodeID
             self.attestation = attestation
         }
     }
@@ -63,10 +62,11 @@ public struct VaultKeySet: Sendable {
         self.versions = versions
     }
 
-    /// Writes the export object: `{vault_id, vault_name, key, key_check, node_id?, attestation?, key_info: {key_version,
-    /// key_check, ...}, historical_keys: [{key_version, key, key_check, node_id?, attestation?}]}` (the daemon's
-    /// `generate_json_key_object` plus key checks and attestations; the import reads `key`, `key_info.key_version` /
-    /// `key_check` and every `historical_keys[]` entry).
+    /// Writes the export object: `{vault_id, vault_name, key, key_check, attestation, key_info: {key_version,
+    /// key_check, attestation, ...}, historical_keys: [{key_version, key, key_check, attestation}]}` (the daemon's
+    /// `VaultKeyExport`; `attestation` is `{key_id, signature}` or null). The import reads `key`,
+    /// `key_info.key_version`, `key_check` and `attestation` (top level or in `key_info`), and every
+    /// `historical_keys[]` entry.
     public func write(to w: SecretJSONWriter, exportedBy: String, exportedAt: Date = .now) {
         let sorted = versions.sorted { $0.version > $1.version }
         guard let head = sorted.first(where: { $0.version == currentVersion }) ?? sorted.first else {
@@ -113,13 +113,14 @@ public struct VaultKeySet: Sendable {
 
     private static func writeIdentity(_ version: Version, to w: SecretJSONWriter) {
         if let check = version.keyCheck { w.field("key_check", check) }
-        if let node = version.nodeID { w.field("node_id", node) }
+        w.key("attestation")
         if let attestation = version.attestation {
-            w.key("attestation")
             w.beginObject()
             w.field("key_id", attestation.keyID)
             w.field("signature", attestation.signature)
             w.endObject()
+        } else {
+            w.null()
         }
     }
 }
@@ -280,63 +281,10 @@ public struct VaultKeyImportReport: Sendable, Equatable, Decodable {
     public var needsSalvage: [Version] { versions.filter { $0.outcome == Version.needsSalvage } }
 }
 
-/// The export answer with the optional attestation members (absent until the daemon attests keys). Keys are the
-/// `secret:<n>` placeholders `SecretJSON.lift` left.
-private struct ExportWire: Decodable {
-    struct Info: Decodable {
-        let keyVersion: Int64
-        let keyCheck: String?
-        let nodeID: String?
-        let attestation: KeyAttestation?
-
-        enum CodingKeys: String, CodingKey {
-            case keyVersion = "key_version"
-            case keyCheck = "key_check"
-            case nodeID = "node_id"
-            case attestation
-        }
-    }
-
-    struct Historical: Decodable {
-        let keyVersion: Int64
-        let key: String
-        let keyCheck: String
-        let reason: String?
-        let nodeID: String?
-        let attestation: KeyAttestation?
-
-        enum CodingKeys: String, CodingKey {
-            case keyVersion = "key_version"
-            case key
-            case keyCheck = "key_check"
-            case reason
-            case nodeID = "node_id"
-            case attestation
-        }
-    }
-
-    let vaultID: Int64
-    let vaultName: String
-    let key: String
-    let keyCheck: String
-    let keyInfo: Info
-    let nodeID: String?
-    let attestation: KeyAttestation?
-    let historicalKeys: [Historical]?
-    let missingKeyVersions: [Int64]?
-    let deletedVault: Bool?
-
-    enum CodingKeys: String, CodingKey {
-        case vaultID = "vault_id"
-        case vaultName = "vault_name"
-        case key
-        case keyCheck = "key_check"
-        case keyInfo = "key_info"
-        case nodeID = "node_id"
-        case attestation
-        case historicalKeys = "historical_keys"
-        case missingKeyVersions = "missing_key_versions"
-        case deletedVault = "deleted_vault"
+extension KeyAttestation {
+    /// The contract's attestation, kept as the daemon sent it.
+    init(_ attestation: WsModel.VaultKeyAttestation) {
+        self.init(keyID: attestation.keyID, signature: attestation.signature)
     }
 }
 
@@ -372,7 +320,8 @@ public struct VaultKeyCommands: Sendable {
         } catch {
             throw .contractMismatch("\(command.rawValue): a key isn't base64")
         }
-        let export = try WsClient.decodeAnswer(ExportWire.self, frame: lifted.redacted, command: command.rawValue)
+        let export = try WsClient.decodeAnswer(WsModel.VaultKeyExport.self, frame: lifted.redacted,
+                                               command: command.rawValue)
         guard let current = lifted.secret(for: export.key) else {
             throw .contractMismatch("\(command.rawValue): the current key is missing")
         }
@@ -380,15 +329,15 @@ public struct VaultKeyCommands: Sendable {
         var versions = [ExportedVaultKeys.Version(
             version: Int(currentVersion), key: current, keyCheck: export.keyCheck,
             reason: WsModel.VaultKeyNeededVersion.Reason.current,
-            nodeID: export.nodeID ?? export.keyInfo.nodeID, attestation: export.attestation ?? export.keyInfo.attestation)]
+            attestation: (export.attestation?.wrapped ?? export.keyInfo.attestation?.wrapped).map(KeyAttestation.init))]
         for historical in export.historicalKeys ?? [] {
             guard let key = lifted.secret(for: historical.key) else {
                 throw .contractMismatch("\(command.rawValue): key version \(historical.keyVersion) is missing")
             }
             guard historical.keyVersion != currentVersion else { continue }
             versions.append(.init(version: Int(historical.keyVersion), key: key, keyCheck: historical.keyCheck,
-                                  reason: historical.reason ?? WsModel.VaultKeyNeededVersion.Reason.recovery,
-                                  nodeID: historical.nodeID ?? export.nodeID, attestation: historical.attestation))
+                                  reason: historical.reason,
+                                  attestation: historical.attestation?.wrapped.map(KeyAttestation.init)))
         }
         return ExportedVaultKeys(
             vaultID: export.vaultID, vaultName: export.vaultName, currentVersion: Int(currentVersion),

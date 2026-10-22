@@ -31,8 +31,7 @@ type VersionMeta struct {
 	Version  int    `json:"version"`
 	KeyCheck string `json:"key_check"`
 	State    string `json:"state,omitempty"`
-	// Non-secret attestation metadata, when the version has it.
-	NodeID      string       `json:"node_id,omitempty"`
+	// The node's attestation (non-secret), when the version has one.
 	Attestation *Attestation `json:"attestation,omitempty"`
 }
 
@@ -83,7 +82,7 @@ func (p parsedItem) meta() ItemMeta {
 	for _, v := range p.sortedVersions() {
 		sv := p.Versions[v]
 		m.Versions = append(m.Versions, VersionMeta{Version: v, KeyCheck: sv.KeyCheck, State: sv.State,
-			NodeID: sv.NodeID, Attestation: sv.Attestation})
+			Attestation: sv.Attestation})
 	}
 	return m
 }
@@ -367,7 +366,7 @@ func verify(stored parsedItem, p *UpsertParams) *Error {
 		if !sameKey(sv.Value, v.Key) || sv.KeyCheck != v.KeyCheck {
 			return fail(versionField(v.Version) + " differs")
 		}
-		if (v.Attestation != nil && !sv.Attestation.equal(v.Attestation)) || (v.NodeID != "" && sv.NodeID != v.NodeID) {
+		if v.Attestation != nil && !sv.Attestation.equal(v.Attestation) {
 			return fail(versionField(v.Version) + "'s attestation differs")
 		}
 	}
@@ -408,7 +407,6 @@ type RevealedVersion struct {
 	Version     int
 	KeyCheck    string
 	State       string
-	NodeID      string
 	Attestation *Attestation
 	Key         []byte
 }
@@ -437,12 +435,6 @@ func (rr *RevealResult) appendJSON(buf *secureBuf) error {
 		buf.writeString(`,"state":`)
 		if err := buf.writeJSON(v.State); err != nil {
 			return err
-		}
-		if v.NodeID != "" {
-			buf.writeString(`,"node_id":`)
-			if err := buf.writeJSON(v.NodeID); err != nil {
-				return err
-			}
 		}
 		if v.Attestation != nil {
 			buf.writeString(`,"attestation":`)
@@ -513,7 +505,7 @@ func (s *Server) itemReveal(ctx context.Context, raw []byte, r *Redactor) (any, 
 			return nil, newError(CodeKeyCheckMismatch, fmt.Sprintf("stored version %d doesn't match its key check", v))
 		}
 		res.Versions = append(res.Versions, RevealedVersion{Version: v, KeyCheck: sv.KeyCheck, State: sv.State,
-			NodeID: sv.NodeID, Attestation: sv.Attestation, Key: key})
+			Attestation: sv.Attestation, Key: key})
 	}
 	return res, nil
 }

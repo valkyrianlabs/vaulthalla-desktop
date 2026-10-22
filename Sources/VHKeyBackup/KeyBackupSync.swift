@@ -135,7 +135,7 @@ public struct KeyBackupSync: Sendable {
                 vaultUUID: String(row.vaultID), vaultName: exported.vaultName, currentVersion: exported.currentVersion,
                 versions: exported.versions.map {
                     KeyVersion(version: $0.version, key: $0.key, keyCheck: $0.keyCheck, needed: true,
-                               nodeID: $0.nodeID, attestation: $0.attestation)
+                               attestation: $0.attestation)
                 }))
         } catch {
             return .failed(step: .store, message: KeyBackupWords.onePassword(error))

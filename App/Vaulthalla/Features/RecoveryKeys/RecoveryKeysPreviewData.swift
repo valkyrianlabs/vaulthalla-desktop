@@ -51,7 +51,7 @@ nonisolated enum RecoveryKeysPreviewData: PreviewFeature {
     static let vault = OnePasswordVault(id: "op-preview-vault", title: "Vaulthalla", created: false)
 
     static func attestation(_ vault: Int64, _ version: Int) -> KeyAttestation {
-        KeyAttestation(keyID: "ed25519:homelab-2026", signature: "c2lnLXByZXZpZXctMDAx\(vault)\(version)")
+        KeyAttestation(keyID: 1, signature: Data("preview-signature-\(vault)-\(version)".utf8).base64EncodedString())
     }
 
     static func item(_ vault: Int64, _ name: String, current: Int, versions: [Int], attested: Bool = true,
@@ -63,7 +63,7 @@ nonisolated enum RecoveryKeysPreviewData: PreviewFeature {
             versions: versions.sorted(by: >).map { version in
                 StoredKeyVersion(version: version, keyCheck: check(vault, Int64(version), other: differs && version == current),
                                  state: version == current ? .current : .needed,
-                                 nodeID: attested ? homeLab : nil, attestation: attested ? attestation(vault, version) : nil)
+                                 attestation: attested ? attestation(vault, version) : nil)
             },
             updatedAt: Date(timeIntervalSince1970: TimeInterval(backedUp)),
             backedUpAt: Date(timeIntervalSince1970: TimeInterval(backedUp)))
@@ -120,7 +120,7 @@ nonisolated final class PreviewKeyBackupStore: KeyBackupStore {
         let current = backup.versions.first { $0.version == backup.currentVersion }
         let stored = backup.versions.sorted { $0.version > $1.version }.map {
             StoredKeyVersion(version: $0.version, keyCheck: $0.keyCheck, state: $0.version == backup.currentVersion ? .current : .needed,
-                             nodeID: $0.nodeID, attestation: $0.attestation)
+                             attestation: $0.attestation)
         }
         let item = BackupItem(
             itemID: "op-item-\(backup.vaultUUID)", onePasswordVaultID: vault.id,
@@ -147,8 +147,7 @@ nonisolated final class PreviewKeyBackupStore: KeyBackupStore {
             currentVersion: item.currentVersion,
             versions: wanted.map {
                 KeyVersion(version: $0.version, key: SecretBytes([UInt8](repeating: UInt8($0.version), count: 32)),
-                           keyCheck: $0.keyCheck, needed: $0.state != .retired, nodeID: $0.nodeID,
-                           attestation: $0.attestation)
+                           keyCheck: $0.keyCheck, needed: $0.state != .retired, attestation: $0.attestation)
             })
     }
 }

@@ -53,10 +53,9 @@ func versionField(v int) string { return "v" + strconv.Itoa(v) }
 func checkField(v int) string   { return versionField(v) + "_check" }
 func stateField(v int) string   { return versionField(v) + "_state" }
 
-// Attestation fields (non-secret metadata next to each version's key): the node that attested the version, and its
-// Ed25519 attestation (key id + signature over "vh-key-attest-v1" ‖ node_id ‖ vault_id ‖ version ‖ key_check). The
-// helper never verifies them (the daemon does on import); it stores and returns them byte for byte.
-func nodeField(v int) string      { return versionField(v) + "_node_id" }
+// Attestation fields (non-secret metadata next to each version's key): the node's Ed25519 attestation of the version
+// (the id of the node's signing key + a signature over "vh-key-attest-v1" ‖ node_id ‖ vault_id ‖ version ‖
+// key_check). The helper never verifies them (the daemon does on import); it stores and returns them unchanged.
 func attestKeyField(v int) string { return versionField(v) + "_attest_key_id" }
 func attestSigField(v int) string { return versionField(v) + "_attest_sig" }
 
@@ -99,14 +98,14 @@ type storedVersion struct {
 	Value    string // base64 key; never leaves the helper except through item.reveal
 	KeyCheck string
 	State    string
-	// Attestation metadata; empty when the version was backed up without one ("best effort" recovery).
-	NodeID      string
+	// Attestation metadata; nil when the version was backed up without one (it can only be salvaged).
 	Attestation *Attestation
 }
 
-// Attestation is a node's signature over a key version's identity (key check). Opaque to the helper.
+// Attestation is the daemon's `{key_id, signature}`: key_id is the id of the node's signing key (an unsigned integer,
+// stored as decimal text), signature the base64 Ed25519 signature. Opaque to the helper otherwise.
 type Attestation struct {
-	KeyID     string `json:"key_id"`
+	KeyID     uint32 `json:"key_id"`
 	Signature string `json:"signature"`
 }
 
@@ -168,12 +167,13 @@ func parseItem(it store.Item) (parsedItem, bool) {
 		v, _ := strconv.Atoi(m[1])
 		check, _ := it.Field(SectionVersions, checkField(v))
 		state, _ := it.Field(SectionVersions, stateField(v))
-		node, _ := it.Field(SectionVersions, nodeField(v))
-		sv := storedVersion{Version: v, Value: f.Value, KeyCheck: check.Value, State: state.Value, NodeID: node.Value}
+		sv := storedVersion{Version: v, Value: f.Value, KeyCheck: check.Value, State: state.Value}
 		keyID, _ := it.Field(SectionVersions, attestKeyField(v))
 		sig, _ := it.Field(SectionVersions, attestSigField(v))
-		if keyID.Value != "" || sig.Value != "" {
-			sv.Attestation = &Attestation{KeyID: keyID.Value, Signature: sig.Value}
+		// A hand-edited attestation (no number, no signature) is no attestation: the version can still be salvaged,
+		// and the next backup stores the node's again. The key itself is unaffected, so this is not an issue.
+		if id, err := strconv.ParseUint(keyID.Value, 10, 32); err == nil && sig.Value != "" {
+			sv.Attestation = &Attestation{KeyID: uint32(id), Signature: sig.Value}
 		}
 		p.Versions[v] = sv
 	}
@@ -245,8 +245,7 @@ type IncomingVersion struct {
 	Key      []byte `json:"key_b64"`
 	KeyCheck string `json:"key_check"`
 	Needed   bool   `json:"needed"`
-	// Optional: the attesting node and its attestation, stored as given.
-	NodeID      string       `json:"node_id,omitempty"`
+	// Optional: the node's attestation of the version, stored as given.
 	Attestation *Attestation `json:"attestation,omitempty"`
 }
 
@@ -318,14 +317,9 @@ func (p *UpsertParams) validate() *Error {
 		if e := validText(fmt.Sprintf("version %d: key_check", v.Version), v.KeyCheck, true); e != nil {
 			return e
 		}
-		if e := validText(fmt.Sprintf("version %d: node_id", v.Version), v.NodeID, false); e != nil {
-			return e
-		}
 		if a := v.Attestation; a != nil {
-			for _, c := range []struct{ name, value string }{{"attestation.key_id", a.KeyID}, {"attestation.signature", a.Signature}} {
-				if e := validText(fmt.Sprintf("version %d: %s", v.Version, c.name), c.value, true); e != nil {
-					return e
-				}
+			if e := validText(fmt.Sprintf("version %d: attestation.signature", v.Version), a.Signature, true); e != nil {
+				return e
 			}
 		}
 	}
@@ -458,10 +452,7 @@ func merge(base *parsedItem, p *UpsertParams, now time.Time, r *Redactor) (store
 		}
 		// Attestation metadata: the node's latest (a re-backup refreshes it, e.g. one taken before the node attested
 		// keys); otherwise what is stored. The key and its check above never change.
-		node, attestation := sv.NodeID, sv.Attestation
-		if listed && in.NodeID != "" {
-			node = in.NodeID
-		}
+		attestation := sv.Attestation
 		if listed && in.Attestation != nil {
 			attestation = in.Attestation
 		}
@@ -471,12 +462,9 @@ func merge(base *parsedItem, p *UpsertParams, now time.Time, r *Redactor) (store
 			store.Field{ID: checkField(v), Title: name + " key check", SectionID: SectionVersions, Type: store.FieldText, Value: check},
 			store.Field{ID: stateField(v), Title: name + " state", SectionID: SectionVersions, Type: store.FieldText, Value: state},
 		)
-		if node != "" {
-			section = append(section, store.Field{ID: nodeField(v), Title: name + " node", SectionID: SectionVersions, Type: store.FieldText, Value: node})
-		}
 		if attestation != nil {
 			section = append(section,
-				store.Field{ID: attestKeyField(v), Title: name + " attestation key", SectionID: SectionVersions, Type: store.FieldText, Value: attestation.KeyID},
+				store.Field{ID: attestKeyField(v), Title: name + " attestation key", SectionID: SectionVersions, Type: store.FieldText, Value: strconv.FormatUint(uint64(attestation.KeyID), 10)},
 				store.Field{ID: attestSigField(v), Title: name + " attestation", SectionID: SectionVersions, Type: store.FieldText, Value: attestation.Signature})
 		}
 	}
@@ -495,7 +483,7 @@ func isVersionFieldID(id string) bool {
 		return false
 	}
 	switch tail {
-	case "", "check", "state", "node_id", "attest_key_id", "attest_sig":
+	case "", "check", "state", "attest_key_id", "attest_sig":
 		return true
 	}
 	return false

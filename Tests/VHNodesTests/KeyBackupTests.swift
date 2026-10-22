@@ -28,17 +28,23 @@ final class DaemonKeys: Sendable {
         var confirmConflict = false
         /// Exports `current` under another version's check (a corrupt export the helper must refuse).
         var corruptExport = false
-        /// The node attests the keys it exports (`node_id` + `attestation` per version).
+        /// The node has an attestation recorded for every version (status and export carry it).
         var attests = false
         /// Recover-mode imports restore only versions whose attestation verifies (a daemon with attestations).
         var requiresAttestation = false
     }
 
-    static let attestingNode = "srv-node-a"
+    /// The node's signing key id (`key_attestation_keys.id`).
+    static let signingKey: Int64 = 3
 
-    /// The mock's attestation of a version: "valid" only as the mock itself signs it.
+    /// The mock's signature of a version (base64, 64 bytes): "valid" only as the mock itself signs it.
+    static func signature(_ vault: Int64, _ version: Int) -> String {
+        Data((0..<64).map { UInt8(truncatingIfNeeded: Int(vault) &* 31 &+ version &* 7 &+ $0) }).base64EncodedString()
+    }
+
+    /// The mock's attestation of a version, in the daemon's shape: `{key_id: <integer>, signature: <base64>}`.
     static func attestation(_ vault: Int64, _ version: Int) -> JSONValue {
-        ["key_id": "ed25519:node-a", "signature": .string("sig-\(vault)-\(version)")]
+        ["key_id": .integer(signingKey), "signature": .string(signature(vault, version))]
     }
 
     let vaults: Mutex<[Int64: Vault]>
@@ -109,7 +115,8 @@ final class DaemonKeys: Sendable {
         let needed: [JSONValue] = ([v.current] + v.needed).map { version in
             ["version": .integer(Int64(version)),
              "key_check": v.readable.contains(version) ? .string(check(v.id, version)) : .null,
-             "reason": version == v.current ? "current" : "rotation", "attestation": .null]
+             "reason": version == v.current ? "current" : "rotation",
+             "attestation": v.attests ? Self.attestation(v.id, version) : .null]
         }
         let missing = ([v.current] + v.needed).filter { !v.readable.contains($0) }
         return [
@@ -123,7 +130,7 @@ final class DaemonKeys: Sendable {
             "exported_at": v.exported == nil ? .null : 1_790_000_000,
             "rotation_in_progress": .bool(v.rotating), "needed_versions": .array(needed),
             "missing_versions": .array(missing.map { .integer(Int64($0)) }),
-            "attestation": .null, "last_salvage": .null,
+            "attestation": v.attests ? Self.attestation(v.id, v.current) : .null, "last_salvage": .null,
         ]
     }
 
@@ -135,24 +142,21 @@ final class DaemonKeys: Sendable {
             "hardware_accel": "AES-NI (runtime checked)", "aad": false, "files_hashed_with": "libsodium",
             "sealed_by": "Vaulthalla v1.9.0", "created_at": "2026-10-01 10:00:00", "exported_by": "cooper",
             "exported_at": "2026-10-21 09:00:00", "key_check": .string(currentCheck),
+            "attestation": v.attests ? Self.attestation(v.id, v.current) : .null,
         ]
         var object: JSONObject = [
             "vault_id": .integer(v.id), "vault_name": .string(v.name),
             "key": .string(Data(truth[v.id]![v.current]!).base64EncodedString()), "key_check": .string(currentCheck),
-            "key_info": info,
+            "key_info": info, "attestation": v.attests ? Self.attestation(v.id, v.current) : .null,
         ]
-        if v.attests {
-            object["node_id"] = .string(Self.attestingNode)
-            object["attestation"] = Self.attestation(v.id, v.current)
-        }
         if !v.needed.isEmpty {
             object["historical_keys"] = .array(v.needed.sorted().map { version in
-                var entry: JSONObject = [
+                let entry: JSONObject = [
                     "key_version": .integer(Int64(version)),
                     "key": .string(Data(truth[v.id]![version]!).base64EncodedString()),
                     "key_check": .string(check(v.id, version)), "reason": "rotation",
+                    "attestation": v.attests ? Self.attestation(v.id, version) : .null,
                     "created_at": "2026-09-01 10:00:00", "retired_at": .null]
-                if v.attests { entry["attestation"] = Self.attestation(v.id, version) }
                 return .object(entry)
             })
         }
@@ -518,10 +522,9 @@ struct KeyBackupTests {
             // 1Password holds each version's attestation as metadata, byte for byte.
             let item = try #require(row.item)
             #expect(item.versions.map(\.attestation) == [
-                KeyAttestation(keyID: "ed25519:node-a", signature: "sig-7-2"),
-                KeyAttestation(keyID: "ed25519:node-a", signature: "sig-7-1"),
+                KeyAttestation(keyID: DaemonKeys.signingKey, signature: DaemonKeys.signature(7, 2)),
+                KeyAttestation(keyID: DaemonKeys.signingKey, signature: DaemonKeys.signature(7, 1)),
             ])
-            #expect(item.versions.allSatisfy { $0.nodeID == DaemonKeys.attestingNode })
             #expect(row.recoveryAssurance == .guaranteed)
 
             // Recover sends them back unchanged, and the daemon restores both versions as the vault's own.

@@ -74,9 +74,9 @@ request, is answered with `"id": null` and the stream continues.
 |---|---|---|
 | `account.check` | `account` | `account, connected, vault_count`. Opens the session (approval prompt); required before the others |
 | `vault.ensure` | `title` | `vault_id, title, created`. Finds the vault by exact title or creates it; two with that title → `ambiguous_vault` |
-| `items.list` | `vault_id` | `items: [{item_id, vault_id, title, node_id, node_name, vault_uuid, vault_name, current_version, key_check, versions: [{version, key_check, state, node_id?, attestation?}], updated_at, backed_up_at, issues}]`. Never key values |
-| `item.upsert` | `vault_id, node_id, node_name, vault_uuid, vault_name, current_version, versions: [{version, key_b64, key_check, needed, node_id?, attestation?: {key_id, signature}}]` | `item_id, vault_id, created, written, current_version, key_check, stored_versions: [{version, key_check, state}], updated_at`, read back from 1Password after the write |
-| `item.reveal` | `vault_id, item_id, versions?` | `item_id, vault_id, node_id, vault_uuid, current_version, versions: [{version, key_check, state, node_id?, attestation?, key_b64}]` (restore/export only) |
+| `items.list` | `vault_id` | `items: [{item_id, vault_id, title, node_id, node_name, vault_uuid, vault_name, current_version, key_check, versions: [{version, key_check, state, attestation?}], updated_at, backed_up_at, issues}]`. Never key values |
+| `item.upsert` | `vault_id, node_id, node_name, vault_uuid, vault_name, current_version, versions: [{version, key_b64, key_check, needed, attestation?: {key_id, signature}}]` | `item_id, vault_id, created, written, current_version, key_check, stored_versions: [{version, key_check, state}], updated_at`, read back from 1Password after the write |
+| `item.reveal` | `vault_id, item_id, versions?` | `item_id, vault_id, node_id, vault_uuid, current_version, versions: [{version, key_check, state, attestation?, key_b64}]` (restore/export only) |
 
 `vault_id` is always the 1Password vault; `vault_uuid` is the Vaulthalla vault's numeric id as ASCII decimal (the
 key check binds it). Keys are 32 bytes. Params are strict: unknown fields are `bad_request`.
@@ -108,9 +108,10 @@ One API Credential item per (node, Vaulthalla vault) in the `Vaulthalla` vault:
   `vh_key_check`, `vh_backed_up_at`, `vh_format` (`vaulthalla-key-backup/1`).
 - Section **Key versions**: per version `vN` (concealed, base64 key), `vN_check`, `vN_state`
   (`current` | `needed` | `retired`), newest first; and, when the node attested the version, the non-secret text
-  fields `vN_node_id`, `vN_attest_key_id` and `vN_attest_sig` (the node's Ed25519 attestation over
-  `"vh-key-attest-v1" ‖ node_id ‖ UInt64BE(vault_id) ‖ UInt32BE(version) ‖ key_check`). The helper never verifies
-  attestations (the daemon does on import); it stores and returns them byte for byte. A version backed up without
+  fields `vN_attest_key_id` (the node's signing key id, decimal) and `vN_attest_sig` (base64): the node's Ed25519
+  attestation over `"vh-key-attest-v1" ‖ node_id ‖ UInt64BE(vault_id) ‖ UInt32BE(version) ‖ key_check`, as the
+  daemon's `{key_id, signature}` (`key_id` a JSON number). The helper never verifies attestations (the daemon does
+  on import); it stores and returns them unchanged. A hand-edited one that no longer parses reads as none. A version backed up without
   one gets it on a later backup that carries it (a re-backup refreshes the attestation; the key and its check never
   change), and an upsert without attestations keeps the stored ones.
 
