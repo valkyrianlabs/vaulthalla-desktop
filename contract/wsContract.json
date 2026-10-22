@@ -14719,6 +14719,29 @@
       "name": "VaultDeletion"
     },
     {
+      "description": "This node's Ed25519 signature over one key version (vault/KeyAttestation.hpp): \"vh-key-attest-v1\" ‖ node_id ‖ UInt64BE(vault_id) ‖ UInt32BE(version) ‖ key_check (16 bytes). `vh vault keys import` restores a version as canonical only when it verifies under one of this node's attestation keys.",
+      "fields": [
+        {
+          "description": "Which of this node's attestation keys signed (key_attestation_keys.id).",
+          "minimum": 0,
+          "name": "key_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "base64 (64 bytes).",
+          "name": "signature",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "name": "VaultKeyAttestation"
+    },
+    {
       "description": "One vault's export document: ops::vault_keys::toJson(VaultExport) (core/src/ops/VaultKeys.cpp), the CLI's `vh vault keys export` shape (vault::model::generate_json_key_object) plus key_check and every needed version. vault.keys.import (and `vh vault keys import`) takes it back, alone or in an `all` array.",
       "fields": [
         {
@@ -14759,6 +14782,16 @@
           "required": true,
           "types": [
             "string"
+          ]
+        },
+        {
+          "description": "The current version's attestation by this node: what makes the export importable as canonical. Absent in exports from before attestations (they can only be salvaged).",
+          "model": "VaultKeyAttestation",
+          "name": "attestation",
+          "required": false,
+          "types": [
+            "object",
+            "null"
           ]
         },
         {
@@ -14875,6 +14908,16 @@
               "types": [
                 "string"
               ]
+            },
+            {
+              "description": "This node's attestation of the version (public, like the key check); null when none is recorded.",
+              "model": "VaultKeyAttestation",
+              "name": "attestation",
+              "required": false,
+              "types": [
+                "object",
+                "null"
+              ]
             }
           ],
           "name": "key_info",
@@ -14908,6 +14951,16 @@
               "required": true,
               "types": [
                 "string"
+              ]
+            },
+            {
+              "description": "This node's attestation of the version (public, like the key check); null when none is recorded.",
+              "model": "VaultKeyAttestation",
+              "name": "attestation",
+              "required": false,
+              "types": [
+                "object",
+                "null"
               ]
             },
             {
@@ -15002,7 +15055,18 @@
           ]
         },
         {
-          "description": "False when every version was unchanged or skipped.",
+          "enum": [
+            "recover",
+            "salvage"
+          ],
+          "name": "mode",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "False when nothing was restored or salvaged.",
           "name": "written",
           "required": true,
           "types": [
@@ -15038,10 +15102,13 @@
               ]
             },
             {
+              "description": "restored: attested by this node (or matching a key it holds) and re-sealed here; unchanged: already held; needs_salvage: the vault references it but the backup can't prove it is this vault's key, nothing written; refused: the vault has no record of the version (an import never introduces one); salvaged: its files went through the salvage pass, the key itself was not stored.",
               "enum": [
                 "restored",
                 "unchanged",
-                "unverifiable"
+                "needs_salvage",
+                "refused",
+                "salvaged"
               ],
               "name": "outcome",
               "required": true,
@@ -15050,28 +15117,11 @@
               ]
             },
             {
+              "description": "Which proof restored it, or why not.",
               "name": "detail",
               "required": true,
               "types": [
                 "string"
-              ]
-            },
-            {
-              "description": "Ciphertexts that authenticated under it.",
-              "minimum": 0,
-              "name": "verified_files",
-              "required": true,
-              "types": [
-                "integer"
-              ]
-            },
-            {
-              "description": "Sampled ciphertexts that did not (damaged files).",
-              "minimum": 0,
-              "name": "failed_files",
-              "required": true,
-              "types": [
-                "integer"
               ]
             }
           ],
@@ -15080,6 +15130,16 @@
           "required": true,
           "types": [
             "array"
+          ]
+        },
+        {
+          "description": "Salvage mode: the pass's report.",
+          "model": "VaultKeySalvageReport",
+          "name": "salvage",
+          "required": true,
+          "types": [
+            "object",
+            "null"
           ]
         }
       ],
@@ -15117,9 +15177,178 @@
           "types": [
             "string"
           ]
+        },
+        {
+          "description": "This node's attestation of the version (public, like the key check); null when none is recorded.",
+          "model": "VaultKeyAttestation",
+          "name": "attestation",
+          "required": true,
+          "types": [
+            "object",
+            "null"
+          ]
         }
       ],
       "name": "VaultKeyNeededVersion"
+    },
+    {
+      "description": "One file a key salvage could not re-encrypt.",
+      "fields": [
+        {
+          "description": "Vault path.",
+          "name": "path",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "The key version it is sealed under.",
+          "minimum": 0,
+          "name": "version",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "unrecoverable: does not authenticate under the supplied key (corrupted, or another key's file) or its local copy is gone; skipped_remote: the remote read was refused (price budget, request caps) or the object changed, the reason carries the estimate; deferred: open for writing; failed: anything else. All but unrecoverable can be retried by running the salvage again.",
+          "enum": [
+            "unrecoverable",
+            "skipped_remote",
+            "deferred",
+            "failed"
+          ],
+          "name": "kind",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "reason",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "name": "VaultKeySalvageFailure"
+    },
+    {
+      "description": "A key salvage pass: ops::vault_keys::toJson(SalvageReport) (core/src/ops/VaultKeys.cpp; the vault_key_salvage row). Files sealed under unverified key versions are re-encrypted under a fresh daemon key; the supplied keys are never stored.",
+      "fields": [
+        {
+          "minimum": 0,
+          "name": "id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "The unverified versions files were salvaged from.",
+          "items": "integer",
+          "name": "versions",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "description": "The fresh key version files were re-encrypted under.",
+          "minimum": 0,
+          "name": "new_version",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "running: interrupted (run the salvage again to resume).",
+          "enum": [
+            "running",
+            "finished"
+          ],
+          "name": "state",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "minimum": 0,
+          "name": "started_at",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "minimum": 0,
+          "name": "finished_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Files re-encrypted under new_version.",
+          "minimum": 0,
+          "name": "salvaged",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "unrecoverable",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "skipped_remote",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "deferred",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "failed",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "The first 50 files not salvaged.",
+          "items": "object",
+          "model": "VaultKeySalvageFailure",
+          "name": "failures",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        }
+      ],
+      "name": "VaultKeySalvageReport"
     },
     {
       "description": "One vault's key backup state: ops::vault_keys::toJson(KeyStatus) (core/src/ops/VaultKeys.cpp; also `vh vault keys status --json`). Never key bytes.",
@@ -15167,7 +15396,7 @@
           ]
         },
         {
-          "description": "The current key version (with no key record, the highest version data records).",
+          "description": "The current key version (with no key record, the highest version the daemon's records reference).",
           "minimum": 0,
           "name": "version",
           "required": true,
@@ -15259,6 +15488,26 @@
           "required": true,
           "types": [
             "array"
+          ]
+        },
+        {
+          "description": "The current version's attestation; null when none is recorded.",
+          "model": "VaultKeyAttestation",
+          "name": "attestation",
+          "required": true,
+          "types": [
+            "object",
+            "null"
+          ]
+        },
+        {
+          "description": "The vault's last key salvage, if any.",
+          "model": "VaultKeySalvageReport",
+          "name": "last_salvage",
+          "required": true,
+          "types": [
+            "object",
+            "null"
           ]
         }
       ],
@@ -16720,7 +16969,7 @@
       "name": "WebsocketServerConfig"
     }
   ],
-  "models_hash": "e3177682637fff82e7987a8e53cd5755df8c1c869645f32ca2781a119dc0ea8d",
+  "models_hash": "15ce150c0765fa6879670d3bb47aa9a9a2c0bb9618a248ad0adafacee0f0dcc5",
   "ws": [
     {
       "auth": "session",
@@ -36578,6 +36827,16 @@
           ]
         },
         {
+          "description": "The current version's attestation by this node: what makes the export importable as canonical. Absent in exports from before attestations (they can only be salvaged).",
+          "model": "VaultKeyAttestation",
+          "name": "attestation",
+          "required": false,
+          "types": [
+            "object",
+            "null"
+          ]
+        },
+        {
           "description": "Key metadata (timestamps as the database's text form).",
           "fields": [
             {
@@ -36691,6 +36950,16 @@
               "types": [
                 "string"
               ]
+            },
+            {
+              "description": "This node's attestation of the version (public, like the key check); null when none is recorded.",
+              "model": "VaultKeyAttestation",
+              "name": "attestation",
+              "required": false,
+              "types": [
+                "object",
+                "null"
+              ]
             }
           ],
           "name": "key_info",
@@ -36724,6 +36993,16 @@
               "required": true,
               "types": [
                 "string"
+              ]
+            },
+            {
+              "description": "This node's attestation of the version (public, like the key check); null when none is recorded.",
+              "model": "VaultKeyAttestation",
+              "name": "attestation",
+              "required": false,
+              "types": [
+                "object",
+                "null"
               ]
             },
             {
@@ -36902,16 +37181,21 @@
     },
     {
       "auth": "human",
-      "client_timeout_ms": 120000,
+      "client_timeout_ms": 600000,
       "command": "vault.keys.import",
       "confirmations": [
         {
           "accept_field": "confirm_name",
           "code": "vault_key_import",
           "description": "The import would re-seal the listed key versions under this host's vault master (the error text says which): resend with confirm_name set to the vault's name (a string, not a flag) once the person typed it."
+        },
+        {
+          "accept_field": "confirm_name",
+          "code": "vault_key_salvage",
+          "description": "mode salvage would create a fresh key version and re-encrypt every file the supplied key decrypts under it (the error text says which versions); files it can't decrypt are reported unrecoverable. Resend with confirm_name set to the vault's name once the person typed it."
         }
       ],
-      "description": "Restore the vault's keys from a backup (`keys`: an export, one vault object or an `all` array) when this host can't unseal or doesn't hold them. Every version is verified before anything is written (its key_check, then a GCM tag check of files sealed under it); a key this host can unseal is never replaced (conflict), identical bytes are unchanged, versions with nothing to verify against are skipped (unverifiable). Writing needs confirm_name = the vault's name, else data.code vault_key_import with what would be written. Paired devices only (import_requires_device otherwise); the encryption-key Export permission.",
+      "description": "Recover the vault's keys from a backup (`keys`: an export, one vault object or an `all` array) when this host can't unseal or doesn't hold them. A recovery mechanism, never a way to set a key: a version is restored only when the vault's records reference it and its attestation by this node verifies (or it matches a key this host holds); a key this host can unseal is never replaced (conflict), identical bytes are unchanged, unreferenced versions are refused, the rest are needs_salvage. mode salvage additionally re-encrypts the files of the needs_salvage versions under a fresh daemon key (the supplied key is never stored) and returns the report. Writing needs confirm_name = the vault's name, else data.code vault_key_import (recover) or vault_key_salvage with what would be done. Paired devices only (import_requires_device otherwise); the encryption-key Export permission.",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -36971,6 +37255,18 @@
           ]
         },
         {
+          "description": "recover (default): restore attested versions only. salvage: also re-encrypt what unproven versions decrypt under a fresh key.",
+          "enum": [
+            "recover",
+            "salvage"
+          ],
+          "name": "mode",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
           "description": "The vault's name: the person confirmed the import.",
           "name": "confirm_name",
           "required": false,
@@ -36986,7 +37282,8 @@
         "conflict",
         "unauthorized",
         "import_requires_device",
-        "vault_key_import"
+        "vault_key_import",
+        "vault_key_salvage"
       ],
       "refusal_kinds": [
         "denied",
@@ -37029,7 +37326,18 @@
           ]
         },
         {
-          "description": "False when every version was unchanged or skipped.",
+          "enum": [
+            "recover",
+            "salvage"
+          ],
+          "name": "mode",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "False when nothing was restored or salvaged.",
           "name": "written",
           "required": true,
           "types": [
@@ -37065,10 +37373,13 @@
               ]
             },
             {
+              "description": "restored: attested by this node (or matching a key it holds) and re-sealed here; unchanged: already held; needs_salvage: the vault references it but the backup can't prove it is this vault's key, nothing written; refused: the vault has no record of the version (an import never introduces one); salvaged: its files went through the salvage pass, the key itself was not stored.",
               "enum": [
                 "restored",
                 "unchanged",
-                "unverifiable"
+                "needs_salvage",
+                "refused",
+                "salvaged"
               ],
               "name": "outcome",
               "required": true,
@@ -37077,28 +37388,11 @@
               ]
             },
             {
+              "description": "Which proof restored it, or why not.",
               "name": "detail",
               "required": true,
               "types": [
                 "string"
-              ]
-            },
-            {
-              "description": "Ciphertexts that authenticated under it.",
-              "minimum": 0,
-              "name": "verified_files",
-              "required": true,
-              "types": [
-                "integer"
-              ]
-            },
-            {
-              "description": "Sampled ciphertexts that did not (damaged files).",
-              "minimum": 0,
-              "name": "failed_files",
-              "required": true,
-              "types": [
-                "integer"
               ]
             }
           ],
@@ -37107,6 +37401,16 @@
           "required": true,
           "types": [
             "array"
+          ]
+        },
+        {
+          "description": "Salvage mode: the pass's report.",
+          "model": "VaultKeySalvageReport",
+          "name": "salvage",
+          "required": true,
+          "types": [
+            "object",
+            "null"
           ]
         }
       ],
@@ -37654,5 +37958,5 @@
       "variants": []
     }
   ],
-  "ws_hash": "da663f0abff78adb72d11244417140be18560f6affe9cf83899fe00ab4e3017b"
+  "ws_hash": "163845c27ea514dd0b5fe98bc586c7e6a608f7128ba3dcae49281266af346e54"
 }

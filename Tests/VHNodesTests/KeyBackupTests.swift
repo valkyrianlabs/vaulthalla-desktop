@@ -109,7 +109,7 @@ final class DaemonKeys: Sendable {
         let needed: [JSONValue] = ([v.current] + v.needed).map { version in
             ["version": .integer(Int64(version)),
              "key_check": v.readable.contains(version) ? .string(check(v.id, version)) : .null,
-             "reason": version == v.current ? "current" : "rotation"]
+             "reason": version == v.current ? "current" : "rotation", "attestation": .null]
         }
         let missing = ([v.current] + v.needed).filter { !v.readable.contains($0) }
         return [
@@ -123,6 +123,7 @@ final class DaemonKeys: Sendable {
             "exported_at": v.exported == nil ? .null : 1_790_000_000,
             "rotation_in_progress": .bool(v.rotating), "needed_versions": .array(needed),
             "missing_versions": .array(missing.map { .integer(Int64($0)) }),
+            "attestation": .null, "last_salvage": .null,
         ]
     }
 
