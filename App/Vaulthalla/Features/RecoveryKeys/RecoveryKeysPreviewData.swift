@@ -76,6 +76,31 @@ nonisolated enum RecoveryKeysPreviewData: PreviewFeature {
         item(5, "Scratch (preview)", current: 2, versions: [2], differs: true, backedUp: now - 9 * 86_400),
     ]
 
+    /// A finished salvage of the Media Archive's v1: most files re-encrypted under v2, a few the key didn't open.
+    static func salvageResult(id: Int64, name: String) -> [String: Any] {
+        let failures: [[String: Any]] = [
+            ["path": "/2024/render-final.mov", "version": 1, "kind": "unrecoverable",
+             "reason": "does not authenticate under the supplied key"],
+            ["path": "/2024/render-final.prproj", "version": 1, "kind": "unrecoverable",
+             "reason": "does not authenticate under the supplied key"],
+            ["path": "/old/notes.txt", "version": 1, "kind": "unrecoverable", "reason": "the local copy is gone"],
+            ["path": "/raw/day-2/A001_C014.braw", "version": 1, "kind": "skipped_remote",
+             "reason": "the price budget refused the read (estimated $0.42); run the salvage again to retry"],
+            ["path": "/edit/timeline.drp", "version": 1, "kind": "deferred", "reason": "open for writing"],
+        ]
+        return [
+            "vault_id": id, "vault_name": name, "deleted": false, "mode": "salvage", "written": true,
+            "key_available": true, "note": NSNull(),
+            "versions": [["version": 1, "outcome": "salvaged",
+                          "detail": "1,284 files re-encrypted under key version 2; the supplied key was not stored"]],
+            "salvage": [
+                "id": 1, "versions": [1], "new_version": 2, "state": "finished", "started_at": now - 600,
+                "finished_at": now - 540, "salvaged": 1_284, "unrecoverable": 3, "skipped_remote": 1, "deferred": 1,
+                "failed": 0, "failures": failures,
+            ] as [String: Any],
+        ]
+    }
+
     static func answer(_ command: WsCommand, _ payload: some Sendable, from transport: PreviewTransport)
         throws(WsError) -> Any?
     {
@@ -167,31 +192,34 @@ extension PreviewTransport {
         switch command {
         case .vaultKeysExport:
             let key = Data(repeating: UInt8(status.version), count: 32).base64EncodedString()
+            let check = RecoveryKeysPreviewData.check(id, status.version)
+            let attestation: [String: Any] = ["key_id": 1, "signature": Data("preview-signature".utf8).base64EncodedString()]
             data = [
-                "vault_id": id, "vault_name": status.vaultName, "key": key,
-                "key_check": RecoveryKeysPreviewData.check(id, status.version), "node_id": RecoveryKeysPreviewData.homeLab,
-                "attestation": ["key_id": "ed25519:homelab-2026", "signature": "c2lnLXByZXZpZXc="],
-                "key_info": ["key_version": status.version],
+                "vault_id": id, "vault_name": status.vaultName, "key": key, "key_check": check, "attestation": attestation,
+                "key_info": [
+                    "type": "AES-256-GCM", "key_size": 32, "key_version": status.version, "iv_size": 12, "tag_size": 16,
+                    "iv_gen": "libsodium::randombytes_buf", "cipher_impl": "libsodium::crypto_aead_aes256gcm",
+                    "hardware_accel": "AES-NI (runtime checked)", "aad": false, "files_hashed_with": "libsodium",
+                    "sealed_by": "Vaulthalla v1.15.0", "created_at": "2026-10-01 10:00:00", "exported_by": "preview",
+                    "exported_at": "2026-10-21 09:00:00", "key_check": check, "attestation": attestation,
+                ] as [String: Any],
             ]
         case .vaultKeysImport:
             let salvage = object["mode"] as? String == "salvage"
             let named = object["confirm_name"] as? String == status.vaultName
             if salvage {
                 guard named else {
-                    throw .needsConfirmation(code: "vault_key_salvage", message: "Salvaging re-encrypts what version 1 still decrypts in “\(status.vaultName)” under a new key (v2). Files it can't decrypt stay unreadable.")
+                    throw .needsConfirmation(code: "vault_key_salvage", message: "Salvaging vault '\(status.vaultName)' (ID \(id)) re-encrypts every file sealed under key version(s) 1 that the supplied key decrypts under a fresh key this host creates; files it doesn't decrypt are reported unrecoverable, and the supplied key is never stored. Confirm by typing the vault's name.")
                 }
-                data = ["vault_id": id, "vault_name": status.vaultName, "written": true, "key_available": true,
-                        "versions": [["version": 1, "outcome": "salvaged", "detail": "re-encrypted under v2"]],
-                        "salvage": ["new_key_version": 2, "recovered_files": 1_284, "unrecoverable_count": 3,
-                                    "unrecoverable_files": ["/Media Archive/2024/render-final.mov",
-                                                            "/Media Archive/2024/render-final.prproj",
-                                                            "/Media Archive/old/notes.txt"]]]
+                data = RecoveryKeysPreviewData.salvageResult(id: id, name: status.vaultName)
             } else {
-                // The preview backup of v1 predates attestations: recover can't verify it.
-                data = ["vault_id": id, "vault_name": status.vaultName, "written": false, "key_available": false,
-                        "note": "Version 1 carries no valid attestation from this node.",
+                // The preview backup of v1 predates attestations: recover can't prove it is the vault's key.
+                data = ["vault_id": id, "vault_name": status.vaultName, "deleted": false, "mode": "recover",
+                        "written": false, "key_available": false,
+                        "note": "Key version 1 needs salvage: the backup can't prove it is this vault's key.",
                         "versions": [["version": 1, "outcome": "needs_salvage",
-                                      "detail": "no valid attestation from this node", "verified_files": 0, "failed_files": 0]]]
+                                      "detail": "the backup carries no attestation (an export from before attestations)"]],
+                        "salvage": NSNull()]
             }
         default:
             throw .error("Unknown command: \(command.rawValue)")

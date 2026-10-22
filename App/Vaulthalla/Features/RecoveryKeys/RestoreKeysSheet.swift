@@ -2,6 +2,7 @@ import AppKit
 import Observation
 import SwiftUI
 import UniformTypeIdentifiers
+import VHContract
 import VHCore
 import VHKeyBackup
 import VHNodes
@@ -243,7 +244,7 @@ struct RestoreKeysSheet: View {
     }
 
     private var salvageIntro: some View {
-        let versions = flow.needsSalvage.map(\.version)
+        let versions = flow.needsSalvage.map { Int($0.version) }
         return Callout(tone: .warn, systemImage: "bandage") {
             Text(versions.isEmpty ? "Salvage" : "\(VaultKeyRow.versionWords(versions, capitalized: true)) couldn't be restored as the vault's own key.")
                 .fontWeight(.semibold)
@@ -306,7 +307,8 @@ struct RestoreKeysSheet: View {
     }
 }
 
-/// The node's answer: per version what happened, then the one sentence that matters (recovered or not).
+/// The node's answer: the one sentence that matters (recovered or not), per version what happened, and a salvage's
+/// report.
 struct ImportReportView: View {
     var report: VaultKeyImportReport
     var mode: VaultKeyImportMode
@@ -332,58 +334,73 @@ struct ImportReportView: View {
                     Text(report.note ?? "\(nodeName) took what it could verify; the vault needs more.")
                 }
             }
-            ForEach(report.versions) { version in
+            ForEach(report.versions, id: \.version) { version in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Text("v\(version.version)")
                         .monospacedDigit()
                         .foregroundStyle(.fg)
                         .frame(width: 36, alignment: .leading)
                     StatusBadge(label: Format.words(version.outcome), tone: tone(version.outcome))
-                    Text(versionDetail(version))
+                    Text(version.detail)
                         .font(.callout)
                         .foregroundStyle(.fgSubtle)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
             if let salvage = report.salvage {
-                DefinitionList(items: [
-                    ("Recovered files", salvage.recoveredFiles.formatted()),
-                    ("Unrecoverable", salvage.unrecoverableCount.formatted()),
-                    ("New key version", salvage.newKeyVersion.map { "v\($0)" } ?? "—"),
-                ].map { (term: $0.0, value: $0.1) }, termWidth: 120)
-                if !salvage.unrecoverableFiles.isEmpty {
-                    Text("Files that couldn't be recovered")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.fgSubtle)
-                    ForEach(salvage.unrecoverableFiles.prefix(50), id: \.self) { path in
-                        Text(path)
-                            .font(.callout.monospaced())
-                            .foregroundStyle(.fgMuted)
-                            .textSelection(.enabled)
-                    }
-                    if salvage.unrecoverableFiles.count > 50 {
-                        Text("and \(salvage.unrecoverableFiles.count - 50) more")
-                            .font(.caption)
-                            .foregroundStyle(.fgSubtle)
-                    }
-                }
+                SalvageReportView(report: salvage)
             }
         }
     }
 
-    private func versionDetail(_ version: VaultKeyImportReport.Version) -> String {
-        var parts = [version.detail]
-        if version.verifiedFiles > 0 { parts.append("\(version.verifiedFiles) files verified") }
-        if version.failedFiles > 0 { parts.append("\(version.failedFiles) damaged") }
-        return parts.filter { !$0.isEmpty }.joined(separator: " · ")
-    }
-
     private func tone(_ outcome: String) -> StatusTone {
-        switch outcome {
-        case "restored", "salvaged": .ok
-        case "unchanged": .info
-        case VaultKeyImportReport.Version.needsSalvage: .warn
+        typealias Outcome = VaultKeyImportReport.Version.Outcome
+        return switch outcome {
+        case Outcome.restored, Outcome.salvaged: .ok
+        case Outcome.unchanged: .info
+        case Outcome.needsSalvage: .warn
+        case Outcome.refused: .warn
         default: .unknown
+        }
+    }
+}
+
+/// A salvage pass (`VaultKeySalvageReport`): its counts, then the files it didn't re-encrypt (the first 50).
+struct SalvageReportView: View {
+    var report: WsModel.VaultKeySalvageReport
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            DefinitionList(items: [
+                ("Salvaged", report.salvaged.formatted()),
+                ("Unrecoverable", report.unrecoverable.formatted()),
+                ("Skipped (remote)", report.skippedRemote.formatted()),
+                ("Deferred", report.deferred.formatted()),
+                ("Failed", report.failed.formatted()),
+                ("New key version", report.newVersion.map { "v\($0)" } ?? "—"),
+            ].map { (term: $0.0, value: $0.1) }, termWidth: 120)
+            if !report.failures.isEmpty {
+                Text("Files not salvaged")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.fgSubtle)
+                ForEach(Array(report.failures.enumerated()), id: \.offset) { _, failure in
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(failure.path)
+                            .font(.callout.monospaced())
+                            .foregroundStyle(.fgMuted)
+                            .textSelection(.enabled)
+                        Text("v\(failure.version) · \(Format.words(failure.kind)) · \(failure.reason)")
+                            .font(.caption)
+                            .foregroundStyle(.fgSubtle)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                if report.unlistedFailures > 0 {
+                    Text("and \(report.unlistedFailures.formatted()) more")
+                        .font(.caption)
+                        .foregroundStyle(.fgSubtle)
+                }
+            }
         }
     }
 }

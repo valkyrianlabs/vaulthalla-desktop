@@ -125,15 +125,17 @@ public struct VaultKeySet: Sendable {
     }
 }
 
-/// How `vault.keys.import` treats the keys.
-public enum VaultKeyImportMode: String, Sendable, Hashable {
-    /// The default: a version is restored as the vault's own only when its attestation verifies; others come back
-    /// `needs_salvage`. Confirmation `vault_key_import`.
-    case recover
-    /// For versions without a valid attestation: the daemon decrypts what it can, re-encrypts it under a fresh key
-    /// and reports the files it couldn't recover. Confirmation `vault_key_salvage`.
-    case salvage
+/// How `vault.keys.import` treats the keys (the contract's `mode`).
+///
+/// - `recover` (the default): restores only key versions the vault had, proven by the node's own attestation; it never
+///   sets a key of the caller's own. Other versions come back `needs_salvage`, nothing written for them. Confirmation
+///   `vault_key_import`.
+/// - `salvage`: recovers first, then re-encrypts the files the supplied keys still open under a fresh key the node
+///   creates, reporting the files it couldn't open; the supplied keys are never stored. Confirmation
+///   `vault_key_salvage`.
+public typealias VaultKeyImportMode = Ws.Vault.Keys.Import.Payload.Mode
 
+extension VaultKeyImportMode {
     /// The daemon's confirmation code for writing in this mode (the vault's name, typed).
     public var confirmationCode: String {
         switch self {
@@ -141,144 +143,38 @@ public enum VaultKeyImportMode: String, Sendable, Hashable {
         case .salvage: "vault_key_salvage"
         }
     }
+
+    /// Every confirmation an import may ask for. A salvage that ends up with nothing to salvage asks as a recover.
+    public static let confirmationCodes: Set<String> = Set(allCases.map(\.confirmationCode))
 }
 
-/// `vault.keys.import`'s answer, decoded leniently: the vendored contract (`VaultKeyImportResult`) predates the
-/// attestation and salvage fields, so members it doesn't have are optional here. Re-check against the contract when it
-/// is re-vendored.
-public struct VaultKeyImportReport: Sendable, Equatable, Decodable {
-    public struct Version: Sendable, Equatable, Decodable, Identifiable {
-        public var id: Int { version }
-        public let version: Int
-        /// `restored`, `unchanged`, `unverifiable`, `needs_salvage`, or a newer daemon's word.
-        public let outcome: String
-        public let detail: String
-        public let verifiedFiles: Int
-        public let failedFiles: Int
+/// `vault.keys.import`'s answer: the contract's `VaultKeyImportResult` (`{vault_id, vault_name, deleted, mode, written,
+/// key_available, note, versions: [{version, outcome, detail}], salvage}`).
+public typealias VaultKeyImportReport = WsModel.VaultKeyImportResult
 
-        public init(version: Int, outcome: String, detail: String = "", verifiedFiles: Int = 0, failedFiles: Int = 0) {
-            self.version = version
-            self.outcome = outcome
-            self.detail = detail
-            self.verifiedFiles = verifiedFiles
-            self.failedFiles = failedFiles
-        }
+extension WsModel.VaultKeyImportResult {
+    /// Versions the node can't prove are the vault's own (no valid attestation): only a salvage can use them.
+    public var needsSalvage: [Version] { versions.filter { $0.outcome == Version.Outcome.needsSalvage } }
 
-        enum CodingKeys: String, CodingKey {
-            case version, outcome, detail
-            case verifiedFiles = "verified_files"
-            case failedFiles = "failed_files"
-        }
+    /// Versions the vault never had: an import never introduces one.
+    public var refused: [Version] { versions.filter { $0.outcome == Version.Outcome.refused } }
 
-        public init(from decoder: any Decoder) throws {
-            let c = try decoder.container(keyedBy: CodingKeys.self)
-            version = try c.decode(Int.self, forKey: .version)
-            outcome = try c.decode(String.self, forKey: .outcome)
-            detail = try c.decodeIfPresent(String.self, forKey: .detail) ?? ""
-            verifiedFiles = try c.decodeIfPresent(Int.self, forKey: .verifiedFiles) ?? 0
-            failedFiles = try c.decodeIfPresent(Int.self, forKey: .failedFiles) ?? 0
-        }
+    /// The mode the node ran, when it is one this app knows.
+    public var importMode: VaultKeyImportMode? { VaultKeyImportMode(rawValue: mode) }
+}
 
-        public static let needsSalvage = "needs_salvage"
-    }
+extension WsModel.VaultKeySalvageReport {
+    /// The pass was interrupted: running the salvage again resumes it.
+    public var isRunning: Bool { state == State.running }
 
-    /// What a salvage did: files re-encrypted under a fresh key, and those it couldn't decrypt.
-    public struct Salvage: Sendable, Equatable, Decodable {
-        public let newKeyVersion: Int?
-        public let recoveredFiles: Int
-        public let unrecoverableCount: Int
-        /// The unrecoverable files' paths, as far as the daemon lists them.
-        public let unrecoverableFiles: [String]
+    /// Files it didn't re-encrypt, all kinds together.
+    public var notSalvaged: Int64 { unrecoverable + skippedRemote + deferred + failed }
 
-        public init(newKeyVersion: Int?, recoveredFiles: Int, unrecoverableCount: Int, unrecoverableFiles: [String]) {
-            self.newKeyVersion = newKeyVersion
-            self.recoveredFiles = recoveredFiles
-            self.unrecoverableCount = unrecoverableCount
-            self.unrecoverableFiles = unrecoverableFiles
-        }
+    /// Failures the report lists by name: at most 50, the first ones; the counts cover the rest.
+    public static let listedFailures = 50
 
-        private struct Key: CodingKey {
-            var stringValue: String
-            var intValue: Int? { nil }
-            init(_ string: String) { stringValue = string }
-            init?(stringValue: String) { self.stringValue = stringValue }
-            init?(intValue: Int) { nil }
-        }
-
-        private struct File: Decodable {
-            let path: String
-            init(from decoder: any Decoder) throws {
-                if let text = try? decoder.singleValueContainer().decode(String.self) {
-                    path = text
-                } else {
-                    let c = try decoder.container(keyedBy: Key.self)
-                    path = try c.decodeIfPresent(String.self, forKey: Key("path"))
-                        ?? c.decode(String.self, forKey: Key("name"))
-                }
-            }
-        }
-
-        public init(from decoder: any Decoder) throws {
-            let c = try decoder.container(keyedBy: Key.self)
-            func int(_ names: String...) -> Int? {
-                for name in names { if let v = try? c.decodeIfPresent(Int.self, forKey: Key(name)) { return v } }
-                return nil
-            }
-            var files: [String] = []
-            for name in ["unrecoverable_files", "unrecoverable"] {
-                if let list = try? c.decodeIfPresent([File].self, forKey: Key(name)) { files = list.map(\.path); break }
-            }
-            newKeyVersion = int("new_key_version", "key_version", "new_version")
-            recoveredFiles = int("recovered_files", "files_recovered", "recovered") ?? 0
-            unrecoverableCount = int("unrecoverable_count", "files_unrecoverable", "unrecoverable_files") ?? files.count
-            unrecoverableFiles = files
-        }
-    }
-
-    public let vaultID: Int64
-    public let vaultName: String
-    public let deleted: Bool
-    /// False when every version was unchanged or skipped.
-    public let written: Bool
-    /// The vault runs on this host now: the only answer that means "recovered".
-    public let keyAvailable: Bool
-    public let note: String?
-    public let versions: [Version]
-    public let salvage: Salvage?
-
-    public init(vaultID: Int64, vaultName: String, deleted: Bool = false, written: Bool, keyAvailable: Bool,
-                note: String? = nil, versions: [Version], salvage: Salvage? = nil) {
-        self.vaultID = vaultID
-        self.vaultName = vaultName
-        self.deleted = deleted
-        self.written = written
-        self.keyAvailable = keyAvailable
-        self.note = note
-        self.versions = versions
-        self.salvage = salvage
-    }
-
-    enum CodingKeys: String, CodingKey {
-        case vaultID = "vault_id"
-        case vaultName = "vault_name"
-        case deleted, written, note, versions, salvage
-        case keyAvailable = "key_available"
-    }
-
-    public init(from decoder: any Decoder) throws {
-        let c = try decoder.container(keyedBy: CodingKeys.self)
-        vaultID = try c.decode(Int64.self, forKey: .vaultID)
-        vaultName = try c.decodeIfPresent(String.self, forKey: .vaultName) ?? ""
-        deleted = try c.decodeIfPresent(Bool.self, forKey: .deleted) ?? false
-        written = try c.decodeIfPresent(Bool.self, forKey: .written) ?? false
-        keyAvailable = try c.decodeIfPresent(Bool.self, forKey: .keyAvailable) ?? false
-        note = try c.decodeIfPresent(String.self, forKey: .note)
-        versions = try c.decodeIfPresent([Version].self, forKey: .versions) ?? []
-        salvage = try c.decodeIfPresent(Salvage.self, forKey: .salvage)
-    }
-
-    /// Versions the daemon couldn't verify as the vault's own: only a salvage can use them.
-    public var needsSalvage: [Version] { versions.filter { $0.outcome == Version.needsSalvage } }
+    /// Failures beyond the listed ones.
+    public var unlistedFailures: Int64 { max(0, notSalvaged - Int64(failures.count)) }
 }
 
 extension KeyAttestation {
@@ -353,10 +249,10 @@ public struct VaultKeyCommands: Sendable {
                                  payload: .init(vaultID: vaultID, version: Int64(version), keyCheck: keyCheck))
     }
 
-    /// Puts keys back. Without `confirmName` the daemon plans first: nothing to write answers at once; otherwise it
-    /// refuses with `needsConfirmation(code: mode.confirmationCode, message:)` saying what it would write, and the
-    /// person confirms by typing the vault's name. `recover` (the default) leaves `mode` out, so a daemon from before
-    /// attestations reads the request as it always did.
+    /// Puts keys back (`vault.keys.import {vault_id, keys, mode, confirm_name?}`). Without `confirmName` the daemon
+    /// plans first: nothing to write answers at once; otherwise it refuses with `needsConfirmation(code:message:)`
+    /// (`vault_key_import` or `vault_key_salvage`) saying what it would do, and the person confirms by typing the
+    /// vault's name.
     public func importKeys(
         _ keys: VaultKeySet, mode: VaultKeyImportMode = .recover, confirmName: String? = nil, exportedBy: String
     ) async throws(WsError) -> VaultKeyImportReport {
@@ -366,7 +262,7 @@ public struct VaultKeyCommands: Sendable {
         writer.field("vault_id", keys.vaultID)
         writer.key("keys")
         keys.write(to: writer, exportedBy: exportedBy)
-        if mode != .recover { writer.field("mode", mode.rawValue) }
+        writer.field("mode", mode.rawValue)
         if let confirmName { writer.field("confirm_name", confirmName) }
         writer.endObject()
         let frame = try await transport.sendSensitive(command, payload: writer.finish())

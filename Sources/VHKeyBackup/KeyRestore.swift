@@ -1,5 +1,5 @@
 public import Foundation
-import VHContract
+public import VHContract
 public import VHCore
 public import VHNodes
 public import VHOnePassword
@@ -12,9 +12,12 @@ import Darwin
 ///    node reports. Nothing leaves 1Password.
 /// 2. ``exportDocument(_:in:exportedBy:)``: reveal every stored version into the `vh vault keys export` JSON, for a
 ///    file the user picks (``SecretFile/write(_:to:)``, mode 0600).
-/// 3. ``importToNode(_:on:in:confirmName:exportedBy:)``: reveal the versions the node needs and send them with
-///    `vault.keys.import` over the paired connection. The daemon verifies every key against the vault's ciphertext
-///    and asks for the vault's name before writing (`vault_key_import`). Only its answer says the vault is recovered.
+/// 3. ``importToNode(_:on:in:mode:confirmName:exportedBy:)``: reveal the versions the node needs and send them, with
+///    the attestations 1Password stored, with `vault.keys.import` over the paired connection. In `recover` mode the
+///    daemon restores only versions its own attestation proves are the vault's (never a key of the caller's own) and
+///    asks for the vault's name before writing (`vault_key_import`); the rest come back `needs_salvage`, untouched.
+///    `salvage` is the separate, explicit step for those (`vault_key_salvage`). Only the daemon's answer says the
+///    vault is recovered.
 ///
 /// Revealed keys live only for the duration of one call.
 public struct KeyRestore: Sendable {
@@ -100,8 +103,8 @@ public struct KeyRestore: Sendable {
     // MARK: 3. Import to the node
 
     public enum ImportOutcome: Sendable, Equatable {
-        /// The daemon answered. `keyAvailable` in it says whether the vault runs again; versions it couldn't verify as
-        /// the vault's own come back `needs_salvage` (``VaultKeyImportReport/needsSalvage``).
+        /// The daemon answered. `keyAvailable` in it says whether the vault runs again; versions it couldn't prove are
+        /// the vault's own come back `needs_salvage` (`needsSalvage`), versions it never had `refused`.
         case imported(VaultKeyImportReport)
         /// The daemon would write and wants the vault's name typed; `message` says what it would write.
         case needsConfirmation(message: String)
@@ -110,7 +113,8 @@ public struct KeyRestore: Sendable {
 
     /// Sends the stored versions the node needs (`vault.keys.import`), with their attestations. Without
     /// `confirmName` the daemon only plans; pass the name the person typed to write. `recover` restores only versions
-    /// whose attestation verifies; `salvage` is the separate, explicitly confirmed fallback for the rest.
+    /// whose attestation verifies; `salvage` is the separate, explicitly confirmed fallback for the rest. Either
+    /// confirmation code is taken as a request for the name: a salvage with nothing left to salvage asks as a recover.
     public func importToNode(
         _ row: VaultKeyRow, on node: KeyBackupNode, in vault: OnePasswordVault, mode: VaultKeyImportMode = .recover,
         confirmName: String?, exportedBy: String
@@ -134,7 +138,7 @@ public struct KeyRestore: Sendable {
             let result = try await VaultKeyCommands(node.transport).importKeys(
                 set, mode: mode, confirmName: confirmName, exportedBy: exportedBy)
             return .imported(result)
-        } catch .needsConfirmation(let code, let message) where code == mode.confirmationCode {
+        } catch .needsConfirmation(let code, let message) where VaultKeyImportMode.confirmationCodes.contains(code) {
             return .needsConfirmation(message: message)
         } catch {
             return .failed(Self.words(error, node: row.nodeName))

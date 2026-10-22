@@ -197,12 +197,19 @@ final class DaemonKeys: Sendable {
                                code: "vault_key_salvage")
             }
             update(id) { $0.readable = Set([$0.current + 1]); $0.current += 1; $0.needed = [] }
-            return .ok(["vault_id": .integer(id), "vault_name": .string(vault.name), "deleted": false, "written": true,
-                        "key_available": true, "note": .null,
+            let report: JSONValue = [
+                "id": 1, "versions": .array(unreadable.sorted().map { .integer(Int64($0)) }),
+                "new_version": .integer(Int64(vault.current + 1)), "state": "finished", "started_at": 1_790_000_000,
+                "finished_at": 1_790_000_060, "salvaged": 41, "unrecoverable": 1, "skipped_remote": 0, "deferred": 0,
+                "failed": 0,
+                "failures": [["path": "/Photos/2019/broken.heic", "version": 1, "kind": "unrecoverable",
+                              "reason": "does not authenticate under the supplied key"]],
+            ]
+            return .ok(["vault_id": .integer(id), "vault_name": .string(vault.name), "deleted": false,
+                        "mode": "salvage", "written": true, "key_available": true, "note": .null,
                         "versions": .array(unreadable.sorted().map { ["version": .integer(Int64($0)), "outcome": "salvaged",
-                                                                      "detail": "re-encrypted", "verified_files": 0, "failed_files": 0] }),
-                        "salvage": ["new_key_version": .integer(Int64(vault.current + 1)), "recovered_files": 41,
-                                    "unrecoverable_count": 1, "unrecoverable_files": [["path": "/Photos/2019/broken.heic"]]]])
+                                                                      "detail": "files re-encrypted under a new key"] }),
+                        "salvage": report])
         }
         // Recover: with attestations required, a version is restored only when its attestation verifies.
         let verified = Set(unreadable.filter { !vault.requiresAttestation || attestations[$0] == Self.attestation(id, $0) })
@@ -218,14 +225,13 @@ final class DaemonKeys: Sendable {
             let salvageOnly = unreadable.contains(version) && !restored
             return ["version": .integer(Int64(version)),
                     "outcome": .string(restored ? "restored" : salvageOnly ? "needs_salvage" : "unchanged"),
-                    "detail": .string(restored ? "verified against 3 files"
-                        : salvageOnly ? "no valid attestation from this node" : "this host holds the same key"),
-                    "verified_files": restored ? 3 : 0, "failed_files": 0]
+                    "detail": .string(restored ? "attested by this node (signing key \(Self.signingKey))"
+                        : salvageOnly ? "the backup carries no attestation" : "this host holds the same key")]
         }
         let available = vaults.withLock { v in v[id].map { $0.readable.isSuperset(of: Set([$0.current] + $0.needed)) } ?? false }
-        return .ok(["vault_id": .integer(id), "vault_name": .string(vault.name), "deleted": false,
+        return .ok(["vault_id": .integer(id), "vault_name": .string(vault.name), "deleted": false, "mode": "recover",
                     "written": .bool(!toWrite.isEmpty), "key_available": .bool(available), "note": .null,
-                    "versions": .array(versions)])
+                    "versions": .array(versions), "salvage": .null])
     }
 }
 
@@ -600,11 +606,12 @@ struct KeyBackupTests {
                 Issue.record("got \(salvaged)")
                 return
             }
-            #expect(salvage.keyAvailable)
-            #expect(details.newKeyVersion == 3 && details.recoveredFiles == 41 && details.unrecoverableCount == 1)
-            #expect(details.unrecoverableFiles == ["/Photos/2019/broken.heic"])
+            #expect(salvage.keyAvailable && salvage.importMode == .salvage)
+            #expect(salvage.versions.map(\.outcome) == ["salvaged", "salvaged"])
+            #expect(details.newVersion == 3 && details.salvaged == 41 && details.unrecoverable == 1 && !details.isRunning)
+            #expect(details.failures.map(\.path) == ["/Photos/2019/broken.heic"] && details.unlistedFailures == 0)
             #expect(lab.daemon.payloads(of: "vault.keys.import").last?["mode"]?.stringValue == "salvage")
-            #expect(lab.daemon.payloads(of: "vault.keys.import").first?["mode"] == nil, "recover leaves mode out")
+            #expect(lab.daemon.payloads(of: "vault.keys.import").first?["mode"]?.stringValue == "recover")
         }
     }
 
