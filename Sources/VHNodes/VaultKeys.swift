@@ -179,7 +179,7 @@ extension WsModel.VaultKeySalvageReport {
 
 extension KeyAttestation {
     /// The contract's attestation, kept as the daemon sent it.
-    init(_ attestation: WsModel.VaultKeyAttestation) {
+    public init(_ attestation: WsModel.VaultKeyAttestation) {
         self.init(keyID: attestation.keyID, signature: attestation.signature)
     }
 }

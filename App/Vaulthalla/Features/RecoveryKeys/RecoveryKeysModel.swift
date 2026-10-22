@@ -361,7 +361,7 @@ nonisolated extension VaultKeyRow {
     var asUnknown: VaultKeyRow {
         VaultKeyRow(nodeID: nodeID, nodeName: nodeName, backupNodeID: backupNodeID, vaultID: vaultID,
                     vaultName: vaultName, deleted: deleted, daemon: daemon, item: item, status: .unknown,
-                    onePasswordChecked: onePasswordChecked)
+                    onePasswordChecked: onePasswordChecked, lastSalvage: lastSalvage)
     }
 
     var isKeyUnavailable: Bool {

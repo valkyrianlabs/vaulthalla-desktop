@@ -32,6 +32,8 @@ final class DaemonKeys: Sendable {
         var attests = false
         /// Recover-mode imports restore only versions whose attestation verifies (a daemon with attestations).
         var requiresAttestation = false
+        /// The last salvage's report, as status shows it (`last_salvage`).
+        var lastSalvage: JSONValue = .null
     }
 
     /// The node's signing key id (`key_attestation_keys.id`).
@@ -130,7 +132,7 @@ final class DaemonKeys: Sendable {
             "exported_at": v.exported == nil ? .null : 1_790_000_000,
             "rotation_in_progress": .bool(v.rotating), "needed_versions": .array(needed),
             "missing_versions": .array(missing.map { .integer(Int64($0)) }),
-            "attestation": v.attests ? Self.attestation(v.id, v.current) : .null, "last_salvage": .null,
+            "attestation": v.attests ? Self.attestation(v.id, v.current) : .null, "last_salvage": v.lastSalvage,
         ]
     }
 
@@ -196,7 +198,6 @@ final class DaemonKeys: Sendable {
                 return .refuse("Salvage re-encrypts what versions \(unreadable.map(String.init).joined(separator: ", ")) still decrypt under a new key. Type the vault's name to confirm.",
                                code: "vault_key_salvage")
             }
-            update(id) { $0.readable = Set([$0.current + 1]); $0.current += 1; $0.needed = [] }
             let report: JSONValue = [
                 "id": 1, "versions": .array(unreadable.sorted().map { .integer(Int64($0)) }),
                 "new_version": .integer(Int64(vault.current + 1)), "state": "finished", "started_at": 1_790_000_000,
@@ -205,6 +206,7 @@ final class DaemonKeys: Sendable {
                 "failures": [["path": "/Photos/2019/broken.heic", "version": 1, "kind": "unrecoverable",
                               "reason": "does not authenticate under the supplied key"]],
             ]
+            update(id) { $0.readable = Set([$0.current + 1]); $0.current += 1; $0.needed = []; $0.lastSalvage = report }
             return .ok(["vault_id": .integer(id), "vault_name": .string(vault.name), "deleted": false,
                         "mode": "salvage", "written": true, "key_available": true, "note": .null,
                         "versions": .array(unreadable.sorted().map { ["version": .integer(Int64($0)), "outcome": "salvaged",
@@ -557,14 +559,18 @@ struct KeyBackupTests {
             let keyBefore = try await lab.helper.reveal(onePasswordVaultID: vault.id, itemID: try #require(before.item).itemID)
                 .versions.map { $0.key.withUnsafeBytes { Array($0) } }
 
+            #expect(before.attestationsToStore.isEmpty, "the node has none either")
             // The node is updated and attests keys now; nothing is "missing", so only a forced backup refreshes them.
             lab.keys.update(7) { $0.attests = true }
+            let upgraded = try await lab.row(7, in: vault)
+            #expect(upgraded.daemon.attestations[2] == KeyAttestation(keyID: DaemonKeys.signingKey, signature: DaemonKeys.signature(7, 2)))
+            #expect(upgraded.attestationsToStore == [2, 1])
             #expect(await lab.sync.run([before], nodes: [lab.node], into: vault)["node-a/7"]
                 == .skipped("A key rotation is under way; 1Password already holds every key it needs."))
             #expect(await lab.sync.run([before], nodes: [lab.node], into: vault, force: true)["node-a/7"]
                 == .backedUp(version: 2, written: true))
             let after = try await lab.row(7, in: vault)
-            #expect(after.recoveryAssurance == .guaranteed)
+            #expect(after.recoveryAssurance == .guaranteed && after.attestationsToStore.isEmpty)
             let keyAfter = try await lab.helper.reveal(onePasswordVaultID: vault.id, itemID: try #require(after.item).itemID)
                 .versions.map { $0.key.withUnsafeBytes { Array($0) } }
             #expect(keyAfter == keyBefore, "refreshing attestations never touches a stored key")
@@ -612,6 +618,8 @@ struct KeyBackupTests {
             #expect(details.failures.map(\.path) == ["/Photos/2019/broken.heic"] && details.unlistedFailures == 0)
             #expect(lab.daemon.payloads(of: "vault.keys.import").last?["mode"]?.stringValue == "salvage")
             #expect(lab.daemon.payloads(of: "vault.keys.import").first?["mode"]?.stringValue == "recover")
+            // Status keeps the report.
+            #expect(try await lab.row(7, in: vault).lastSalvage == details)
         }
     }
 

@@ -1,4 +1,5 @@
 public import Foundation
+public import VHCore
 
 /// The daemon's view of one vault's key (`vault.keys.status`, architecture §2 S2).
 public struct DaemonKeyStatus: Sendable, Equatable {
@@ -25,12 +26,15 @@ public struct DaemonKeyStatus: Sendable, Equatable {
     public var unavailableDetail: String?
     /// Needed versions the node can't read (`missing_versions`).
     public var missingVersions: [Int]
+    /// The node's recorded attestation of each needed version that has one (public, like the key check). A backup
+    /// that lacks one the node has can store it by backing up again.
+    public var attestations: [Int: KeyAttestation]
 
     public init(
         vaultUUID: String, version: Int, exportedVersion: Int? = nil, exportedAt: Date? = nil, keyCheck: String?,
         rotationInProgress: Bool = false, neededVersions: [Int] = [], neededKeyChecks: [Int: String] = [:],
         keyAvailable: Bool = true, unavailableReason: String? = nil, unavailableDetail: String? = nil,
-        missingVersions: [Int] = []
+        missingVersions: [Int] = [], attestations: [Int: KeyAttestation] = [:]
     ) {
         self.vaultUUID = vaultUUID
         self.version = version
@@ -44,6 +48,7 @@ public struct DaemonKeyStatus: Sendable, Equatable {
         self.unavailableReason = unavailableReason
         self.unavailableDetail = unavailableDetail
         self.missingVersions = missingVersions
+        self.attestations = attestations
     }
 
     /// Every version 1Password must hold for a restore: the current one and the needed older ones, newest first.

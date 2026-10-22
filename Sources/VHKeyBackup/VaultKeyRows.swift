@@ -10,7 +10,11 @@ extension DaemonKeyStatus {
         let current = Int(status.version)
         var needed: [Int] = []
         var checks: [Int: String] = [:]
-        for version in status.neededVersions where Int(version.version) != current {
+        var attestations: [Int: KeyAttestation] = [:]
+        if let attestation = status.attestation { attestations[current] = KeyAttestation(attestation) }
+        for version in status.neededVersions {
+            if let attestation = version.attestation { attestations[Int(version.version)] = KeyAttestation(attestation) }
+            guard Int(version.version) != current else { continue }
             needed.append(Int(version.version))
             if let check = version.keyCheck { checks[Int(version.version)] = check }
         }
@@ -19,7 +23,8 @@ extension DaemonKeyStatus {
             exportedAt: status.exportedAt.map { Date(timeIntervalSince1970: TimeInterval($0)) },
             keyCheck: status.keyCheck, rotationInProgress: status.rotationInProgress, neededVersions: needed,
             neededKeyChecks: checks, keyAvailable: status.keyAvailable, unavailableReason: status.unavailableReason,
-            unavailableDetail: status.unavailableDetail, missingVersions: status.missingVersions.map(Int.init)
+            unavailableDetail: status.unavailableDetail, missingVersions: status.missingVersions.map(Int.init),
+            attestations: attestations
         )
     }
 }
@@ -64,10 +69,13 @@ public struct VaultKeyRow: Identifiable, Sendable, Equatable {
     public let status: BackupStatus
     /// False until 1Password's items were read: `status` then rests on the node's own record of confirmed backups.
     public let onePasswordChecked: Bool
+    /// The vault's last key salvage on the node (`last_salvage`), if any.
+    public let lastSalvage: WsModel.VaultKeySalvageReport?
 
     public init(
         nodeID: NodeID, nodeName: String, backupNodeID: String, vaultID: Int64, vaultName: String, deleted: Bool,
-        daemon: DaemonKeyStatus, item: BackupItem?, status: BackupStatus, onePasswordChecked: Bool
+        daemon: DaemonKeyStatus, item: BackupItem?, status: BackupStatus, onePasswordChecked: Bool,
+        lastSalvage: WsModel.VaultKeySalvageReport? = nil
     ) {
         self.nodeID = nodeID
         self.nodeName = nodeName
@@ -79,6 +87,7 @@ public struct VaultKeyRow: Identifiable, Sendable, Equatable {
         self.item = item
         self.status = status
         self.onePasswordChecked = onePasswordChecked
+        self.lastSalvage = lastSalvage
     }
 
     /// Counts toward "N vault keys need backup": a missing or stale backup, or a rotation's key not stored yet.
@@ -91,8 +100,10 @@ public struct VaultKeyRow: Identifiable, Sendable, Equatable {
     }
 
     /// How sure a restore from 1Password is: guaranteed when every version the node needs is in 1Password with the
-    /// node's attestation (the daemon then restores it as the vault's own), best effort otherwise (e.g. backed up
-    /// before the node attested keys: "Back up again" refreshes them). nil without a backup to judge.
+    /// node's attestation (the daemon then restores it as the vault's own), best effort otherwise: a version without
+    /// one can't be proven to be the vault's key, so only a salvage can use it (backups made before the node's
+    /// server recorded attestations have none; ``attestationsToStore`` says whether backing up again fixes that).
+    /// nil without a backup to judge.
     public var recoveryAssurance: RecoveryAssurance? {
         guard let item, item.vaultUUID == daemon.vaultUUID else { return nil }
         // A backup that disagrees with the node (or looks damaged) guarantees nothing.
@@ -102,6 +113,16 @@ public struct VaultKeyRow: Identifiable, Sendable, Equatable {
         guard !held.isEmpty else { return nil }
         let unattested = required.filter { item.version($0)?.isAttested != true }
         return unattested.isEmpty ? .guaranteed : .bestEffort(unattestedVersions: unattested)
+    }
+
+    /// Needed versions 1Password holds without an attestation while the node has one recorded (newest first): backing
+    /// up again stores them, and the restore becomes guaranteed for those versions.
+    public var attestationsToStore: [Int] {
+        guard let item, item.vaultUUID == daemon.vaultUUID else { return [] }
+        return daemon.requiredVersions.filter { version in
+            guard let stored = item.version(version) else { return false }
+            return stored.attestation == nil && daemon.attestations[version] != nil
+        }
     }
 
     /// The badge's count: everything that needs a person, never an offline node.
@@ -127,7 +148,7 @@ public enum VaultKeyRows {
             return VaultKeyRow(
                 nodeID: node.id, nodeName: node.name, backupNodeID: node.backupID, vaultID: status.vaultID,
                 vaultName: status.vaultName, deleted: status.deleted, daemon: daemon, item: item, status: evaluated,
-                onePasswordChecked: items != nil)
+                onePasswordChecked: items != nil, lastSalvage: status.lastSalvage)
         }
     }
 
