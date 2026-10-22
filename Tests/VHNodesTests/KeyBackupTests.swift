@@ -491,8 +491,10 @@ struct KeyBackupTests {
             #expect(json["key_info"]?["key_version"]?.integerValue == 2 && json["key_check"]?.stringValue == lab.keys.check(7, 2))
             #expect(json["key"]?.stringValue == Data(DaemonKeys.key(7, 2)).base64EncodedString())
             #expect(json["historical_keys"]?.arrayValue?.map { $0["key_version"]?.integerValue } == [1])
-            // The same document decodes as the contract's export model, so `vh vault keys import` reads it.
-            #expect(try JSONDecoder().decode(ImportShape.self, from: Data(contentsOf: file)).key_info.key_version == 2)
+            // The same document decodes as the contract's import document, so `vh vault keys import` reads it.
+            let parsed = try JSONDecoder().decode(WsModel.VaultKeyImportDocument.self, from: Data(contentsOf: file))
+            #expect(parsed.vaultID == 7 && parsed.keyInfo.keyVersion == 2 && parsed.keyCheck?.wrapped == lab.keys.check(7, 2))
+            #expect(parsed.historicalKeys?.map(\.keyVersion) == [1])
 
             // (c) Import: the daemon plans first and asks for the vault's name.
             let node = lab.node
@@ -809,14 +811,6 @@ struct KeyBackupTests {
             #expect(await lab.sync.run([after], nodes: [lab.node], into: vault)[after.id] == .skipped("Already backed up."))
             #expect(try await lab.helper.testWrites() == writes + 1)
         }
-    }
-
-    /// The parts of the export model `vh vault keys import` needs.
-    struct ImportShape: Decodable {
-        struct Info: Decodable { let key_version: Int }
-        let vault_id: Int
-        let key: String
-        let key_info: Info
     }
 }
 }

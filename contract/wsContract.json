@@ -14722,8 +14722,9 @@
       "description": "This node's Ed25519 signature over one key version (vault/KeyAttestation.hpp): \"vh-key-attest-v1\" ‖ node_id ‖ UInt64BE(vault_id) ‖ UInt32BE(version) ‖ key_check (16 bytes). `vh vault keys import` restores a version as canonical only when it verifies under one of this node's attestation keys.",
       "fields": [
         {
-          "description": "Which of this node's attestation keys signed (key_attestation_keys.id).",
-          "minimum": 0,
+          "description": "Which of this node's attestation keys signed (key_attestation_keys.id, a PostgreSQL integer). An import reads any other value as a malformed attestation: that version needs salvage.",
+          "maximum": 2147483647,
+          "minimum": 1,
           "name": "key_id",
           "required": true,
           "types": [
@@ -15019,6 +15020,142 @@
         }
       ],
       "name": "VaultKeyExport"
+    },
+    {
+      "description": "One vault's entry in a key import (vault.keys.import keys, `vh vault keys import --file`): what ops::vault_keys::importKeys reads (core/src/ops/VaultKeys.cpp readImportDocument). A whole VaultKeyExport is one; members not declared here, at any depth, are accepted and ignored. Missing or mistyped required members, a key that isn't base64 of 32 bytes, a version given two different keys, or a key_check that doesn't match its key refuse the whole import (invalid). An attestation that is malformed (key_id out of range, a signature that isn't base64 of 64 bytes) is not an error: that version needs salvage.",
+      "fields": [
+        {
+          "description": "The vault the entry is for: the request's vault_id (the entry of an `all` array whose vault_id matches is used; the others are not read).",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "The key of key_info.key_version, base64 (32 bytes).",
+          "name": "key",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "32 lowercase hex digits. The backup's own key check of `key` (consistency only: a mismatch refuses the import as damaged). When absent, key_info.key_check is read; null or absent in both: none.",
+          "name": "key_check",
+          "required": false,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "This node's attestation of key_info.key_version, as the export carried it: what restores that version as canonical. When absent, key_info.attestation is read; null or absent in both: the version can only be salvaged.",
+          "model": "VaultKeyAttestation",
+          "name": "attestation",
+          "required": false,
+          "types": [
+            "object",
+            "null"
+          ]
+        },
+        {
+          "description": "Only key_version is required; the export's other key metadata is ignored.",
+          "fields": [
+            {
+              "description": "The version `key` is.",
+              "maximum": 4294967295,
+              "minimum": 1,
+              "name": "key_version",
+              "required": true,
+              "types": [
+                "integer"
+              ]
+            },
+            {
+              "description": "32 lowercase hex digits. Read only when the entry has no key_check member.",
+              "name": "key_check",
+              "required": false,
+              "types": [
+                "string",
+                "null"
+              ]
+            },
+            {
+              "description": "Read only when the entry has no attestation member.",
+              "model": "VaultKeyAttestation",
+              "name": "attestation",
+              "required": false,
+              "types": [
+                "object",
+                "null"
+              ]
+            }
+          ],
+          "name": "key_info",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        },
+        {
+          "description": "The entry's other versions (an export's rotation and recovery versions). A version listed twice must carry the same key.",
+          "fields": [
+            {
+              "maximum": 4294967295,
+              "minimum": 1,
+              "name": "key_version",
+              "required": true,
+              "types": [
+                "integer"
+              ]
+            },
+            {
+              "description": "base64 (32 bytes).",
+              "name": "key",
+              "required": true,
+              "types": [
+                "string"
+              ]
+            },
+            {
+              "description": "32 lowercase hex digits. The backup's own key check of this key (consistency only).",
+              "name": "key_check",
+              "required": false,
+              "types": [
+                "string",
+                "null"
+              ]
+            },
+            {
+              "description": "This node's attestation of this version; null or absent: it can only be salvaged.",
+              "model": "VaultKeyAttestation",
+              "name": "attestation",
+              "required": false,
+              "types": [
+                "object",
+                "null"
+              ]
+            }
+          ],
+          "items": "object",
+          "name": "historical_keys",
+          "required": false,
+          "types": [
+            "array"
+          ]
+        }
+      ],
+      "name": "VaultKeyImportDocument"
     },
     {
       "description": "What a key import did: ops::vault_keys::toJson(ImportResult) (core/src/ops/VaultKeys.cpp; also `vh vault keys import --json`).",
@@ -16969,7 +17106,7 @@
       "name": "WebsocketServerConfig"
     }
   ],
-  "models_hash": "15ce150c0765fa6879670d3bb47aa9a9a2c0bb9618a248ad0adafacee0f0dcc5",
+  "models_hash": "0fc0e2fa8255c90834b8b3466187617ad7bd7887df3bb7baa90d57fbfabf1cac",
   "ws": [
     {
       "auth": "session",
@@ -37187,15 +37324,15 @@
         {
           "accept_field": "confirm_name",
           "code": "vault_key_import",
-          "description": "The import would re-seal the listed key versions under this host's vault master (the error text says which): resend with confirm_name set to the vault's name (a string, not a flag) once the person typed it."
+          "description": "mode recover: the import would re-seal the listed key versions under this host's vault master (the error text says which): resend with confirm_name set to the vault's name (a string, not a flag) once the person typed it."
         },
         {
           "accept_field": "confirm_name",
           "code": "vault_key_salvage",
-          "description": "mode salvage would create a fresh key version and re-encrypt every file the supplied key decrypts under it (the error text says which versions); files it can't decrypt are reported unrecoverable. Resend with confirm_name set to the vault's name once the person typed it."
+          "description": "Every mode salvage request that would write. It would create a fresh key version and re-encrypt every file the supplied key decrypts under it (the error text says which versions; files it can't decrypt are reported unrecoverable), and restore any attested versions as recover does; when no version needs salvage the text says so and only the restore happens. Resend with confirm_name set to the vault's name once the person typed it."
         }
       ],
-      "description": "Recover the vault's keys from a backup (`keys`: an export, one vault object or an `all` array) when this host can't unseal or doesn't hold them. A recovery mechanism, never a way to set a key: a version is restored only when the vault's records reference it and its attestation by this node verifies (or it matches a key this host holds); a key this host can unseal is never replaced (conflict), identical bytes are unchanged, unreferenced versions are refused, the rest are needs_salvage. mode salvage additionally re-encrypts the files of the needs_salvage versions under a fresh daemon key (the supplied key is never stored) and returns the report. Writing needs confirm_name = the vault's name, else data.code vault_key_import (recover) or vault_key_salvage with what would be done. Paired devices only (import_requires_device otherwise); the encryption-key Export permission.",
+      "description": "Recover the vault's keys from a backup (`keys`: an export, one vault object or an `all` array) when this host can't unseal or doesn't hold them. A recovery mechanism, never a way to set a key: a version is restored only when the vault's records reference it and its attestation by this node verifies (or it matches a key this host holds); a key this host can unseal is never replaced (conflict), identical bytes are unchanged, unreferenced versions are refused, the rest are needs_salvage. mode salvage additionally re-encrypts the files of the needs_salvage versions under a fresh daemon key (the supplied key is never stored) and returns the report. Writing needs confirm_name = the vault's name, else data.code vault_key_import (mode recover) or vault_key_salvage (mode salvage, even when nothing turns out to need salvage) with what would be done. Paired devices only (import_requires_device otherwise); the encryption-key Export permission.",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -37217,7 +37354,7 @@
           ]
         },
         {
-          "description": "The export document.",
+          "description": "The export document: the members VaultKeyImportDocument declares are read, anything else is ignored.",
           "generator": {
             "attrs": [
               "export"
@@ -37229,8 +37366,8 @@
           "name": "keys",
           "one_of": [
             {
-              "description": "One vault's export, as vault.keys.export returns it.",
-              "model": "VaultKeyExport",
+              "description": "One vault's entry: what the import reads of an export (a whole vault.keys.export answer is one).",
+              "model": "VaultKeyImportDocument",
               "name": "",
               "required": true,
               "types": [
@@ -37240,7 +37377,7 @@
             {
               "description": "The CLI's `vh vault keys export all` array; the entry whose vault_id matches is used.",
               "items": "object",
-              "model": "VaultKeyExport",
+              "model": "VaultKeyImportDocument",
               "name": "",
               "required": true,
               "types": [
@@ -37958,5 +38095,5 @@
       "variants": []
     }
   ],
-  "ws_hash": "163845c27ea514dd0b5fe98bc586c7e6a608f7128ba3dcae49281266af346e54"
+  "ws_hash": "cba52446e8e2bc3eda732c6bdac1884cbfa3b1f2326d7b0f37500c8a92a04893"
 }

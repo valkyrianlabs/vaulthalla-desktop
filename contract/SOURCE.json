@@ -1,10 +1,10 @@
 {
   "server_version": "1.15.0",
-  "server_commit": "e9b28ca3",
-  "server_branch": "wip/integration-keys",
+  "server_commit": "2afa6997",
+  "server_branch": "feat/desktop-integration",
   "source": "web/src/util/generated/wsContract.json",
   "contract_version": 2,
-  "ws_hash": "163845c27ea514dd0b5fe98bc586c7e6a608f7128ba3dcae49281266af346e54",
-  "models_hash": "15ce150c0765fa6879670d3bb47aa9a9a2c0bb9618a248ad0adafacee0f0dcc5",
-  "note": "Vendored from wip/integration-keys (feat/desktop-integration merged with feat/key-import-provenance: key import revision 3, recover and salvage, attestations)."
+  "ws_hash": "cba52446e8e2bc3eda732c6bdac1884cbfa3b1f2326d7b0f37500c8a92a04893",
+  "models_hash": "0fc0e2fa8255c90834b8b3466187617ad7bd7887df3bb7baa90d57fbfabf1cac",
+  "note": "Vendored from feat/desktop-integration at 2afa6997 (vault.keys.import takes VaultKeyImportDocument or an array of it; salvage confirms as salvage; attestation key_id bounds)."
 }
