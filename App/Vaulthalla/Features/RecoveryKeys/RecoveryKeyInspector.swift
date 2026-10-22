@@ -69,14 +69,14 @@ struct RecoveryKeyInspector: View {
     private var actions: some View {
         let busy = keys.run?.isRunning == true
         HStack(spacing: 8) {
-            if row.status.wantsSync {
+            if row.wantsSync {
                 Button("Back Up Now") { keys.sync([row], title: "Back up \(row.vaultName)") }
                     .buttonStyle(.borderedProminent)
                     .disabled(busy)
-            } else if case .backedUp = row.status, row.recoveryAssurance != .guaranteed {
+            } else if !row.unattestedButReadable.isEmpty, !row.isKeyUnavailable {
                 Button("Back Up Again") { keys.sync([row], force: true, title: "Back up \(row.vaultName) again") }
                     .disabled(busy)
-                    .help("Store the node's current attestations with the keys")
+                    .help("\(row.nodeName) has no attestation for \(VaultKeyRow.versionWords(row.unattestedButReadable)). Backing up again exports the key, and the node records one as it does.")
             }
             if row.isKeyUnavailable {
                 Button("Restore from 1Password…", action: onRestore)
@@ -301,7 +301,7 @@ private struct SyncEntryRow: View {
         switch entry.outcome {
         case nil:
             if entry.running { ProgressView().controlSize(.mini) } else { Image(systemName: "circle").foregroundStyle(.fgFaint) }
-        case .backedUp: Image(systemName: "checkmark.circle.fill").foregroundStyle(StatusTone.ok.color)
+        case .backedUp, .attestationsStored: Image(systemName: "checkmark.circle.fill").foregroundStyle(StatusTone.ok.color)
         case .storedNotConfirmed: Image(systemName: "exclamationmark.circle.fill").foregroundStyle(StatusTone.warn.color)
         case .skipped: Image(systemName: "minus.circle").foregroundStyle(StatusTone.unknown.color)
         case .failed: Image(systemName: "xmark.circle.fill").foregroundStyle(StatusTone.danger.color)
@@ -315,6 +315,8 @@ private struct SyncEntryRow: View {
         case .backedUp(let version, let written):
             return written ? "\(node) · key version \(version) stored in 1Password and recorded on the node"
                 : "\(node) · 1Password already held version \(version); recorded on the node"
+        case .attestationsStored(let versions):
+            return "\(node) · its attestation of \(VaultKeyRow.versionWords(versions)) added to 1Password; no key moved"
         case .storedNotConfirmed(let version, let reason):
             return "\(node) · version \(version) is in 1Password, but the node didn't record it: \(reason). Back up again for the new key."
         case .skipped(let reason): return "\(node) · \(reason)"

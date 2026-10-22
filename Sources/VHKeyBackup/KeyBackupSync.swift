@@ -13,14 +13,19 @@ public enum VaultSyncOutcome: Sendable, Equatable {
     /// 1Password stored the keys, but the node refused the confirmation: it rotated in between (`conflict`). The
     /// backup isn't recorded; the next sync stores the new key too.
     case storedNotConfirmed(version: Int, reason: String)
+    /// The keys were already in 1Password; the node's attestations of these versions were added to the item (metadata
+    /// only, no key moved), so the backup restores on its own.
+    case attestationsStored(versions: [Int])
     /// Left alone, and why: already backed up, or a state a sync never writes over (a mismatch, an unreadable key,
     /// an offline node).
     case skipped(String)
     case failed(step: VaultSyncStep, message: String)
 
     public var succeeded: Bool {
-        if case .backedUp = self { return true }
-        return false
+        switch self {
+        case .backedUp, .attestationsStored: true
+        default: false
+        }
     }
 }
 
@@ -42,8 +47,8 @@ public enum VaultSyncEvent: Sendable {
 /// Backs vault keys up to 1Password (architecture §6): for each vault that isn't backed up, `vault.keys.export` over
 /// the node's Device session, every needed version handed to `item.upsert` as `SecretBytes`, the export released
 /// right after, then `vault.keys.export.confirm {vault_id, version, key_check}` with what 1Password read back. A
-/// vault that 1Password already holds only gets the confirmation, without moving any key. Vaults are done one at a
-/// time; a failure stops only its own vault.
+/// vault that 1Password already holds only gets the confirmation, without moving any key, and the node's attestations
+/// 1Password lacks (`item.attest`, metadata only). Vaults are done one at a time; a failure stops only its own vault.
 public struct KeyBackupSync: Sendable {
     public let store: any KeyBackupStore
     public let settings: OnePasswordSettings
@@ -66,8 +71,8 @@ public struct KeyBackupSync: Sendable {
     }
 
     /// Syncs `rows` (on `nodes`) into `vault`. Rows that don't want a sync come back skipped with the reason.
-    /// `force` backs up vaults that are already backed up again ("Back up again": it refreshes their attestations once
-    /// the node attests keys).
+    /// `force` backs up vaults that are already backed up again ("Back up again": the node records an attestation of
+    /// each version as it exports it, and the item stores them).
     public func run(
         _ rows: [VaultKeyRow], nodes: [KeyBackupNode], into vault: OnePasswordVault, force: Bool = false,
         progress: @Sendable (VaultSyncEvent) async -> Void = { _ in }
@@ -97,22 +102,29 @@ public struct KeyBackupSync: Sendable {
         case .backedUp where force:
             break
         case .backedUp(confirmed: true):
-            return .skipped("Already backed up.")
+            return await storeAttestations(row, into: vault) ?? .skipped("Already backed up.")
         case .backedUp(confirmed: false):
             // 1Password holds it and the checks agree: only the node's record is behind. No key moves.
             if let item = row.item {
+                if case .failed(let step, let message)? = await storeAttestations(row, into: vault) {
+                    return .failed(step: step, message: message)
+                }
                 return await confirm(keys, vaultID: row.vaultID, version: item.currentVersion, keyCheck: item.keyCheck,
                                      written: false)
             }
         case .mismatch:
             return .skipped("1Password and \(row.nodeName) disagree about this key. Check the item before syncing.")
         case .keyUnavailable:
-            return .skipped("\(row.nodeName) can't read this vault's key. Restore it from 1Password instead.")
+            // Versions the node still reads may carry attestations 1Password lacks; no key moves for those either.
+            return await storeAttestations(row, into: vault)
+                ?? .skipped("\(row.nodeName) can't read this vault's key. Restore it from 1Password instead.")
         case .unknown:
             return .skipped("\(row.nodeName) isn't connected.")
         case .rotating(let missing) where missing.isEmpty && !force:
-            return .skipped("A key rotation is under way; 1Password already holds every key it needs.")
+            return await storeAttestations(row, into: vault)
+                ?? .skipped("A key rotation is under way; 1Password already holds every key it needs.")
         case .needsBackup, .rotating:
+            // The export carries the node's attestations; the upsert stores them with the keys.
             break
         }
 
@@ -146,6 +158,18 @@ public struct KeyBackupSync: Sendable {
         // Confirm with what 1Password read back, never with what was sent.
         return await confirm(keys, vaultID: row.vaultID, version: stored.currentVersion, keyCheck: stored.keyCheck,
                              written: stored.written)
+    }
+
+    /// The node's attestations 1Password lacks for keys it already holds (``VaultKeyRow/attestationsToStore``), added
+    /// to the item without moving a key. nil when there are none (or 1Password already had its own).
+    private func storeAttestations(_ row: VaultKeyRow, into vault: OnePasswordVault) async -> VaultSyncOutcome? {
+        guard let update = row.attestationUpdate(versions: row.attestationsToStore, in: vault) else { return nil }
+        do {
+            let outcome = try await store.attest(update)
+            return outcome.stored.isEmpty ? nil : .attestationsStored(versions: outcome.stored)
+        } catch {
+            return .failed(step: .store, message: KeyBackupWords.onePassword(error))
+        }
     }
 
     private func confirm(_ keys: VaultKeyCommands, vaultID: Int64, version: Int, keyCheck: String, written: Bool) async

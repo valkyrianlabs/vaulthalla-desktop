@@ -32,6 +32,8 @@ final class RestoreFlow {
     var salvageTypedName = ""
     private(set) var exportNote: (text: String, ok: Bool)?
     private(set) var exporting = false
+    /// After an import: the node's attestations it proved, stored in 1Password (or why not).
+    private(set) var writeBack: KeyRestore.AttestationWriteBack?
 
     @ObservationIgnored private weak var keys: RecoveryKeysModel?
 
@@ -111,7 +113,14 @@ final class RestoreFlow {
         case .needsConfirmation(let message): set(mode, .confirm(message: message))
         case .failed(let message): set(mode, .failed(message))
         }
-        if case .done = outcome.step { await keys?.pollNodes() }
+        guard case .imported(let report) = outcome else { return }
+        // Attestations the node just verified on versions 1Password had none for go into the item, so the backup
+        // restores on its own from now on.
+        if let stored = await restore.storeAttestations(restoredBy: report, row: row, in: vault) {
+            writeBack = stored
+            await keys?.refreshOnePassword()
+        }
+        await keys?.pollNodes()
     }
 
     func cancel(_ mode: VaultKeyImportMode) {
@@ -152,16 +161,6 @@ final class RestoreFlow {
         await run(.salvage, confirmed: true)
     }
     #endif
-}
-
-private extension KeyRestore.ImportOutcome {
-    var step: RestoreFlow.Step {
-        switch self {
-        case .imported(let report): .done(report)
-        case .needsConfirmation(let message): .confirm(message: message)
-        case .failed(let message): .failed(message)
-        }
-    }
 }
 
 struct RestoreKeysSheet: View {
@@ -212,6 +211,7 @@ struct RestoreKeysSheet: View {
                         KeySection("3. Restore to \(row.nodeName)") {
                             importStep(.recover, step: flow.recover)
                         }
+                        .id(Self.restoreAnchor)
                         if !flow.needsSalvage.isEmpty || flow.salvage != .idle {
                             KeySection("Salvage") {
                                 if !flow.salvageDone { salvageIntro }
@@ -227,6 +227,7 @@ struct RestoreKeysSheet: View {
                     switch UserDefaults.standard.string(forKey: "VHDebugRecoveryKeys") {
                     case "restore-result":
                         await flow.debugShowRecoverResult()
+                        scroll.scrollTo(Self.restoreAnchor, anchor: .bottom)
                     case "restore-salvage":
                         await flow.debugShowSalvageResult()
                         scroll.scrollTo(Self.salvageAnchor, anchor: .top)
@@ -248,6 +249,7 @@ struct RestoreKeysSheet: View {
     }
 
     private static let salvageAnchor = "salvage"
+    private static let restoreAnchor = "restore"
 
     private var header: some View {
         HStack(spacing: 12) {
@@ -286,6 +288,7 @@ struct RestoreKeysSheet: View {
                     .font(.callout)
                     .foregroundStyle(.fgSubtle)
                     .fixedSize(horizontal: false, vertical: true)
+                attestationLine
             }
             Button(mode == .recover ? "Restore to \(row.nodeName)…" : "Salvage…") {
                 Task { await flow.run(mode, confirmed: false) }
@@ -300,9 +303,42 @@ struct RestoreKeysSheet: View {
             confirmation(mode, message: message)
         case .done(let report):
             ImportReportView(report: report, mode: mode, nodeName: row.nodeName)
+            if mode == .recover { attestationLine }
+            if let writeBack = flow.writeBack, mode == .recover { writeBackNote(writeBack) }
         case .failed(let message):
             Callout(tone: .danger, systemImage: "exclamationmark.circle") { Text(message) }
             Button("Try Again") { flow.cancel(mode) }
+        }
+    }
+
+    /// Which versions carry 1Password's attestation and which the node's: one quiet line, explained on hover.
+    @ViewBuilder
+    private var attestationLine: some View {
+        if let summary = row.attestationSummary {
+            Text(summary)
+                .font(.caption)
+                .foregroundStyle(.fgSubtle)
+                .fixedSize(horizontal: false, vertical: true)
+                .help(row.attestationSummaryHelp)
+        }
+    }
+
+    @ViewBuilder
+    private func writeBackNote(_ writeBack: KeyRestore.AttestationWriteBack) -> some View {
+        switch writeBack {
+        case .stored(let versions) where !versions.isEmpty:
+            Label("1Password now holds \(row.nodeName)'s attestation of \(VaultKeyRow.versionWords(versions)) too.",
+                  systemImage: "checkmark.circle")
+                .font(.caption)
+                .foregroundStyle(.fgSubtle)
+        case .stored:
+            EmptyView()
+        case .failed(let message):
+            Label("Couldn't add the attestations to 1Password: \(message) Back Up Now on Recovery Keys tries again.",
+                  systemImage: "exclamationmark.triangle")
+                .font(.caption)
+                .foregroundStyle(StatusTone.warn.color)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 

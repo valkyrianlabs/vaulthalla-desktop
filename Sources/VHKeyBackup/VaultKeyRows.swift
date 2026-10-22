@@ -99,11 +99,11 @@ public struct VaultKeyRow: Identifiable, Sendable, Equatable {
         }
     }
 
-    /// How sure a restore from 1Password is: guaranteed when every version the node needs is in 1Password with the
-    /// node's attestation (the daemon then restores it as the vault's own), best effort otherwise: a version without
-    /// one can't be proven to be the vault's key, so only a salvage can use it (backups made before the node's
-    /// server recorded attestations have none; ``attestationsToStore`` says whether backing up again fixes that).
-    /// nil without a backup to judge.
+    /// How sure a restore from 1Password is: guaranteed when every version the node needs is in 1Password and has an
+    /// attestation the node can verify, 1Password's own or, where the backup has none, the node's record of it
+    /// (``importAttestation(_:stored:)``); the daemon then restores it as the vault's own. Best effort otherwise: a
+    /// version with neither can't be proven to be the vault's key, so only a salvage can use it. nil without a backup
+    /// to judge.
     public var recoveryAssurance: RecoveryAssurance? {
         guard let item, item.vaultUUID == daemon.vaultUUID else { return nil }
         // A backup that disagrees with the node (or looks damaged) guarantees nothing.
@@ -111,19 +111,93 @@ public struct VaultKeyRow: Identifiable, Sendable, Equatable {
         let required = daemon.requiredVersions
         let held = required.compactMap { item.version($0) }
         guard !held.isEmpty else { return nil }
-        let unattested = required.filter { item.version($0)?.isAttested != true }
+        let unattested = required.filter { version in
+            guard let stored = item.version(version) else { return true }
+            return importAttestation(version, stored: stored.attestation).source == .none
+        }
         return unattested.isEmpty ? .guaranteed : .bestEffort(unattestedVersions: unattested)
     }
 
-    /// Needed versions 1Password holds without an attestation while the node has one recorded (newest first): backing
-    /// up again stores them, and the restore becomes guaranteed for those versions.
-    public var attestationsToStore: [Int] {
-        guard let item, item.vaultUUID == daemon.vaultUUID else { return [] }
-        return daemon.requiredVersions.filter { version in
-            guard let stored = item.version(version) else { return false }
-            return stored.attestation == nil && daemon.attestations[version] != nil
+    // MARK: Attestations
+
+    /// The node's recorded attestation of `version`, when it is well-formed. It comes from this row's own status
+    /// entry, so it is for this vault, and is looked up by version: never another vault's or another version's.
+    public func nodeAttestation(_ version: Int) -> KeyAttestation? {
+        guard daemon.vaultUUID == String(vaultID), let attestation = daemon.attestations[version],
+              attestation.isWellFormed else { return nil }
+        return attestation
+    }
+
+    /// The attestation a restore sends for `version`, given the one 1Password stored with it: 1Password's when it is
+    /// well-formed (never replaced), otherwise the node's own record of it (backups made before the node recorded
+    /// attestations), otherwise what 1Password has (nothing, or a malformed one: the version needs salvage). Safe to
+    /// fill in: the attestation is the node's public signature over its id, the vault, the version and the key check,
+    /// and the daemon recomputes the check from the key sent and verifies the signature itself.
+    public func importAttestation(_ version: Int, stored: KeyAttestation?) -> (attestation: KeyAttestation?, source: AttestationSource) {
+        if let stored, stored.isWellFormed { return (stored, .backup) }
+        if let node = nodeAttestation(version) { return (node, .node) }
+        return (stored, .none)
+    }
+
+    /// The versions a restore sends: those the node needs (or reports missing) that 1Password holds, newest first.
+    public var restoreVersions: [Int] {
+        guard let item else { return [] }
+        let wanted = Set(daemon.requiredVersions + daemon.missingVersions)
+        return item.versions.map(\.version).filter { wanted.contains($0) }.sorted(by: >)
+    }
+
+    /// Where a restore takes each version's attestation from, newest first.
+    public var attestationSources: [(version: Int, source: AttestationSource)] {
+        restoreVersions.map { version in
+            (version, importAttestation(version, stored: item?.version(version)?.attestation).source)
         }
     }
+
+    /// Needed versions 1Password holds without a well-formed attestation while the node has one for the same key
+    /// (its key check equals 1Password's), newest first. A sync stores them in the item (``attestationUpdate(versions:in:)``,
+    /// metadata only), so the backup restores on its own even if the node's records are lost later.
+    public var attestationsToStore: [Int] {
+        guard let item, item.vaultUUID == daemon.vaultUUID, item.issues.isEmpty else { return [] }
+        if case .mismatch = status { return [] }
+        var checks = daemon.neededKeyChecks
+        if let check = daemon.keyCheck { checks[daemon.version] = check }
+        return daemon.requiredVersions.filter { version in
+            guard let stored = item.version(version), stored.attestation?.isWellFormed != true,
+                  nodeAttestation(version) != nil else { return false }
+            return checks[version] == stored.keyCheck
+        }
+    }
+
+    /// Needed versions 1Password holds that no restore could prove: no well-formed attestation in 1Password, and none
+    /// recorded on the node (it never unsealed them on a release that records attestations). Newest first.
+    public var unattestedVersions: [Int] {
+        attestationSources.filter { $0.source == .none && daemon.requiredVersions.contains($0.version) }.map(\.version)
+    }
+
+    /// Of ``unattestedVersions``, those the node can still read: backing up again exports them, and the node records
+    /// an attestation as it reads them. The only case "Back Up Again" is for.
+    public var unattestedButReadable: [Int] {
+        var readable = Set(daemon.neededKeyChecks.keys)
+        if daemon.keyCheck != nil { readable.insert(daemon.version) }
+        return unattestedVersions.filter { readable.contains($0) }
+    }
+
+    /// `item.attest` for `versions`: the node's attestation of each, with the key check 1Password stores for it (the
+    /// helper refuses a version stored under another check). nil when there is nothing to send.
+    public func attestationUpdate(versions: [Int], in vault: OnePasswordVault) -> AttestationUpdate? {
+        guard let item else { return nil }
+        let entries = versions.compactMap { version -> AttestationUpdate.Version? in
+            guard let stored = item.version(version), let attestation = nodeAttestation(version) else { return nil }
+            return .init(version: version, keyCheck: stored.keyCheck, attestation: attestation)
+        }
+        guard !entries.isEmpty else { return nil }
+        return AttestationUpdate(onePasswordVaultID: vault.id, itemID: item.itemID, nodeID: backupNodeID,
+                                 vaultUUID: String(vaultID), versions: entries)
+    }
+
+    /// A sync has something to do: the status wants keys stored or the backup recorded, or 1Password lacks
+    /// attestations the node has.
+    public var wantsSync: Bool { status.wantsSync || !attestationsToStore.isEmpty }
 
     /// The badge's count: everything that needs a person, never an offline node.
     public var needsAttention: Bool {
@@ -133,8 +207,19 @@ public struct VaultKeyRow: Identifiable, Sendable, Equatable {
 
 public enum RecoveryAssurance: Sendable, Equatable {
     case guaranteed
-    /// These needed versions are missing from 1Password or carry no attestation (newest first).
+    /// These needed versions are missing from 1Password or have no attestation, in 1Password or on the node (newest
+    /// first).
     case bestEffort(unattestedVersions: [Int])
+}
+
+/// Where a restore takes a version's attestation from.
+public enum AttestationSource: Sendable, Equatable {
+    /// 1Password's copy carries a well-formed one.
+    case backup
+    /// 1Password's has none (or a malformed one); the node's own record for this vault and version fills it in.
+    case node
+    /// Neither: the node can't prove the key is the vault's, so only a salvage can use it.
+    case none
 }
 
 public enum VaultKeyRows {

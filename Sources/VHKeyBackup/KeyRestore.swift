@@ -17,7 +17,9 @@ import Darwin
 ///    daemon restores only versions its own attestation proves are the vault's (never a key of the caller's own) and
 ///    asks for the vault's name before writing (`vault_key_import`); the rest come back `needs_salvage`, untouched.
 ///    `salvage` is the separate, explicit step for those (`vault_key_salvage`). Only the daemon's answer says the
-///    vault is recovered.
+///    vault is recovered. A version 1Password holds without an attestation gets the node's own record of it, from
+///    `vault.keys.status` (backups made before the node recorded attestations need no redoing).
+/// 4. ``storeAttestations(restoredBy:row:in:)``: after a recover, the attestations the node proved go into the item.
 ///
 /// Revealed keys live only for the duration of one call.
 public struct KeyRestore: Sendable {
@@ -121,14 +123,14 @@ public struct KeyRestore: Sendable {
     ) async -> ImportOutcome {
         guard let item = row.item else { return .failed(RestoreError.noBackup.description) }
         // Only what the node needs: its required versions (and what it reports missing) that 1Password holds.
-        let wanted = Set(row.daemon.requiredVersions + row.daemon.missingVersions)
-        let held = item.versions.map(\.version).filter { wanted.contains($0) }.sorted(by: >)
+        let held = row.restoreVersions
         guard !held.isEmpty else { return .failed(RestoreError.nothingToRestore.description) }
 
         let set: VaultKeySet
         do {
             let revealed = try await store.reveal(onePasswordVaultID: vault.id, itemID: item.itemID, versions: held)
-            set = try Self.keySet(revealed, row: row)
+            // The row's status is this node's: its attestations fill in only for an import to that node.
+            set = try Self.keySet(revealed, row: row, nodeAttestations: node.id == row.nodeID)
         } catch let error as RestoreError {
             return .failed(error.description)
         } catch {
@@ -145,6 +147,33 @@ public struct KeyRestore: Sendable {
         }
     }
 
+    // MARK: 4. Store what the node proved
+
+    /// After a recover: stores in 1Password the node's attestations of the versions it just restored on them
+    /// (`restored`: the daemon verified each against the key sent) where 1Password had none, so the backup restores
+    /// on its own from now on. Metadata only (`item.attest`); no key moves. nil when there is nothing to store.
+    public func storeAttestations(
+        restoredBy report: VaultKeyImportReport, row: VaultKeyRow, in vault: OnePasswordVault
+    ) async -> AttestationWriteBack? {
+        guard report.vaultID == row.vaultID else { return nil }
+        let restored = Set(report.versions.filter { $0.outcome == VaultKeyImportReport.Version.Outcome.restored }
+            .map { Int($0.version) })
+        let versions = row.attestationSources.filter { $0.source == .node && restored.contains($0.version) }.map(\.version)
+        guard let update = row.attestationUpdate(versions: versions, in: vault) else { return nil }
+        do {
+            let outcome = try await store.attest(update)
+            return .stored(versions: outcome.stored)
+        } catch {
+            return .failed(KeyBackupWords.onePassword(error))
+        }
+    }
+
+    public enum AttestationWriteBack: Sendable, Equatable {
+        /// 1Password now holds the node's attestation of these versions (empty: it already held its own).
+        case stored(versions: [Int])
+        case failed(String)
+    }
+
     static func words(_ error: WsError, node: String) -> String {
         switch error {
         case .denied: "This account may not import vault keys on \(node) (it needs the encryption-key Export permission)."
@@ -157,8 +186,10 @@ public struct KeyRestore: Sendable {
         }
     }
 
-    /// The revealed versions as a key set for the row's vault; refuses an item for another node or vault.
-    static func keySet(_ revealed: RevealedKeys, row: VaultKeyRow) throws -> VaultKeySet {
+    /// The revealed versions as a key set for the row's vault; refuses an item for another node or vault. A version
+    /// 1Password stored without a well-formed attestation gets the node's record of it (``VaultKeyRow/importAttestation(_:stored:)``)
+    /// when `nodeAttestations`.
+    static func keySet(_ revealed: RevealedKeys, row: VaultKeyRow, nodeAttestations: Bool = true) throws -> VaultKeySet {
         guard revealed.nodeID == row.backupNodeID, revealed.vaultUUID == String(row.vaultID) else {
             throw RestoreError.wrongItem
         }
@@ -168,7 +199,8 @@ public struct KeyRestore: Sendable {
             versions: revealed.versions.map {
                 .init(version: $0.version, key: $0.key, keyCheck: $0.keyCheck,
                       reason: $0.version == revealed.currentVersion ? "current" : nil,
-                      attestation: $0.attestation)
+                      attestation: nodeAttestations ? row.importAttestation($0.version, stored: $0.attestation).attestation
+                          : $0.attestation)
             })
     }
 

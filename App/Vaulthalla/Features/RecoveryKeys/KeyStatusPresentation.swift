@@ -28,6 +28,14 @@ nonisolated extension VaultKeyRow {
     }
 
     var stateDetail: String {
+        let toStore = attestationsToStore
+        guard toStore.isEmpty else {
+            return stateWords + " 1Password lacks \(nodeName)'s attestation of \(Self.versionWords(toStore)); Back Up Now adds it without moving a key."
+        }
+        return stateWords
+    }
+
+    private var stateWords: String {
         switch status {
         case .backedUp(let confirmed):
             if !onePasswordChecked { return "\(nodeName) recorded a backup of key version \(daemon.version)." }
@@ -70,9 +78,34 @@ nonisolated extension VaultKeyRow {
         }
     }
 
-    /// ``RecoveryAssurance/detail(canStore:)`` for this row.
+    /// ``RecoveryAssurance/detail(nodeName:fromNode:canBackUpAgain:)`` for this row.
     var assuranceDetail: String {
-        recoveryAssurance?.detail(canStore: !attestationsToStore.isEmpty && !isKeyUnavailable) ?? ""
+        let fromNode = attestationSources.filter { $0.source == .node && daemon.requiredVersions.contains($0.version) }
+            .map(\.version)
+        return recoveryAssurance?.detail(nodeName: nodeName, fromNode: fromNode,
+                                         canBackUpAgain: !unattestedButReadable.isEmpty) ?? ""
+    }
+
+    /// Where a restore takes each version's attestation from, in one quiet line: "Attestations: v3 from 1Password;
+    /// v2 from Home lab's records; v1 none (salvage only)". nil with nothing to send.
+    var attestationSummary: String? {
+        let sources = attestationSources
+        guard !sources.isEmpty else { return nil }
+        func versions(_ source: AttestationSource) -> String? {
+            let list = sources.filter { $0.source == source }.map { "v\($0.version)" }
+            return list.isEmpty ? nil : list.joined(separator: ", ")
+        }
+        let parts = [
+            versions(.backup).map { "\($0) from 1Password" },
+            versions(.node).map { "\($0) from \(nodeName)'s records" },
+            versions(.none).map { "\($0) none (salvage only)" },
+        ].compactMap { $0 }
+        return "Attestations: " + parts.joined(separator: "; ")
+    }
+
+    /// The tooltip on ``attestationSummary``.
+    var attestationSummaryHelp: String {
+        "A restore sends 1Password's attestation when it has one. Where it has none, \(nodeName)'s own record of it fills in; \(nodeName) checks it against the key either way."
     }
 
     /// The first 8 hex digits: enough to compare by eye, never the key.
@@ -128,14 +161,17 @@ nonisolated extension RecoveryAssurance {
         }
     }
 
-    /// What it means; `canStore` when backing up again adds the missing attestations (the node has them).
-    func detail(canStore: Bool) -> String {
+    /// What it means. `fromNode`: versions whose attestation comes from the node's records (1Password has none);
+    /// `canBackUpAgain` when backing up again would add the missing ones (the node still reads those versions).
+    func detail(nodeName: String, fromNode: [Int], canBackUpAgain: Bool) -> String {
         switch self {
         case .guaranteed:
-            return "Every key version the vault needs is in 1Password with the node's attestation, a public signature that reveals nothing about the key. The node restores them as the vault's own."
+            let what = "Every key version the vault needs has the node's attestation, a public signature that reveals nothing about the key. The node restores them as the vault's own."
+            guard !fromNode.isEmpty else { return what }
+            return what + " For \(VaultKeyRow.versionWords(fromNode)) it comes from \(nodeName)'s records until 1Password stores it."
         case .bestEffort(let versions):
-            let what = "\(VaultKeyRow.versionWords(versions, capitalized: true)) \(versions.count == 1 ? "has" : "have") no attestation in 1Password (backed up before the node's update, or not at all). Without one the node can't prove the key is the vault's and won't restore it; only a salvage can use it."
-            return canStore ? what + " Back up again to add it." : what
+            let what = "\(VaultKeyRow.versionWords(versions, capitalized: true)) \(versions.count == 1 ? "has" : "have") no attestation in 1Password or on \(nodeName). Without one the node can't prove the key is the vault's and won't restore it; only a salvage can use it."
+            return canBackUpAgain ? what + " Back up again to add it." : what
         }
     }
 }

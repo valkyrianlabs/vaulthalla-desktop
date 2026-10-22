@@ -279,8 +279,9 @@ final class RecoveryKeysModel {
 
     // MARK: Sync
 
-    /// Backs up `rows` (every row that wants it when nil). `force` backs them up again even when they are backed up
-    /// (to refresh attestations). Progress goes to ``run``.
+    /// Backs up `rows` (every row that wants it when nil): keys 1Password lacks, the node's record of a backup, and
+    /// the node's attestations 1Password lacks (metadata only). `force` backs them up again even when they are backed
+    /// up (the node records attestations as it exports). Progress goes to ``run``.
     func sync(_ selected: [VaultKeyRow]? = nil, force: Bool = false, title: String = "Back up vault keys") {
         guard run?.isRunning != true else { return }
         let run = KeySyncRun(title: title)
@@ -298,7 +299,7 @@ final class RecoveryKeysModel {
             // Fresh rows with what 1Password holds now; only the vaults asked for.
             let wanted = selected.map { Set($0.map(\.id)) }
             let rows = rows().filter { row in
-                wanted.map { $0.contains(row.id) } ?? row.status.wantsSync
+                wanted.map { $0.contains(row.id) } ?? row.wantsSync
             }
             run.begin(rows)
             let outcomes = await KeyBackupSync(store: store, settings: settings)

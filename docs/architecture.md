@@ -273,6 +273,7 @@ There is no device-scoped permission system.
   - `items.list {vault_id}`, returning metadata fields only
   - `item.upsert`, returning what 1Password holds after the write (read back)
   - `item.reveal {vault_id, item_id, versions?}`, for restore only
+  - `item.attest`, adding the node's attestations to versions an item holds (metadata only, no key)
   - As built: `Helpers/vaulthalla-1password/README.md` (protocol, item layout, signing) and `Sources/VHOnePassword`.
 - Key bytes cross the pipe only: never argv, environment, disk or logs. The helper is launched for a sync and exits.
 - Rejected alternatives:
@@ -288,8 +289,11 @@ There is no device-scoped permission system.
   - Section "Key versions": one concealed field per version (`v3`, `v2`, …) with its key check and, when the node
     recorded one, its attestation (`vN_attest_key_id`, `vN_attest_sig`: the daemon's `{key_id, signature}`, public
     metadata stored and returned unchanged). A rotation adds the new version and moves `credential` to it; a version
-    is never overwritten, and none is removed while the daemon still reports it as needed. Backing up again adds an
-    attestation the node has and the item lacks (backups from before the server recorded attestations).
+    is never overwritten, and none is removed while the daemon still reports it as needed. Attestations the node
+    reports in `vault.keys.status` and the item lacks (backups from before the server recorded attestations) are
+    added by the next sync (`item.attest`, no key moves) when the node's key check equals the item's, and after a
+    restore for the versions the node just verified. Backing up again is needed only when the node has no
+    attestation for a version either (it never unsealed it on a release that records them).
   - Tags `vaulthalla`, `vaulthalla/<node>`.
   - Notes: how to restore.
   - The item is found by its stable identifiers (node id + vault id fields), never by title, so renames are safe.
@@ -306,6 +310,11 @@ There is no device-scoped permission system.
      can't prove comes back `needs_salvage` with nothing written, one the vault never had `refused`. Salvage
      (`mode: "salvage"`, its own confirmation) is a separate, explicit step: the node re-encrypts the files the key
      opens under a new key it creates, reports the files it couldn't open, and never stores the backed-up key.
+     A version 1Password holds without a well-formed attestation is sent with the node's own record of it
+     (`needed_versions[].attestation`, top-level `attestation`, matched on vault and version; 1Password's is
+     preferred and never replaced), so backups made before the node recorded attestations need no redoing: the
+     daemon recomputes the key check from the key sent and verifies the signature itself. The restore sheet says
+     which versions use which, and the attestations the node verified are then stored in the item.
      The server's design of record is `.claude/context/key-backup.md` in the vaulthalla repository.
 - **Hygiene:** keys never enter MCP results or agent context (the export is refused for MCP at the daemon), logs or
   caches. The 1Password item id is the only thing Desktop stores per vault.

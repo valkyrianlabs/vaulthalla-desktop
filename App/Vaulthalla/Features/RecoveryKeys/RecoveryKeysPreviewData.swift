@@ -20,9 +20,16 @@ nonisolated enum RecoveryKeysPreviewData: PreviewFeature {
         return String(format: "%016llx%016llx", seed, seed &* 0x94D0_49BB_1331_11EB)
     }
 
-    static func needed(_ vault: Int64, _ version: Int64, _ reason: String, readable: Bool = true) -> WsModel.VaultKeyNeededVersion {
+    static func needed(_ vault: Int64, _ version: Int64, _ reason: String, readable: Bool = true,
+                       attested: Bool = true) -> WsModel.VaultKeyNeededVersion {
         .init(version: version, keyCheck: readable ? check(vault, version) : nil, reason: reason,
-              attestation: nodeAttestation(vault, Int(version)))
+              attestation: attested ? nodeAttestation(vault, Int(version)) : nil)
+    }
+
+    /// `-VHDebugRecoveryKeys attest`: the Media Archive's key unseals again, so no vault's key is unusable and the
+    /// "Back Up Again" banner shows (its v1 has no attestation anywhere).
+    static var mediaArchiveReadable: Bool {
+        UserDefaults.standard.string(forKey: "VHDebugRecoveryKeys") == "attest"
     }
 
     /// The node's recorded attestation of a version (public, like the key check).
@@ -57,13 +64,21 @@ nonisolated enum RecoveryKeysPreviewData: PreviewFeature {
               keyAvailable: true, exportedVersion: 1, exportedAt: now - 31 * 86_400, rotationInProgress: true,
               neededVersions: [needed(3, 2, "current"), needed(3, 1, "rotation")], missingVersions: [],
               attestation: nodeAttestation(3, 2)),
-        // The key doesn't unseal here: the vault doesn't run until it is restored.
-        .init(vaultID: 4, vaultName: "Media Archive (preview)", deleted: false, version: 1, keyCheck: nil,
-              keyAvailable: false, unavailableReason: "key_unsealable",
-              unavailableDetail: "The key of vault 'Media Archive' doesn't unseal on this host. Run vh vault keys import 4 --file <export.json>.",
-              exportedVersion: 1, exportedAt: now - 140 * 86_400, rotationInProgress: false,
-              neededVersions: [needed(4, 1, "current", readable: false)], missingVersions: [1],
-              attestation: nodeAttestation(4, 1)),
+        // The key doesn't unseal here: the vault doesn't run until it is restored. The node recorded v2's attestation
+        // before it stopped unsealing, but never v1's (retired before the node's update): a restore fills in v2's from
+        // the node's records and leaves v1 for salvage.
+        mediaArchiveReadable
+            ? .init(vaultID: 4, vaultName: "Media Archive (preview)", deleted: false, version: 2, keyCheck: check(4, 2),
+                    keyAvailable: true, exportedVersion: 2, exportedAt: now - 140 * 86_400, rotationInProgress: false,
+                    neededVersions: [needed(4, 2, "current"), needed(4, 1, "recovery", attested: false)],
+                    missingVersions: [], attestation: nodeAttestation(4, 2))
+            : .init(vaultID: 4, vaultName: "Media Archive (preview)", deleted: false, version: 2, keyCheck: nil,
+                    keyAvailable: false, unavailableReason: "key_unsealable",
+                    unavailableDetail: "The key of vault 'Media Archive' doesn't unseal on this host. Run vh vault keys import 4 --file <export.json>.",
+                    exportedVersion: 2, exportedAt: now - 140 * 86_400, rotationInProgress: false,
+                    neededVersions: [needed(4, 2, "current", readable: false),
+                                     needed(4, 1, "recovery", readable: false, attested: false)],
+                    missingVersions: [2, 1], attestation: nodeAttestation(4, 2)),
         // 1Password holds a different key under the current version.
         .init(vaultID: 5, vaultName: "Scratch (preview)", deleted: false, version: 2, keyCheck: check(5, 2),
               keyAvailable: true, exportedVersion: 2, exportedAt: now - 9 * 86_400, rotationInProgress: false,
@@ -72,8 +87,10 @@ nonisolated enum RecoveryKeysPreviewData: PreviewFeature {
 
     static let vault = OnePasswordVault(id: "op-preview-vault", title: "Vaulthalla", created: false)
 
+    /// A made-up but well-formed attestation (64 signature bytes), stable per vault and version.
     static func attestation(_ vault: Int64, _ version: Int) -> KeyAttestation {
-        KeyAttestation(keyID: 1, signature: Data("preview-signature-\(vault)-\(version)".utf8).base64EncodedString())
+        KeyAttestation(keyID: 1, signature: Data((0..<64).map { UInt8(truncatingIfNeeded: Int(vault) &* 31 &+ version &* 7 &+ $0) })
+            .base64EncodedString())
     }
 
     static func item(_ vault: Int64, _ name: String, current: Int, versions: [Int], attested: Bool = true,
@@ -94,13 +111,13 @@ nonisolated enum RecoveryKeysPreviewData: PreviewFeature {
     static let items: [BackupItem] = [
         item(1, "Family Photos (preview)", current: 3, versions: [3, 2, 1], backedUp: now - 2 * 86_400),
         item(3, "Offsite Backup (preview)", current: 1, versions: [1], attested: false, backedUp: now - 31 * 86_400),
-        item(4, "Media Archive (preview)", current: 1, versions: [1], attested: false, backedUp: now - 140 * 86_400),
+        item(4, "Media Archive (preview)", current: 2, versions: [2, 1], attested: false, backedUp: now - 140 * 86_400),
         item(5, "Scratch (preview)", current: 2, versions: [2], differs: true, backedUp: now - 9 * 86_400),
     ]
 
-    /// A finished salvage of `version` (the Media Archive's v1): most files re-encrypted under the next version, a few
-    /// the key didn't open.
-    static func salvageResult(id: Int64, name: String, version: Int64) -> [String: Any] {
+    /// A finished salvage of `version` (the Media Archive's v1) into `newVersion`: `restored` (attested) put back
+    /// first, then most files re-encrypted, a few the key didn't open.
+    static func salvageResult(id: Int64, name: String, version: Int64, newVersion: Int64, restored: [Int64]) -> [String: Any] {
         let failures: [[String: Any]] = [
             ["path": "/2024/render-final.mov", "version": version, "kind": "unrecoverable",
              "reason": "does not authenticate under the supplied key"],
@@ -114,10 +131,11 @@ nonisolated enum RecoveryKeysPreviewData: PreviewFeature {
         return [
             "vault_id": id, "vault_name": name, "deleted": false, "mode": "salvage", "written": true,
             "key_available": true, "note": NSNull(),
-            "versions": [["version": version, "outcome": "salvaged",
-                          "detail": "1,284 files re-encrypted under key version \(version + 1); the supplied key was not stored"]],
+            "versions": restored.map { ["version": $0, "outcome": "restored", "detail": "attested by this node (signing key 1)"] }
+                + [["version": version, "outcome": "salvaged",
+                    "detail": "1,284 files re-encrypted under key version \(newVersion); the supplied key was not stored"]],
             "salvage": [
-                "id": 2, "versions": [version], "new_version": version + 1, "state": "finished", "started_at": now - 600,
+                "id": 2, "versions": [version], "new_version": newVersion, "state": "finished", "started_at": now - 600,
                 "finished_at": now - 540, "salvaged": 1_284, "unrecoverable": 3, "skipped_remote": 1, "deferred": 1,
                 "failed": 0, "failures": failures,
             ] as [String: Any],
@@ -185,6 +203,35 @@ nonisolated final class PreviewKeyBackupStore: KeyBackupStore {
                                    updatedAt: .now)
     }
 
+    func attest(_ update: AttestationUpdate) async throws -> AttestationUpdateOutcome {
+        try? await Task.sleep(for: .milliseconds(200))
+        return try items.withLock { list in
+            guard let index = list.firstIndex(where: { $0.itemID == update.itemID }) else {
+                throw OnePasswordHelperError.refused(code: .notFound, message: "not found in 1Password", hint: nil, detail: nil)
+            }
+            let item = list[index]
+            var stored: [Int] = []
+            var kept: [Int] = []
+            let versions = item.versions.map { version -> StoredKeyVersion in
+                guard let new = update.versions.first(where: { $0.version == version.version }) else { return version }
+                if version.isAttested {
+                    kept.append(version.version)
+                    return version
+                }
+                stored.append(version.version)
+                return StoredKeyVersion(version: version.version, keyCheck: version.keyCheck, state: version.state,
+                                        attestation: new.attestation)
+            }
+            list[index] = BackupItem(
+                itemID: item.itemID, onePasswordVaultID: item.onePasswordVaultID, title: item.title, nodeID: item.nodeID,
+                nodeName: item.nodeName, vaultUUID: item.vaultUUID, vaultName: item.vaultName,
+                currentVersion: item.currentVersion, keyCheck: item.keyCheck, versions: versions, updatedAt: .now,
+                backedUpAt: item.backedUpAt, issues: item.issues)
+            return AttestationUpdateOutcome(itemID: item.itemID, onePasswordVaultID: item.onePasswordVaultID,
+                                            written: !stored.isEmpty, stored: stored, kept: kept, storedVersions: versions)
+        }
+    }
+
     func reveal(onePasswordVaultID: String, itemID: String, versions: [Int]?) async throws -> RevealedKeys {
         guard let item = items.withLock({ $0.first { $0.itemID == itemID } }) else {
             throw OnePasswordHelperError.refused(code: .notFound, message: "not found in 1Password", hint: nil, detail: nil)
@@ -231,18 +278,43 @@ extension PreviewTransport {
         case .vaultKeysImport:
             let salvage = object["mode"] as? String == "salvage"
             let named = object["confirm_name"] as? String == status.vaultName
-            if salvage {
-                guard named else {
-                    throw .needsConfirmation(code: "vault_key_salvage", message: "Salvaging vault '\(status.vaultName)' (ID \(id)) re-encrypts every file sealed under key version(s) \(status.version) that the supplied key decrypts under a fresh key this host creates; files it doesn't decrypt are reported unrecoverable, and the supplied key is never stored. Confirm by typing the vault's name.")
+            // Per version sent: restored when its attestation is the node's (the preview node's own signature), else
+            // it needs salvage.
+            let keys = object["keys"] as? [String: Any] ?? [:]
+            var sent: [(version: Int64, attestation: [String: Any]?)] = []
+            if let head = (keys["key_info"] as? [String: Any])?["key_version"] as? NSNumber {
+                sent.append((head.int64Value, keys["attestation"] as? [String: Any]))
+            }
+            for entry in keys["historical_keys"] as? [[String: Any]] ?? [] {
+                if let version = entry["key_version"] as? NSNumber {
+                    sent.append((version.int64Value, entry["attestation"] as? [String: Any]))
                 }
-                data = RecoveryKeysPreviewData.salvageResult(id: id, name: status.vaultName, version: status.version)
+            }
+            func verifies(_ version: Int64, _ attestation: [String: Any]?) -> Bool {
+                let expected = RecoveryKeysPreviewData.attestation(id, Int(version))
+                return (attestation?["key_id"] as? NSNumber)?.int64Value == expected.keyID
+                    && attestation?["signature"] as? String == expected.signature
+            }
+            let restorable = sent.filter { verifies($0.version, $0.attestation) }.map(\.version)
+            let unproven = sent.map(\.version).filter { !restorable.contains($0) }
+            if (salvage || !restorable.isEmpty), !named {
+                throw salvage
+                    ? .needsConfirmation(code: "vault_key_salvage", message: "Salvaging vault '\(status.vaultName)' (ID \(id)) restores key version(s) \(restorable.map(String.init).joined(separator: ", ")) attested by this node and re-encrypts every file sealed under key version(s) \(unproven.map(String.init).joined(separator: ", ")) that the supplied key decrypts under a fresh key this host creates; files it doesn't decrypt are reported unrecoverable, and the supplied key is never stored. Confirm by typing the vault's name.")
+                    : .needsConfirmation(code: "vault_key_import", message: "Restoring vault '\(status.vaultName)' (ID \(id)) writes key version(s) \(restorable.map(String.init).joined(separator: ", ")), attested by this node. Version(s) \(unproven.map(String.init).joined(separator: ", ")) can't be proven and are left for salvage. Confirm by typing the vault's name.")
+            }
+            if salvage, let version = unproven.first {
+                data = RecoveryKeysPreviewData.salvageResult(id: id, name: status.vaultName, version: version,
+                                                             newVersion: status.version + 1, restored: restorable)
             } else {
-                // The preview backups predate attestations: recover can't prove the key is the vault's.
                 data = ["vault_id": id, "vault_name": status.vaultName, "deleted": false, "mode": "recover",
-                        "written": false, "key_available": status.keyAvailable,
-                        "note": "Key version \(status.version) needs salvage: the backup can't prove it is this vault's key.",
-                        "versions": [["version": status.version, "outcome": "needs_salvage",
-                                      "detail": "the backup carries no attestation (an export from before attestations)"]],
+                        "written": !restorable.isEmpty, "key_available": status.keyAvailable || unproven.isEmpty,
+                        "note": unproven.isEmpty ? NSNull() : "Key version(s) \(unproven.map(String.init).joined(separator: ", ")) need salvage: the backup can't prove they are this vault's key." as Any,
+                        "versions": sent.sorted { $0.version < $1.version }.map { entry -> [String: Any] in
+                            restorable.contains(entry.version)
+                                ? ["version": entry.version, "outcome": "restored", "detail": "attested by this node (signing key 1)"]
+                                : ["version": entry.version, "outcome": "needs_salvage",
+                                   "detail": "no attestation: an export from before attestations, and this node recorded none"]
+                        },
                         "salvage": NSNull()]
             }
         default:

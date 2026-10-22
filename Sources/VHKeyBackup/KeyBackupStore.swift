@@ -13,6 +13,9 @@ public protocol KeyBackupStore: Sendable {
     func upsert(_ backup: BackupUpsert) async throws -> BackupUpsertOutcome
     /// Reads keys back out, for a restore or an export file only. All versions when `versions` is nil.
     func reveal(onePasswordVaultID: String, itemID: String, versions: [Int]?) async throws -> RevealedKeys
+    /// Adds the node's attestations to versions an item holds, as metadata: no key moves, and a well-formed
+    /// attestation the item has is kept.
+    func attest(_ update: AttestationUpdate) async throws -> AttestationUpdateOutcome
 }
 
 extension OnePasswordHelper: KeyBackupStore {}

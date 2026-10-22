@@ -73,10 +73,10 @@ struct RecoveryKeysScreen: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button("Back Up Now", systemImage: "arrow.up.doc.on.clipboard") {
-                    keys.sync(rows.filter(\.status.wantsSync), title: syncTitle)
+                    keys.sync(rows.filter(\.wantsSync), title: syncTitle)
                 }
-                .help("Back up every vault here that isn't backed up to 1Password")
-                .disabled(keys.run?.isRunning == true || !rows.contains(where: \.status.wantsSync))
+                .help("Back up every vault here that isn't fully backed up to 1Password")
+                .disabled(keys.run?.isRunning == true || !rows.contains(where: \.wantsSync))
             }
             ToolbarItem(placement: .primaryAction) {
                 Button("Refresh", systemImage: "arrow.clockwise") { Task { await refresh() } }
@@ -164,16 +164,17 @@ struct RecoveryKeysScreen: View {
                     .padding(.top, 4)
                 }
             }
-            // Backups from before the node recorded attestations. Second to an unusable key: the page doesn't scroll,
-            // so a third banner would squeeze the others at the minimum window size.
-            let unattested = rows.filter { !$0.attestationsToStore.isEmpty }
+            // Versions no restore could prove (no attestation in 1Password or on the node) that the node still reads,
+            // so backing up again adds one. Second to an unusable key: the page doesn't scroll, so a third banner
+            // would squeeze the others at the minimum window size.
+            let unattested = rows.filter { !$0.unattestedButReadable.isEmpty }
             if unavailable.isEmpty, !unattested.isEmpty {
                 Callout(tone: .warn, systemImage: "seal") {
                     HStack(spacing: 10) {
                         Text(unattested.count == 1
-                             ? "\(unattested[0].vaultName)'s backup has no attestation, which a restore needs."
-                             : "\(unattested.count) backups have no attestation, which a restore needs.")
-                            .help("The node's attestation is a public signature that reveals nothing about the key. Backups made before the node's update have none; backing up again adds it.")
+                             ? "\(unattested[0].vaultName): \(VaultKeyRow.versionWords(unattested[0].unattestedButReadable)) \(unattested[0].unattestedButReadable.count == 1 ? "has" : "have") no attestation in 1Password or on \(unattested[0].nodeName)."
+                             : "\(unattested.count) backups have versions with no attestation in 1Password or on the node.")
+                            .help("A restore uses the node's attestation when the backup has none. Backing up again is only needed when the node has none either, for example if it never unsealed that version on this release.")
                         Spacer(minLength: 0)
                         Button("Back Up Again") { keys.sync(unattested, force: true, title: "Back up vault keys again") }
                             .disabled(keys.run?.isRunning == true)
@@ -347,7 +348,7 @@ struct RecoveryKeysScreen: View {
 
     @ViewBuilder
     private func rowActions(_ row: VaultKeyRow) -> some View {
-        if row.status.wantsSync {
+        if row.wantsSync {
             Button("Back Up Now") { keys.sync([row], title: "Back up \(row.vaultName)") }
         }
         if case .backedUp = row.status {
