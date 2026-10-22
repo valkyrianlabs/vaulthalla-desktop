@@ -86,8 +86,9 @@ func TestAttestationsAreValidated(t *testing.T) {
 	h, vaultID := connected(t)
 	h.fails("item.upsert", upsertParams(vaultID, 1, attested(1, 1, 1, "")), CodeBadRequest)
 	h.fails("item.upsert", upsertParams(vaultID, 1, attested(1, 1, 1, "a\nb")), CodeBadRequest)
-	// key_id is the daemon's integer: a string (or a negative number) is refused, not stored.
-	for _, raw := range []string{`"ed25519:k1"`, `"1"`, `-1`} {
+	// key_id is the daemon's SERIAL (1..2^31-1): a string, a negative number, 0 or anything past 2^31-1 is refused,
+	// not stored.
+	for _, raw := range []string{`"ed25519:k1"`, `"1"`, `-1`, `0`, `2147483648`, `4294967295`} {
 		params := map[string]any{"vault_id": vaultID, "node_id": "node-1", "node_name": "Home Lab", "vault_uuid": testVault,
 			"vault_name": "Photos", "current_version": 1, "versions": []map[string]any{{
 				"version": 1, "key_b64": b64(key(1)), "key_check": kc(1, 1), "needed": true,
@@ -99,23 +100,43 @@ func TestAttestationsAreValidated(t *testing.T) {
 	}
 }
 
-// An attestation edited by hand in 1Password (key id not a number) reads as none: the version is unattested (a
-// salvage can still use it; the next backup stores the node's again), and the key itself is not an issue.
+// An attestation edited by hand in 1Password (key id not a number, or outside the daemon's 1..2^31-1) reads as none:
+// the version is unattested (a salvage can still use it; the node's can be stored again), and the key itself is not
+// an issue.
 func TestAHandEditedAttestationReadsAsNone(t *testing.T) {
+	for _, edited := range []string{"ed25519:k1", "0", "2147483648", "4294967295", "-3"} {
+		t.Run(edited, func(t *testing.T) {
+			h, vaultID := connected(t)
+			var res UpsertResult
+			h.ok("item.upsert", upsertParams(vaultID, 1, attested(1, 1, 7, "c2lnLXYx")), &res)
+			it := h.item(vaultID, res.ItemID)
+			for i, f := range it.Fields {
+				if f.ID == "v1_attest_key_id" {
+					it.Fields[i].Value = edited
+				}
+			}
+			h.mem.Put(it)
+			var list ItemsListResult
+			h.ok("items.list", map[string]string{"vault_id": vaultID}, &list)
+			if got := list.Items[0]; got.Versions[0].Attestation != nil || len(got.Issues) != 0 {
+				t.Fatalf("listed %+v", got)
+			}
+			// item.attest fills it in again.
+			var out AttestResult
+			h.ok("item.attest", attestParamsFor(vaultID, res.ItemID, attestEntry(1, 1, 9, sig64(1))), &out)
+			if fmt.Sprint(out.Stored) != "[1]" || field(t, h.item(vaultID, res.ItemID), SectionVersions, "v1_attest_key_id") != "9" {
+				t.Fatalf("attest after a hand edit: %+v", out)
+			}
+		})
+	}
+	// The bounds themselves are fine.
 	h, vaultID := connected(t)
 	var res UpsertResult
-	h.ok("item.upsert", upsertParams(vaultID, 1, attested(1, 1, 7, "c2lnLXYx")), &res)
-	it := h.item(vaultID, res.ItemID)
-	for i, f := range it.Fields {
-		if f.ID == "v1_attest_key_id" {
-			it.Fields[i].Value = "ed25519:k1"
-		}
-	}
-	h.mem.Put(it)
+	h.ok("item.upsert", upsertParams(vaultID, 2, attested(2, 2, 2147483647, "c2ln"), attested(1, 1, 1, "c2ln")), &res)
 	var list ItemsListResult
 	h.ok("items.list", map[string]string{"vault_id": vaultID}, &list)
-	if got := list.Items[0]; got.Versions[0].Attestation != nil || len(got.Issues) != 0 {
-		t.Fatalf("listed %+v", got)
+	if v := list.Items[0].Versions; v[0].Attestation == nil || v[0].Attestation.KeyID != 2147483647 || v[1].Attestation == nil {
+		t.Fatalf("listed %+v", v)
 	}
 }
 
@@ -137,8 +158,8 @@ func attestEntry(n int, k byte, keyID uint32, sig string) map[string]any {
 func TestItemAttestFillsMissingAndMalformedAttestationsOnly(t *testing.T) {
 	h, vaultID := connected(t)
 	var res UpsertResult
-	// v3 attested at backup time; v2 with a malformed attestation (key id 0); v1 with none.
-	h.ok("item.upsert", upsertParams(vaultID, 3, attested(3, 3, 5, sig64(3)), attested(2, 2, 0, "c2ln"), v(1, 1)), &res)
+	// v3 attested at backup time; v2 with a malformed attestation (a 3-byte signature); v1 with none.
+	h.ok("item.upsert", upsertParams(vaultID, 3, attested(3, 3, 5, sig64(3)), attested(2, 2, 4, "c2ln"), v(1, 1)), &res)
 	before := h.item(vaultID, res.ItemID)
 	writes := h.mem.Writes
 

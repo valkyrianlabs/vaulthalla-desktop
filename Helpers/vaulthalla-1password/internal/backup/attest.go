@@ -27,7 +27,7 @@ const (
 // wellFormed: an attestation the daemon could verify at all. A malformed one (a key id out of range, a signature
 // that isn't 64 bytes of base64) is as good as none: the daemon reads it as unattested.
 func (a *Attestation) wellFormed() bool {
-	if a == nil || a.KeyID < 1 || a.KeyID > maxAttestationKeyID {
+	if a == nil || !validKeyID(uint64(a.KeyID)) {
 		return false
 	}
 	sig, err := base64.StdEncoding.DecodeString(a.Signature)

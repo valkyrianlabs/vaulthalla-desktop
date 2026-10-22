@@ -109,6 +109,10 @@ type Attestation struct {
 	Signature string `json:"signature"`
 }
 
+// validKeyID: the daemon's attestation signing key ids are a SERIAL (key_attestation_keys.id), 1..2^31-1. The
+// daemon reads any other value as a malformed attestation, never as another key's id.
+func validKeyID(id uint64) bool { return id >= 1 && id <= maxAttestationKeyID }
+
 func (a *Attestation) equal(b *Attestation) bool {
 	if a == nil || b == nil {
 		return a == b
@@ -170,9 +174,10 @@ func parseItem(it store.Item) (parsedItem, bool) {
 		sv := storedVersion{Version: v, Value: f.Value, KeyCheck: check.Value, State: state.Value}
 		keyID, _ := it.Field(SectionVersions, attestKeyField(v))
 		sig, _ := it.Field(SectionVersions, attestSigField(v))
-		// A hand-edited attestation (no number, no signature) is no attestation: the version can still be salvaged,
-		// and the next backup stores the node's again. The key itself is unaffected, so this is not an issue.
-		if id, err := strconv.ParseUint(keyID.Value, 10, 32); err == nil && sig.Value != "" {
+		// A hand-edited attestation (no number, a key id outside the daemon's 1..2^31-1, no signature) is no
+		// attestation: the version can still be salvaged, and the node's can be stored again. The key itself is
+		// unaffected, so this is not an issue.
+		if id, err := strconv.ParseUint(keyID.Value, 10, 32); err == nil && validKeyID(id) && sig.Value != "" {
 			sv.Attestation = &Attestation{KeyID: uint32(id), Signature: sig.Value}
 		}
 		p.Versions[v] = sv
@@ -318,6 +323,9 @@ func (p *UpsertParams) validate() *Error {
 			return e
 		}
 		if a := v.Attestation; a != nil {
+			if !validKeyID(uint64(a.KeyID)) {
+				return newError(CodeBadRequest, fmt.Sprintf("version %d: attestation.key_id must be 1..2^31-1", v.Version))
+			}
 			if e := validText(fmt.Sprintf("version %d: attestation.signature", v.Version), a.Signature, true); e != nil {
 				return e
 			}

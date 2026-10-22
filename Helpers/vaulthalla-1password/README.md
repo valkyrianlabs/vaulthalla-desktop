@@ -112,7 +112,7 @@ One API Credential item per (node, Vaulthalla vault) in the `Vaulthalla` vault:
   fields `vN_attest_key_id` (the node's signing key id, decimal) and `vN_attest_sig` (base64): the node's Ed25519
   attestation over `"vh-key-attest-v1" ‖ node_id ‖ UInt64BE(vault_id) ‖ UInt32BE(version) ‖ key_check`, as the
   daemon's `{key_id, signature}` (`key_id` a JSON number). The helper never verifies attestations (the daemon does
-  on import); it stores and returns them unchanged. A hand-edited one that no longer parses reads as none. A version backed up without
+  on import); it stores and returns them unchanged. A hand-edited one that no longer parses, or whose key id is outside 1..2^31 - 1, reads as none; `item.upsert` refuses such a key id. A version backed up without
   one gets it on a later backup that carries it (a re-backup refreshes the attestation; the key and its check never
   change), or from `item.attest`, and an upsert without attestations keeps the stored ones. Well-formed means a
   `key_id` in 1..2^31 - 1 (the daemon's `key_attestation_keys.id` is a SERIAL) and a 64-byte signature.
