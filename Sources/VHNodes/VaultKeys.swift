@@ -27,7 +27,8 @@ public struct ExportedVaultKeys: Sendable {
     public let deleted: Bool
 }
 
-/// Keys going back to a node (`vault.keys.import`) or into a file, in the shape `vh vault keys export` writes.
+/// Keys going back to a node (`vault.keys.import`, a `VaultKeyImportDocument`) or into a file, in the shape `vh vault
+/// keys export` writes.
 public struct VaultKeySet: Sendable {
     public struct Version: Sendable {
         public let version: Int
@@ -63,10 +64,10 @@ public struct VaultKeySet: Sendable {
     }
 
     /// Writes the export object: `{vault_id, vault_name, key, key_check, attestation, key_info: {key_version,
-    /// key_check, attestation, ...}, historical_keys: [{key_version, key, key_check, attestation}]}` (the daemon's
-    /// `VaultKeyExport`; `attestation` is `{key_id, signature}` or null). The import reads `key`,
-    /// `key_info.key_version`, `key_check` and `attestation` (top level or in `key_info`), and every
-    /// `historical_keys[]` entry.
+    /// key_check, attestation, ...}, historical_keys: [{key_version, key, key_check, attestation}]}`, the shape of the
+    /// daemon's `VaultKeyExport` (`attestation` is `{key_id, signature}` or null). `vault.keys.import` reads it as a
+    /// `VaultKeyImportDocument`: `vault_id`, `key` and `key_info.key_version` (required), `key_check` and
+    /// `attestation` (top level or in `key_info`), and every `historical_keys[]` entry; the other members are ignored.
     public func write(to w: SecretJSONWriter, exportedBy: String, exportedAt: Date = .now) {
         let sorted = versions.sorted { $0.version > $1.version }
         guard let head = sorted.first(where: { $0.version == currentVersion }) ?? sorted.first else {
