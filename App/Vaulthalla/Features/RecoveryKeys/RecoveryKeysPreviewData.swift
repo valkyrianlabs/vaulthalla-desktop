@@ -306,7 +306,8 @@ extension PreviewTransport {
                 data = RecoveryKeysPreviewData.salvageResult(id: id, name: status.vaultName, version: version,
                                                              newVersion: status.version + 1, restored: restorable)
             } else {
-                data = ["vault_id": id, "vault_name": status.vaultName, "deleted": false, "mode": "recover",
+                // A salvage with nothing to salvage only restores (still answered as a salvage).
+                data = ["vault_id": id, "vault_name": status.vaultName, "deleted": false, "mode": salvage ? "salvage" : "recover",
                         "written": !restorable.isEmpty, "key_available": status.keyAvailable || unproven.isEmpty,
                         "note": unproven.isEmpty ? NSNull() : "Key version(s) \(unproven.map(String.init).joined(separator: ", ")) need salvage: the backup can't prove they are this vault's key." as Any,
                         "versions": sent.sorted { $0.version < $1.version }.map { entry -> [String: Any] in

@@ -377,11 +377,12 @@ struct ImportReportView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             if report.keyAvailable {
+                // A salvage that found nothing to salvage only restored: no new key.
+                let newKey = mode == .salvage && report.salvage != nil
                 Callout(tone: .ok, systemImage: "checkmark.seal.fill") {
-                    Text(mode == .salvage ? "“\(report.vaultName)” runs again under a new key." : "“\(report.vaultName)” is recovered.")
+                    Text(newKey ? "“\(report.vaultName)” runs again under a new key." : "“\(report.vaultName)” is recovered.")
                         .fontWeight(.semibold)
-                    Text(mode == .salvage ? "Back its new key up to 1Password now."
-                         : "Its keys work on \(nodeName) again.")
+                    Text(newKey ? "Back its new key up to 1Password now." : "Its keys work on \(nodeName) again.")
                 }
             } else if mode == .recover, !report.needsSalvage.isEmpty {
                 let versions = report.needsSalvage.map { Int($0.version) }

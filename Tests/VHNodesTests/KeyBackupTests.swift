@@ -216,23 +216,49 @@ final class DaemonKeys: Sendable {
         let salvage = payload["mode"]?.stringValue == "salvage"
         let unreadable = received.keys.filter { !vault.readable.contains($0) }.sorted(by: >)
         if salvage {
-            guard payload["confirm_name"]?.stringValue == vault.name else {
-                return .refuse("Salvage re-encrypts what versions \(unreadable.map(String.init).joined(separator: ", ")) still decrypt under a new key. Type the vault's name to confirm.",
-                               code: "vault_key_salvage")
+            // As the server: recover first (attested versions are restored), then salvage the rest. A salvage that
+            // would write always confirms as a salvage, even when every version is restorable; with nothing to write
+            // it asks nothing.
+            let restorable = unreadable.filter { !vault.requiresAttestation || Self.verifies(attestations[$0], id, $0) }
+            let toSalvage = unreadable.filter { !restorable.contains($0) }
+            func words(_ versions: [Int]) -> String { versions.map(String.init).joined(separator: ", ") }
+            if !unreadable.isEmpty, payload["confirm_name"]?.stringValue != vault.name {
+                return .refuse(toSalvage.isEmpty
+                    ? "Nothing needs salvage: key versions \(words(restorable)) are attested and would be restored. Type the vault's name to confirm."
+                    : "Salvage re-encrypts what versions \(words(toSalvage)) still decrypt under a new key. Type the vault's name to confirm.",
+                    code: "vault_key_salvage")
             }
-            let report: JSONValue = [
-                "id": 1, "versions": .array(unreadable.sorted().map { .integer(Int64($0)) }),
-                "new_version": .integer(Int64(vault.current + 1)), "state": "finished", "started_at": 1_790_000_000,
-                "finished_at": 1_790_000_060, "salvaged": 41, "unrecoverable": 1, "skipped_remote": 0, "deferred": 0,
-                "failed": 0,
-                "failures": [["path": "/Photos/2019/broken.heic", "version": 1, "kind": "unrecoverable",
-                              "reason": "does not authenticate under the supplied key"]],
-            ]
-            update(id) { $0.readable = Set([$0.current + 1]); $0.current += 1; $0.needed = []; $0.lastSalvage = report }
+            imported.withLock { $0[id] = received.filter { restorable.contains($0.key) || vault.readable.contains($0.key) } }
+            var outcomes: [Int: (String, String)] = [:]
+            for version in received.keys {
+                outcomes[version] = restorable.contains(version) ? ("restored", "attested by this node (signing key \(Self.signingKey))")
+                    : toSalvage.contains(version) ? ("salvaged", "files re-encrypted under a new key")
+                    : ("unchanged", "this host holds the same key")
+            }
+            var report: JSONValue = .null
+            if toSalvage.isEmpty {
+                // Only restores: no fresh key, no pass.
+                update(id) { $0.readable.formUnion(restorable) }
+            } else {
+                report = [
+                    "id": 1, "versions": .array(toSalvage.sorted().map { .integer(Int64($0)) }),
+                    "new_version": .integer(Int64(vault.current + 1)), "state": "finished", "started_at": 1_790_000_000,
+                    "finished_at": 1_790_000_060, "salvaged": 41, "unrecoverable": 1, "skipped_remote": 0, "deferred": 0,
+                    "failed": 0,
+                    "failures": [["path": "/Photos/2019/broken.heic", "version": 1, "kind": "unrecoverable",
+                                  "reason": "does not authenticate under the supplied key"]],
+                ]
+                let salvaged = report
+                update(id) { $0.readable = Set([$0.current + 1]); $0.current += 1; $0.needed = []; $0.lastSalvage = salvaged }
+            }
+            let available = vaults.withLock { v in v[id].map { $0.readable.isSuperset(of: Set([$0.current] + $0.needed)) } ?? false }
             return .ok(["vault_id": .integer(id), "vault_name": .string(vault.name), "deleted": false,
-                        "mode": "salvage", "written": true, "key_available": true, "note": .null,
-                        "versions": .array(unreadable.sorted().map { ["version": .integer(Int64($0)), "outcome": "salvaged",
-                                                                      "detail": "files re-encrypted under a new key"] }),
+                        "mode": "salvage", "written": .bool(!unreadable.isEmpty), "key_available": .bool(available),
+                        "note": .null,
+                        "versions": .array(received.keys.sorted().map { version in
+                            ["version": .integer(Int64(version)), "outcome": .string(outcomes[version]!.0),
+                             "detail": .string(outcomes[version]!.1)]
+                        }),
                         "salvage": report])
         }
         // Recover: with attestations required, a version is restored only when its attestation verifies.
@@ -653,6 +679,50 @@ struct KeyBackupTests {
             #expect(lab.daemon.payloads(of: "vault.keys.import").first?["mode"]?.stringValue == "recover")
             // Status keeps the report.
             #expect(try await lab.row(7, in: vault).lastSalvage == details)
+        }
+    }
+
+    @Test func aSalvageWithNothingToSalvageConfirmsAsSalvageAndOnlyRestores() async throws {
+        var photos = Self.photos(current: 2, needed: [1], rotating: true)
+        photos.requiresAttestation = true
+        photos.attests = true
+        try await withLab([photos], versions: [7: [1, 2]]) { lab in
+            let vault = try await lab.sync.prepare()
+            _ = await lab.sync.run([try await lab.row(7, in: vault)], nodes: [lab.node], into: vault)
+            lab.keys.update(7) { $0.readable = [] }
+            let broken = try await lab.row(7, in: vault)
+            let restore = KeyRestore(store: lab.helper)
+
+            // Every version is attested, yet a salvage request still asks as a salvage.
+            let asked = await restore.importToNode(broken, on: lab.node, in: vault, mode: .salvage, confirmName: nil,
+                                                   exportedBy: "t")
+            guard case .needsConfirmation(let message) = asked else {
+                Issue.record("got \(asked)")
+                return
+            }
+            #expect(message.contains("Nothing needs salvage"))
+            #expect(lab.keys.imported.withLock { $0[7] } == nil, "nothing written without the name")
+
+            let done = await restore.importToNode(broken, on: lab.node, in: vault, mode: .salvage, confirmName: "Photos",
+                                                  exportedBy: "t")
+            guard case .imported(let report) = done else {
+                Issue.record("got \(done)")
+                return
+            }
+            // It only restored: no new key, no pass.
+            #expect(report.importMode == .salvage && report.salvage == nil && report.keyAvailable)
+            #expect(report.versions.map(\.outcome) == ["restored", "restored"] && report.needsSalvage.isEmpty)
+            #expect(lab.keys.vaults.withLock { $0[7]?.current } == 2)
+            #expect(try await lab.row(7, in: vault).lastSalvage == nil)
+
+            // With nothing to write it asks nothing.
+            let again = await restore.importToNode(try await lab.row(7, in: vault), on: lab.node, in: vault,
+                                                   mode: .salvage, confirmName: nil, exportedBy: "t")
+            guard case .imported(let unchanged) = again else {
+                Issue.record("got \(again)")
+                return
+            }
+            #expect(!unchanged.written && unchanged.versions.map(\.outcome) == ["unchanged", "unchanged"])
         }
     }
 

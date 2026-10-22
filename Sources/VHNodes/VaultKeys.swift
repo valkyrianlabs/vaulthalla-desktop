@@ -145,7 +145,8 @@ extension VaultKeyImportMode {
         }
     }
 
-    /// Every confirmation an import may ask for. A salvage that ends up with nothing to salvage asks as a recover.
+    /// Every confirmation an import may ask for. A salvage always asks under `vault_key_salvage`, even when nothing
+    /// turns out to need salvage (confirming it then only restores).
     public static let confirmationCodes: Set<String> = Set(allCases.map(\.confirmationCode))
 }
 

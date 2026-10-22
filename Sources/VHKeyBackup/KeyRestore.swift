@@ -116,7 +116,8 @@ public struct KeyRestore: Sendable {
     /// Sends the stored versions the node needs (`vault.keys.import`), with their attestations. Without
     /// `confirmName` the daemon only plans; pass the name the person typed to write. `recover` restores only versions
     /// whose attestation verifies; `salvage` is the separate, explicitly confirmed fallback for the rest. Either
-    /// confirmation code is taken as a request for the name: a salvage with nothing left to salvage asks as a recover.
+    /// confirmation code is taken as a request for the name. A salvage always asks as a salvage (`vault_key_salvage`),
+    /// even when every version turns out restorable; confirming it then only restores (no new key, `salvage` null).
     public func importToNode(
         _ row: VaultKeyRow, on node: KeyBackupNode, in vault: OnePasswordVault, mode: VaultKeyImportMode = .recover,
         confirmName: String?, exportedBy: String
