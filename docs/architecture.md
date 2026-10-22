@@ -285,9 +285,11 @@ There is no device-scoped permission system.
   - Title `Vaulthalla · <vault> · <node>`.
   - `credential` = the current key (base64).
   - Section "Vaulthalla": vault id, vault name, node name and id, key version, key check, backed-up time.
-  - Section "Key versions": one concealed field per version (`v3`, `v2`, …) with its key check. A rotation adds the
-    new version and moves `credential` to it; a version is never overwritten, and none is removed while the daemon
-    still reports it as needed.
+  - Section "Key versions": one concealed field per version (`v3`, `v2`, …) with its key check and, when the node
+    recorded one, its attestation (`vN_attest_key_id`, `vN_attest_sig`: the daemon's `{key_id, signature}`, public
+    metadata stored and returned unchanged). A rotation adds the new version and moves `credential` to it; a version
+    is never overwritten, and none is removed while the daemon still reports it as needed. Backing up again adds an
+    attestation the node has and the item lacks (backups from before the server recorded attestations).
   - Tags `vaulthalla`, `vaulthalla/<node>`.
   - Notes: how to restore.
   - The item is found by its stable identifiers (node id + vault id fields), never by title, so renames are safe.
@@ -298,8 +300,13 @@ There is no device-scoped permission system.
 - **Restore [D7]:** in milestones.
   1. Verify: re-check the stored key against the daemon's key check.
   2. Export: write the CLI-format export JSON to a file the user chooses (native save panel; no clipboard).
-  3. Import: Desktop sends the stored versions to the daemon's `vault.keys.import` (S6) over the paired connection,
-     the same operation as `vh vault keys import`. Only then does Desktop call this full recovery support.
+  3. Import: Desktop sends the stored versions, with their attestations, to the daemon's `vault.keys.import` (S6)
+     over the paired connection, the same operation as `vh vault keys import`. Recover (the default) restores only
+     versions the vault had, proven by the node's own attestation, never a key of the caller's own; a version it
+     can't prove comes back `needs_salvage` with nothing written, one the vault never had `refused`. Salvage
+     (`mode: "salvage"`, its own confirmation) is a separate, explicit step: the node re-encrypts the files the key
+     opens under a new key it creates, reports the files it couldn't open, and never stores the backed-up key.
+     The server's design of record is `.claude/context/key-backup.md` in the vaulthalla repository.
 - **Hygiene:** keys never enter MCP results or agent context (the export is refused for MCP at the daemon), logs or
   caches. The 1Password item id is the only thing Desktop stores per vault.
 

@@ -70,6 +70,11 @@ nonisolated extension VaultKeyRow {
         }
     }
 
+    /// ``RecoveryAssurance/detail(canStore:)`` for this row.
+    var assuranceDetail: String {
+        recoveryAssurance?.detail(canStore: !attestationsToStore.isEmpty && !isKeyUnavailable) ?? ""
+    }
+
     /// The first 8 hex digits: enough to compare by eye, never the key.
     var shortCheck: String {
         guard let check = daemon.keyCheck, !check.isEmpty else { return "—" }
@@ -123,12 +128,14 @@ nonisolated extension RecoveryAssurance {
         }
     }
 
-    var detail: String {
+    /// What it means; `canStore` when backing up again adds the missing attestations (the node has them).
+    func detail(canStore: Bool) -> String {
         switch self {
         case .guaranteed:
-            "Every key version the vault needs is in 1Password with the node's attestation, so the node restores it as its own."
+            return "Every key version the vault needs is in 1Password with the node's attestation, a public signature that reveals nothing about the key. The node restores them as the vault's own."
         case .bestEffort(let versions):
-            "\(VaultKeyRow.versionWords(versions, capitalized: true)) \(versions.count == 1 ? "has" : "have") no attestation from the node (backed up before it attested keys, or not at all). A restore may only salvage what those keys still decrypt. Back up again once the node attests keys."
+            let what = "\(VaultKeyRow.versionWords(versions, capitalized: true)) \(versions.count == 1 ? "has" : "have") no attestation in 1Password (backed up before the node's update, or not at all). Without one the node can't prove the key is the vault's and won't restore it; only a salvage can use it."
+            return canStore ? what + " Back up again to add it." : what
         }
     }
 }

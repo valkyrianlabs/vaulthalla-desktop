@@ -1,4 +1,5 @@
 import SwiftUI
+import VHContract
 import VHKeyBackup
 import VHOnePassword
 
@@ -35,7 +36,16 @@ struct RecoveryKeyInspector: View {
                 if let assurance = row.recoveryAssurance {
                     KeySection("Recovery") {
                         StatusBadge(label: assurance.label, tone: assurance.tone)
-                        Text(assurance.detail)
+                        Text(row.assuranceDetail)
+                            .font(.callout)
+                            .foregroundStyle(.fgMuted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+
+                if let salvage = row.lastSalvage {
+                    KeySection("Last salvage") {
+                        Text(salvageSummary(salvage))
                             .font(.callout)
                             .foregroundStyle(.fgMuted)
                             .fixedSize(horizontal: false, vertical: true)
@@ -76,6 +86,17 @@ struct RecoveryKeyInspector: View {
             }
         }
         .controlSize(.regular)
+    }
+
+    private func salvageSummary(_ salvage: WsModel.VaultKeySalvageReport) -> String {
+        let from = salvage.versions.map { Int($0) }
+        let started = Format.relative(Date(timeIntervalSince1970: TimeInterval(salvage.startedAt)))
+        let into = salvage.newVersion.map { " into v\($0)" } ?? ""
+        let counts = "\(salvage.salvaged.formatted()) files re-encrypted\(into), \(salvage.notSalvaged.formatted()) not"
+        if salvage.isRunning {
+            return "Interrupted (started \(started)): \(counts). Run the salvage again to resume."
+        }
+        return "\(VaultKeyRow.versionWords(from, capitalized: true)), \(started): \(counts)."
     }
 
     private var details: [(term: String, value: String)] {

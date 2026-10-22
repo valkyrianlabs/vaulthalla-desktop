@@ -9,10 +9,10 @@ import VHNodes
 import VHOnePassword
 
 /// Restoring one vault's keys from 1Password (decision D7): verify what 1Password holds against the node, export
-/// it to a file in the `vh vault keys export` shape, or import it back to the node. The node verifies every key
-/// against the vault's files and asks for the vault's name before writing; only its answer calls the vault
-/// recovered. Versions it can't verify as its own (no valid attestation) are only usable through Salvage, a
-/// separate step with its own confirmation and report.
+/// it to a file in the `vh vault keys export` shape, or import it back to the node. The node restores only versions
+/// its own attestation proves are the vault's, never a key of the caller's own, and asks for the vault's name before
+/// writing; only its answer calls the vault recovered. Versions it can't prove (`needs_salvage`) are only usable
+/// through Salvage, a separate step with its own confirmation and report.
 @MainActor
 @Observable
 final class RestoreFlow {
@@ -125,6 +125,11 @@ final class RestoreFlow {
         }
     }
 
+    var salvageDone: Bool {
+        if case .done = salvage { return true }
+        return false
+    }
+
     /// Recover finished and some versions only a salvage can use.
     var needsSalvage: [VaultKeyImportReport.Version] {
         if case .done(let report) = recover { return report.needsSalvage }
@@ -137,6 +142,14 @@ final class RestoreFlow {
         await run(.recover, confirmed: false)
         typedName = row.vaultName
         await run(.recover, confirmed: true)
+    }
+
+    /// PREVIEW DATA: then the salvage of what recover left, with its report.
+    func debugShowSalvageResult() async {
+        await debugShowRecoverResult()
+        await run(.salvage, confirmed: false)
+        salvageTypedName = row.vaultName
+        await run(.salvage, confirmed: true)
     }
     #endif
 }
@@ -163,49 +176,65 @@ struct RestoreKeysSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    header
-                    if let assurance = row.recoveryAssurance {
-                        Callout(tone: assurance.tone, systemImage: assurance == .guaranteed ? "checkmark.seal" : "seal") {
-                            Text(assurance.label).fontWeight(.semibold)
-                            Text(assurance.detail)
+            ScrollViewReader { scroll in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        header
+                        if let assurance = row.recoveryAssurance {
+                            Callout(tone: assurance.tone, systemImage: assurance == .guaranteed ? "checkmark.seal" : "seal") {
+                                Text(assurance.label).fontWeight(.semibold)
+                                Text(row.assuranceDetail)
+                            }
                         }
-                    }
-                    KeySection("1. Verify") {
-                        Text("What 1Password stores, compared with what \(row.nodeName) reports, by key check. No key leaves 1Password.")
-                            .font(.callout)
-                            .foregroundStyle(.fgSubtle)
-                        VerificationList(verification: KeyRestore.verify(daemon: row.daemon, item: row.item),
-                                         checked: row.onePasswordChecked)
-                    }
-                    KeySection("2. Export to a file") {
-                        Text("Writes the keys in `vh vault keys export` format to a file you choose (only you can read it).")
-                            .font(.callout)
-                            .foregroundStyle(.fgSubtle)
-                        HStack(spacing: 10) {
-                            Button("Export to File…") { Task { await flow.exportToFile() } }
-                                .disabled(row.item == nil || flow.exporting)
-                            if flow.exporting { ProgressView().controlSize(.small) }
-                        }
-                        if let note = flow.exportNote {
-                            Label(note.text, systemImage: note.ok ? "checkmark.circle" : "exclamationmark.triangle")
+                        KeySection("1. Verify") {
+                            Text("What 1Password stores, compared with what \(row.nodeName) reports, by key check. No key leaves 1Password.")
                                 .font(.callout)
-                                .foregroundStyle(note.ok ? StatusTone.ok.color : StatusTone.warn.color)
-                                .fixedSize(horizontal: false, vertical: true)
+                                .foregroundStyle(.fgSubtle)
+                            VerificationList(verification: KeyRestore.verify(daemon: row.daemon, item: row.item),
+                                             checked: row.onePasswordChecked)
+                        }
+                        KeySection("2. Export to a file") {
+                            Text("Writes the keys in `vh vault keys export` format to a file you choose (only you can read it).")
+                                .font(.callout)
+                                .foregroundStyle(.fgSubtle)
+                            HStack(spacing: 10) {
+                                Button("Export to File…") { Task { await flow.exportToFile() } }
+                                    .disabled(row.item == nil || flow.exporting)
+                                if flow.exporting { ProgressView().controlSize(.small) }
+                            }
+                            if let note = flow.exportNote {
+                                Label(note.text, systemImage: note.ok ? "checkmark.circle" : "exclamationmark.triangle")
+                                    .font(.callout)
+                                    .foregroundStyle(note.ok ? StatusTone.ok.color : StatusTone.warn.color)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        KeySection("3. Restore to \(row.nodeName)") {
+                            importStep(.recover, step: flow.recover)
+                        }
+                        if !flow.needsSalvage.isEmpty || flow.salvage != .idle {
+                            KeySection("Salvage") {
+                                if !flow.salvageDone { salvageIntro }
+                                importStep(.salvage, step: flow.salvage)
+                            }
+                            .id(Self.salvageAnchor)
                         }
                     }
-                    KeySection("3. Restore to \(row.nodeName)") {
-                        importStep(.recover, step: flow.recover)
-                    }
-                    if !flow.needsSalvage.isEmpty || flow.salvage != .idle {
-                        KeySection("Salvage") {
-                            salvageIntro
-                            importStep(.salvage, step: flow.salvage)
-                        }
+                    .padding(20)
+                }
+                #if DEBUG
+                .task {
+                    switch UserDefaults.standard.string(forKey: "VHDebugRecoveryKeys") {
+                    case "restore-result":
+                        await flow.debugShowRecoverResult()
+                    case "restore-salvage":
+                        await flow.debugShowSalvageResult()
+                        scroll.scrollTo(Self.salvageAnchor, anchor: .top)
+                    default:
+                        break
                     }
                 }
-                .padding(20)
+                #endif
             }
             Divider()
             HStack {
@@ -216,14 +245,9 @@ struct RestoreKeysSheet: View {
             .padding(16)
         }
         .frame(width: 600, height: 640)
-        #if DEBUG
-        .task {
-            if UserDefaults.standard.string(forKey: "VHDebugRecoveryKeys") == "restore-result" {
-                await flow.debugShowRecoverResult()
-            }
-        }
-        #endif
     }
+
+    private static let salvageAnchor = "salvage"
 
     private var header: some View {
         HStack(spacing: 12) {
@@ -246,9 +270,9 @@ struct RestoreKeysSheet: View {
     private var salvageIntro: some View {
         let versions = flow.needsSalvage.map { Int($0.version) }
         return Callout(tone: .warn, systemImage: "bandage") {
-            Text(versions.isEmpty ? "Salvage" : "\(VaultKeyRow.versionWords(versions, capitalized: true)) couldn't be restored as the vault's own key.")
+            Text(versions.isEmpty ? "Salvage" : "\(row.nodeName) can't prove \(VaultKeyRow.versionWords(versions)) \(versions.count == 1 ? "is" : "are") this vault's key. Nothing changed.")
                 .fontWeight(.semibold)
-            Text("The node couldn't verify \(versions.count == 1 ? "it" : "them") with an attestation, so it won't put \(versions.count == 1 ? "it" : "them") back as the vault's key. Salvage is the fallback: the node decrypts whatever those keys still can, re-encrypts it under a fresh key, and lists the files it couldn't recover. It changes the vault's key; back up again afterwards.")
+            Text("Salvage is a separate step. \(row.nodeName) re-encrypts the files the backed-up \(versions.count == 1 ? "key opens" : "keys open") under a new key it creates, and lists the files it couldn't open: they may be unrecoverable. It never stores the backed-up \(versions.count == 1 ? "key" : "keys"). Back up the new key afterwards.")
         }
     }
 
@@ -258,7 +282,7 @@ struct RestoreKeysSheet: View {
         switch step {
         case .idle:
             if mode == .recover {
-                Text("Sends the versions \(row.nodeName) needs over this Mac's paired connection. \(row.nodeName) verifies each against the vault's files and shows what it would write before anything changes.")
+                Text("Sends the versions \(row.nodeName) needs, with their attestations, over this Mac's paired connection. \(row.nodeName) restores only keys the vault had, never a key of your own, and shows what it would write before anything changes.")
                     .font(.callout)
                     .foregroundStyle(.fgSubtle)
                     .fixedSize(horizontal: false, vertical: true)
@@ -324,14 +348,27 @@ struct ImportReportView: View {
                          : "Its keys work on \(nodeName) again.")
                 }
             } else if mode == .recover, !report.needsSalvage.isEmpty {
+                let versions = report.needsSalvage.map { Int($0.version) }
                 Callout(tone: .warn, systemImage: "exclamationmark.triangle") {
                     Text("Not recovered yet.").fontWeight(.semibold)
-                    Text("Some versions couldn't be verified as this vault's own; see Salvage below.")
+                    Text("\(nodeName) can't prove \(VaultKeyRow.versionWords(versions)) \(versions.count == 1 ? "is" : "are") this vault's key, so nothing changed for \(versions.count == 1 ? "it" : "them"). See Salvage below.")
                 }
             } else {
                 Callout(tone: .warn, systemImage: "exclamationmark.triangle") {
                     Text("“\(report.vaultName)” still can't use its keys.").fontWeight(.semibold)
-                    Text(report.note ?? "\(nodeName) took what it could verify; the vault needs more.")
+                    Text(report.note ?? "\(nodeName) restored what it could prove; the vault needs more.")
+                }
+            }
+            if !report.refused.isEmpty {
+                let versions = report.refused.map { Int($0.version) }
+                Text("\(nodeName) never had \(VaultKeyRow.versionWords(versions)), so the backup's \(versions.count == 1 ? "copy was" : "copies were") refused: an import never adds a key version.")
+                    .font(.callout)
+                    .foregroundStyle(.fgSubtle)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if let salvage = report.salvage, salvage.isRunning {
+                Callout(tone: .warn, systemImage: "pause.circle") {
+                    Text("The salvage was interrupted. Run it again to resume; it continues with the same new key.")
                 }
             }
             ForEach(report.versions, id: \.version) { version in
@@ -371,6 +408,12 @@ struct SalvageReportView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
+            Text(report.failures.isEmpty
+                 ? "Every file the backed-up key opened is re-encrypted under the new key."
+                 : "Unrecoverable files didn't open with the backed-up key and may be lost. The others can be retried by running the salvage again.")
+                .font(.callout)
+                .foregroundStyle(.fgSubtle)
+                .fixedSize(horizontal: false, vertical: true)
             DefinitionList(items: [
                 ("Salvaged", report.salvaged.formatted()),
                 ("Unrecoverable", report.unrecoverable.formatted()),

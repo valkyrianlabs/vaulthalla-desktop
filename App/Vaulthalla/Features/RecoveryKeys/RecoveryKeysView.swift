@@ -153,7 +153,7 @@ struct RecoveryKeysScreen: View {
                          ? "\(unavailable[0].vaultName) on \(unavailable[0].nodeName) can't use its key and doesn't run."
                          : "\(unavailable.count) vaults can't use their keys and don't run.")
                         .fontWeight(.semibold)
-                    Text("Restore the keys from 1Password; the node verifies them against the vault's files before writing anything.")
+                    Text("Restore from 1Password: the node takes back only keys the vault had.")
                     HStack {
                         ForEach(unavailable.prefix(3)) { row in
                             Button(unavailable.count == 1 ? "Restore from 1Password…" : "Restore \(row.vaultName)…") {
@@ -162,6 +162,22 @@ struct RecoveryKeysScreen: View {
                         }
                     }
                     .padding(.top, 4)
+                }
+            }
+            // Backups from before the node recorded attestations. Second to an unusable key: the page doesn't scroll,
+            // so a third banner would squeeze the others at the minimum window size.
+            let unattested = rows.filter { !$0.attestationsToStore.isEmpty }
+            if unavailable.isEmpty, !unattested.isEmpty {
+                Callout(tone: .warn, systemImage: "seal") {
+                    HStack(spacing: 10) {
+                        Text(unattested.count == 1
+                             ? "\(unattested[0].vaultName)'s backup has no attestation, which a restore needs."
+                             : "\(unattested.count) backups have no attestation, which a restore needs.")
+                            .help("The node's attestation is a public signature that reveals nothing about the key. Backups made before the node's update have none; backing up again adds it.")
+                        Spacer(minLength: 0)
+                        Button("Back Up Again") { keys.sync(unattested, force: true, title: "Back up vault keys again") }
+                            .disabled(keys.run?.isRunning == true)
+                    }
                 }
             }
             onePasswordBanner
@@ -303,7 +319,7 @@ struct RecoveryKeysScreen: View {
                 if let assurance = row.recoveryAssurance {
                     Text(assurance == .guaranteed ? "Guaranteed" : "Best effort")
                         .foregroundStyle(assurance.tone.color)
-                        .help(assurance.detail)
+                        .help(row.assuranceDetail)
                 } else {
                     Text("—").foregroundStyle(.fgFaint)
                 }
@@ -357,7 +373,8 @@ struct RecoveryKeysScreen: View {
     }
 
     #if DEBUG
-    /// `-VHDebugRecoveryKeys sync | restore | restore-result | settings` (DebugSnapshot), with PREVIEW DATA.
+    /// `-VHDebugRecoveryKeys sync | restore | restore-result | restore-salvage | settings` (DebugSnapshot), with
+    /// PREVIEW DATA.
     private func debugHooks(_ rows: [VaultKeyRow]) async {
         guard let hook = UserDefaults.standard.string(forKey: "VHDebugRecoveryKeys") else { return }
         try? await Task.sleep(for: .milliseconds(600))
@@ -367,7 +384,7 @@ struct RecoveryKeysScreen: View {
         selection = pick?.id
         switch hook {
         case "sync": keys.run = .preview()
-        case "restore", "restore-result": restoring = pick
+        case "restore", "restore-result", "restore-salvage": restoring = pick
         case "settings": debugSettings = true
         default: break
         }

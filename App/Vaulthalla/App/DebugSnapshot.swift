@@ -12,7 +12,7 @@ import VHCore
 /// `-VHDebugSheet` takes `addNode` or `pair:<position>`.
 /// `-VHDebugPreviewData YES` serves the preview nodes from PREVIEW DATA (`PreviewTransport`); with it,
 /// `-VHDebugVault <id>` selects a vault and `-VHDebugDeleteVault YES` opens its delete sheet;
-/// `-VHDebugRecoveryKeys sync|restore|restore-result|settings` opens a Recovery Keys sheet.
+/// `-VHDebugRecoveryKeys sync|restore|restore-result|restore-salvage|settings` opens a Recovery Keys sheet.
 /// `-VHDebugRegistry <nodes.json>` uses another node list, and `-VHDebugPairing <phase>` shows the pairing sheet in a
 /// fixed phase without contacting the node (`DebugPairing`).
 /// The window renders itself to the PNG (and the sheet to `<name>.sheet.png`), then the app exits. Glass can't be
