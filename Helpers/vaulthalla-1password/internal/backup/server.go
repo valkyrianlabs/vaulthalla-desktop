@@ -61,6 +61,8 @@ func (s *Server) handler(op string) (Handler, bool) {
 		return s.itemUpsert, true
 	case "item.reveal":
 		return s.itemReveal, true
+	case "item.attest":
+		return s.itemAttest, true
 	}
 	h, ok := s.Extra[op]
 	return h, ok

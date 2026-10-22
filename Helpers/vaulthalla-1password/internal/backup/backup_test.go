@@ -208,6 +208,9 @@ func TestOpsNeedASession(t *testing.T) {
 	h.fails("items.list", map[string]string{"vault_id": "x"}, CodeNoSession)
 	h.fails("item.reveal", map[string]string{"vault_id": "x", "item_id": "y"}, CodeNoSession)
 	h.fails("item.upsert", upsertParams("x", 1, v(1, 1)), CodeNoSession)
+	h.fails("item.attest", map[string]any{"vault_id": "x", "item_id": "y", "node_id": "n", "vault_uuid": testVault,
+		"versions": []map[string]any{{"version": 1, "key_check": kc(1, 1),
+			"attestation": map[string]any{"key_id": 1, "signature": b64(bytes.Repeat([]byte{1}, 64))}}}}, CodeNoSession)
 }
 
 func TestAccountSwitchIsRefused(t *testing.T) {

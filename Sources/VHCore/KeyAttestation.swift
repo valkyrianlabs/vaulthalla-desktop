@@ -20,4 +20,12 @@ public struct KeyAttestation: Sendable, Equatable, Hashable, Codable {
         case keyID = "key_id"
         case signature
     }
+
+    /// One the daemon could verify at all: a signing key id in 1...2^31 - 1 (`key_attestation_keys.id` is a SERIAL)
+    /// and a 64-byte signature in base64. A malformed attestation (a hand edit, damage) is as good as none: the daemon
+    /// reads it as unattested.
+    public var isWellFormed: Bool {
+        guard (1...Int64(Int32.max)).contains(keyID), let bytes = Data(base64Encoded: signature) else { return false }
+        return bytes.count == 64
+    }
 }

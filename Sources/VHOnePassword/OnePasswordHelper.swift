@@ -147,6 +147,34 @@ public actor OnePasswordHelper {
         }
     }
 
+    /// Adds the node's attestations to versions the item holds (`item.attest`): metadata only, never a key. A
+    /// version stored under another key check fails the whole request (`version_conflict`), nothing written; a
+    /// well-formed attestation already stored stays (`kept`).
+    public func attest(_ update: AttestationUpdate) async throws -> AttestationUpdateOutcome {
+        try await serialized {
+            try await exchange("item.attest", capacity: 512 + update.versions.count * 192) { w in
+                w.field("vault_id", update.onePasswordVaultID)
+                w.field("item_id", update.itemID)
+                w.field("node_id", update.nodeID)
+                w.field("vault_uuid", update.vaultUUID)
+                w.key("versions")
+                w.beginArray()
+                for version in update.versions {
+                    w.beginObject()
+                    w.field("version", version.version)
+                    w.field("key_check", version.keyCheck)
+                    w.key("attestation")
+                    w.beginObject()
+                    w.field("key_id", Int(version.attestation.keyID))
+                    w.field("signature", version.attestation.signature)
+                    w.endObject()
+                    w.endObject()
+                }
+                w.endArray()
+            }.value
+        }
+    }
+
     /// Reads key versions back out of 1Password (restore and export only). All versions when `versions` is nil.
     public func reveal(onePasswordVaultID: String, itemID: String, versions: [Int]? = nil) async throws -> RevealedKeys {
         try await serialized {

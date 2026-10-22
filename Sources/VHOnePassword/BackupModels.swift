@@ -80,7 +80,8 @@ public struct StoredKeyVersion: Sendable, Equatable, Hashable, Decodable {
         attestation = try c.decodeIfPresent(KeyAttestation.self, forKey: .attestation)
     }
 
-    public var isAttested: Bool { attestation != nil }
+    /// The version carries an attestation the daemon could verify (a malformed one counts as none).
+    public var isAttested: Bool { attestation?.isWellFormed == true }
 }
 
 /// What 1Password holds for one Vaulthalla vault: identifiers and key checks only. Desktop stores just `itemID`.
@@ -260,6 +261,66 @@ public struct BackupUpsertOutcome: Sendable, Equatable, Decodable {
         keyCheck = try c.decode(String.self, forKey: .keyCheck)
         storedVersions = try c.decode([StoredKeyVersion].self, forKey: .storedVersions)
         updatedAt = parseTimestamp(try c.decodeIfPresent(String.self, forKey: .updatedAt))
+    }
+}
+
+/// Attestations to add to versions an item already holds (`item.attest`): metadata only, no key travels. Each version
+/// names the key check the attestation signs; the helper writes nothing unless the item stores that version under that
+/// check, and never replaces a well-formed attestation the item already has.
+public struct AttestationUpdate: Sendable, Equatable {
+    public struct Version: Sendable, Equatable {
+        public let version: Int
+        public let keyCheck: String
+        public let attestation: KeyAttestation
+
+        public init(version: Int, keyCheck: String, attestation: KeyAttestation) {
+            self.version = version
+            self.keyCheck = keyCheck
+            self.attestation = attestation
+        }
+    }
+
+    public var onePasswordVaultID: String
+    public var itemID: String
+    /// The item's node and vault (`vh_node_id`, `vh_vault_id`), checked again by the helper.
+    public var nodeID: String
+    public var vaultUUID: String
+    public var versions: [Version]
+
+    public init(onePasswordVaultID: String, itemID: String, nodeID: String, vaultUUID: String, versions: [Version]) {
+        self.onePasswordVaultID = onePasswordVaultID
+        self.itemID = itemID
+        self.nodeID = nodeID
+        self.vaultUUID = vaultUUID
+        self.versions = versions
+    }
+}
+
+/// What the item holds after `item.attest`, read back. `stored` got the attestation sent; `kept` already had a
+/// well-formed one of their own, which stayed.
+public struct AttestationUpdateOutcome: Sendable, Equatable, Decodable {
+    public let itemID: String
+    public let onePasswordVaultID: String
+    public let written: Bool
+    public let stored: [Int]
+    public let kept: [Int]
+    public let storedVersions: [StoredKeyVersion]
+
+    public init(itemID: String, onePasswordVaultID: String, written: Bool, stored: [Int], kept: [Int],
+                storedVersions: [StoredKeyVersion]) {
+        self.itemID = itemID
+        self.onePasswordVaultID = onePasswordVaultID
+        self.written = written
+        self.stored = stored
+        self.kept = kept
+        self.storedVersions = storedVersions
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case itemID = "item_id"
+        case onePasswordVaultID = "vault_id"
+        case written, stored, kept
+        case storedVersions = "stored_versions"
     }
 }
 

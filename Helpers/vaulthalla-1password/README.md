@@ -77,6 +77,7 @@ request, is answered with `"id": null` and the stream continues.
 | `items.list` | `vault_id` | `items: [{item_id, vault_id, title, node_id, node_name, vault_uuid, vault_name, current_version, key_check, versions: [{version, key_check, state, attestation?}], updated_at, backed_up_at, issues}]`. Never key values |
 | `item.upsert` | `vault_id, node_id, node_name, vault_uuid, vault_name, current_version, versions: [{version, key_b64, key_check, needed, attestation?: {key_id, signature}}]` | `item_id, vault_id, created, written, current_version, key_check, stored_versions: [{version, key_check, state}], updated_at`, read back from 1Password after the write |
 | `item.reveal` | `vault_id, item_id, versions?` | `item_id, vault_id, node_id, vault_uuid, current_version, versions: [{version, key_check, state, attestation?, key_b64}]` (restore/export only) |
+| `item.attest` | `vault_id, item_id, node_id, vault_uuid, versions: [{version, key_check, attestation: {key_id, signature}}]` | `item_id, vault_id, written, stored, kept, stored_versions, updated_at`. Adds the node's attestations to versions the item holds, metadata only (no key in the request; keys, checks, states and `backed_up_at` unchanged, read back and verified). A version stored under another key check, a version the item lacks, or another node's or vault's item fails the whole request (`version_conflict`/`not_found`), nothing written. A well-formed stored attestation is never replaced (`kept`); a missing or malformed one is filled in (`stored`) |
 
 `vault_id` is always the 1Password vault; `vault_uuid` is the Vaulthalla vault's numeric id as ASCII decimal (the
 key check binds it). Keys are 32 bytes. Params are strict: unknown fields are `bad_request`.
@@ -113,7 +114,8 @@ One API Credential item per (node, Vaulthalla vault) in the `Vaulthalla` vault:
   daemon's `{key_id, signature}` (`key_id` a JSON number). The helper never verifies attestations (the daemon does
   on import); it stores and returns them unchanged. A hand-edited one that no longer parses reads as none. A version backed up without
   one gets it on a later backup that carries it (a re-backup refreshes the attestation; the key and its check never
-  change), and an upsert without attestations keeps the stored ones.
+  change), or from `item.attest`, and an upsert without attestations keeps the stored ones. Well-formed means a
+  `key_id` in 1..2^31 - 1 (the daemon's `key_attestation_keys.id` is a SERIAL) and a 64-byte signature.
 
 Rules: the item is found by `vh_node_id` + `vh_vault_id`, never by title (renames are safe; two matches →
 `duplicate_item`). An existing `vN` is never modified or removed: an incoming `vN` with different bytes or key

@@ -1,7 +1,9 @@
 package backup
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -114,5 +116,110 @@ func TestAHandEditedAttestationReadsAsNone(t *testing.T) {
 	h.ok("items.list", map[string]string{"vault_id": vaultID}, &list)
 	if got := list.Items[0]; got.Versions[0].Attestation != nil || len(got.Issues) != 0 {
 		t.Fatalf("listed %+v", got)
+	}
+}
+
+// sig64 is a well-formed signature (64 bytes, base64) distinct per seed.
+func sig64(seed byte) string { return b64(bytes.Repeat([]byte{seed}, 64)) }
+
+func attestParamsFor(vaultID, itemID string, versions ...map[string]any) map[string]any {
+	return map[string]any{"vault_id": vaultID, "item_id": itemID, "node_id": "node-1", "vault_uuid": testVault,
+		"versions": versions}
+}
+
+func attestEntry(n int, k byte, keyID uint32, sig string) map[string]any {
+	return map[string]any{"version": n, "key_check": kc(n, k), "attestation": map[string]any{"key_id": keyID, "signature": sig}}
+}
+
+// item.attest adds the node's attestations to a backup that has none (or malformed ones), as metadata only: the keys,
+// key checks and states stay byte for byte, a well-formed stored attestation is never replaced, and asking again
+// writes nothing.
+func TestItemAttestFillsMissingAndMalformedAttestationsOnly(t *testing.T) {
+	h, vaultID := connected(t)
+	var res UpsertResult
+	// v3 attested at backup time; v2 with a malformed attestation (key id 0); v1 with none.
+	h.ok("item.upsert", upsertParams(vaultID, 3, attested(3, 3, 5, sig64(3)), attested(2, 2, 0, "c2ln"), v(1, 1)), &res)
+	before := h.item(vaultID, res.ItemID)
+	writes := h.mem.Writes
+
+	var out AttestResult
+	h.ok("item.attest", attestParamsFor(vaultID, res.ItemID,
+		attestEntry(3, 3, 9, sig64(33)), attestEntry(2, 2, 9, sig64(22)), attestEntry(1, 1, 9, sig64(11))), &out)
+	if !out.Written || fmt.Sprint(out.Stored) != "[2 1]" || fmt.Sprint(out.Kept) != "[3]" || h.mem.Writes != writes+1 {
+		t.Fatalf("attest result %+v (writes %d → %d)", out, writes, h.mem.Writes)
+	}
+	after := h.item(vaultID, res.ItemID)
+	for _, id := range []string{"v3", "v3_check", "v3_state", "v2", "v2_check", "v2_state", "v1", "v1_check", "v1_state"} {
+		if field(t, after, SectionVersions, id) != field(t, before, SectionVersions, id) {
+			t.Fatalf("%s changed", id)
+		}
+	}
+	if field(t, after, "", FieldCredential) != field(t, before, "", FieldCredential) ||
+		field(t, after, SectionMeta, FieldBackedUpAt) != field(t, before, SectionMeta, FieldBackedUpAt) {
+		t.Fatal("attesting touched the current key or the backup time")
+	}
+	if field(t, after, SectionVersions, "v3_attest_sig") != sig64(3) || field(t, after, SectionVersions, "v3_attest_key_id") != "5" {
+		t.Fatal("a well-formed stored attestation was replaced")
+	}
+	if field(t, after, SectionVersions, "v2_attest_key_id") != "9" || field(t, after, SectionVersions, "v2_attest_sig") != sig64(22) ||
+		field(t, after, SectionVersions, "v1_attest_sig") != sig64(11) {
+		t.Fatal("missing or malformed attestations not filled in")
+	}
+	// v1's attestation sits with v1's fields, as merge places it.
+	var order []string
+	for _, f := range after.Fields {
+		if f.SectionID == SectionVersions {
+			order = append(order, f.ID)
+		}
+	}
+	if got := strings.Join(order, ","); !strings.HasSuffix(got, "v1,v1_check,v1_state,v1_attest_key_id,v1_attest_sig") {
+		t.Fatalf("field order %s", got)
+	}
+	// A later backup leaves the item as it is: the layout is merge's own.
+	h.ok("item.upsert", upsertParams(vaultID, 3, v(3, 3), v(2, 2), v(1, 1)), &res)
+	if res.Written {
+		t.Fatal("an upsert after attesting rewrote the item")
+	}
+	// The same request again: everything is kept, nothing written.
+	h.ok("item.attest", attestParamsFor(vaultID, res.ItemID, attestEntry(1, 1, 9, sig64(11))), &out)
+	if out.Written || len(out.Stored) != 0 || fmt.Sprint(out.Kept) != "[1]" || h.mem.Writes != writes+1 {
+		t.Fatalf("a repeated attest wrote: %+v", out)
+	}
+	var list ItemsListResult
+	h.ok("items.list", map[string]string{"vault_id": vaultID}, &list)
+	if got := list.Items[0].Versions[2].Attestation; got == nil || got.KeyID != 9 || got.Signature != sig64(11) {
+		t.Fatalf("listed v1 attestation %+v", got)
+	}
+}
+
+// Nothing is written unless every named version is stored under the given key check, for this node and vault, with a
+// well-formed attestation.
+func TestItemAttestRefusesWithoutWriting(t *testing.T) {
+	h, vaultID := connected(t)
+	var res UpsertResult
+	h.ok("item.upsert", upsertParams(vaultID, 2, v(2, 2), v(1, 1)), &res)
+	writes := h.mem.Writes
+	ok := attestEntry(2, 2, 9, sig64(2))
+	// Another key check for v1 (the node holds another key under that version).
+	h.fails("item.attest", attestParamsFor(vaultID, res.ItemID, ok, attestEntry(1, 7, 9, sig64(1))), CodeVersionConflict)
+	// A version the item doesn't hold.
+	h.fails("item.attest", attestParamsFor(vaultID, res.ItemID, ok, attestEntry(3, 3, 9, sig64(3))), CodeNotFound)
+	// Another node's item.
+	other := attestParamsFor(vaultID, res.ItemID, ok)
+	other["node_id"] = "node-2"
+	h.fails("item.attest", other, CodeVersionConflict)
+	// Malformed attestations: key id out of range, a signature that isn't 64 bytes, none at all.
+	for _, bad := range []map[string]any{
+		attestEntry(2, 2, 0, sig64(2)), attestEntry(2, 2, 1<<31, sig64(2)), attestEntry(2, 2, 9, "c2ln"),
+		{"version": 2, "key_check": kc(2, 2)},
+	} {
+		h.fails("item.attest", attestParamsFor(vaultID, res.ItemID, bad), CodeBadRequest)
+	}
+	// Keys never travel in this op.
+	withKey := attestEntry(2, 2, 9, sig64(2))
+	withKey["key_b64"] = b64(key(2))
+	h.fails("item.attest", attestParamsFor(vaultID, res.ItemID, withKey), CodeBadRequest)
+	if h.mem.Writes != writes {
+		t.Fatal("a refused attest wrote")
 	}
 }
