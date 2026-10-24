@@ -1,0 +1,561 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		F51000000000000000000010 /* SpikeFileProvider.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F52000000000000000000002 /* SpikeFileProvider.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F51000000000000000000011 /* SpikeAgent.app in Embed Login Item */ = {isa = PBXBuildFile; fileRef = F53000000000000000000002 /* SpikeAgent.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		F51000000000000000000031 /* VHCore in Frameworks */ = {isa = PBXBuildFile; productRef = F51000000000000000000021 /* VHCore */; };
+		F51000000000000000000032 /* VHContract in Frameworks */ = {isa = PBXBuildFile; productRef = F51000000000000000000022 /* VHContract */; };
+		F51000000000000000000033 /* VHTransport in Frameworks */ = {isa = PBXBuildFile; productRef = F51000000000000000000023 /* VHTransport */; };
+		F51000000000000000000034 /* VHIdentity in Frameworks */ = {isa = PBXBuildFile; productRef = F51000000000000000000024 /* VHIdentity */; };
+		F51000000000000000000035 /* VHNodes in Frameworks */ = {isa = PBXBuildFile; productRef = F51000000000000000000025 /* VHNodes */; };
+		F52000000000000000000031 /* VHCore in Frameworks */ = {isa = PBXBuildFile; productRef = F52000000000000000000021 /* VHCore */; };
+		F52000000000000000000032 /* VHContract in Frameworks */ = {isa = PBXBuildFile; productRef = F52000000000000000000022 /* VHContract */; };
+		F52000000000000000000033 /* VHTransport in Frameworks */ = {isa = PBXBuildFile; productRef = F52000000000000000000023 /* VHTransport */; };
+		F52000000000000000000034 /* VHIdentity in Frameworks */ = {isa = PBXBuildFile; productRef = F52000000000000000000024 /* VHIdentity */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		F5100000000000000000000D /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F50000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F52000000000000000000001;
+			remoteInfo = SpikeFileProvider;
+		};
+		F5100000000000000000000F /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F50000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F53000000000000000000001;
+			remoteInfo = SpikeAgent;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		F51000000000000000000007 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				F51000000000000000000010 /* SpikeFileProvider.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F51000000000000000000008 /* Embed Login Item */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Contents/Library/LoginItems;
+			dstSubfolderSpec = 1;
+			files = (
+				F51000000000000000000011 /* SpikeAgent.app in Embed Login Item */,
+			);
+			name = "Embed Login Item";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
+
+/* Begin PBXFileReference section */
+		F51000000000000000000002 /* VaulthallaSpike.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = VaulthallaSpike.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F52000000000000000000002 /* SpikeFileProvider.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SpikeFileProvider.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		F53000000000000000000002 /* SpikeAgent.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SpikeAgent.app; sourceTree = BUILT_PRODUCTS_DIR; };
+/* End PBXFileReference section */
+
+/* Begin PBXFileSystemSynchronizedRootGroup section */
+		F51000000000000000000003 /* SpikeApp */ = {isa = PBXFileSystemSynchronizedRootGroup; path = SpikeApp; sourceTree = "<group>"; };
+		F52000000000000000000003 /* SpikeExtension */ = {isa = PBXFileSystemSynchronizedRootGroup; path = SpikeExtension; sourceTree = "<group>"; };
+		F53000000000000000000003 /* SpikeAgent */ = {isa = PBXFileSystemSynchronizedRootGroup; path = SpikeAgent; sourceTree = "<group>"; };
+		F54000000000000000000003 /* Shared */ = {isa = PBXFileSystemSynchronizedRootGroup; path = Shared; sourceTree = "<group>"; };
+/* End PBXFileSystemSynchronizedRootGroup section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		F51000000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F51000000000000000000031 /* VHCore in Frameworks */,
+				F51000000000000000000032 /* VHContract in Frameworks */,
+				F51000000000000000000033 /* VHTransport in Frameworks */,
+				F51000000000000000000034 /* VHIdentity in Frameworks */,
+				F51000000000000000000035 /* VHNodes in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F52000000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F52000000000000000000031 /* VHCore in Frameworks */,
+				F52000000000000000000032 /* VHContract in Frameworks */,
+				F52000000000000000000033 /* VHTransport in Frameworks */,
+				F52000000000000000000034 /* VHIdentity in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F53000000000000000000005 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		F50000000000000000000002 = {
+			isa = PBXGroup;
+			children = (
+				F51000000000000000000003 /* SpikeApp */,
+				F52000000000000000000003 /* SpikeExtension */,
+				F53000000000000000000003 /* SpikeAgent */,
+				F54000000000000000000003 /* Shared */,
+				F50000000000000000000003 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		F50000000000000000000003 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				F51000000000000000000002 /* VaulthallaSpike.app */,
+				F52000000000000000000002 /* SpikeFileProvider.appex */,
+				F53000000000000000000002 /* SpikeAgent.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		F51000000000000000000001 /* VaulthallaSpike */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F51000000000000000000009 /* Build configuration list for PBXNativeTarget "VaulthallaSpike" */;
+			buildPhases = (
+				F51000000000000000000004 /* Sources */,
+				F51000000000000000000005 /* Frameworks */,
+				F51000000000000000000006 /* Resources */,
+				F51000000000000000000007 /* Embed Foundation Extensions */,
+				F51000000000000000000008 /* Embed Login Item */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F5100000000000000000000C /* PBXTargetDependency */,
+				F5100000000000000000000E /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				F51000000000000000000003 /* SpikeApp */,
+				F54000000000000000000003 /* Shared */,
+			);
+			name = VaulthallaSpike;
+			packageProductDependencies = (
+				F51000000000000000000021 /* VHCore */,
+				F51000000000000000000022 /* VHContract */,
+				F51000000000000000000023 /* VHTransport */,
+				F51000000000000000000024 /* VHIdentity */,
+				F51000000000000000000025 /* VHNodes */,
+			);
+			productName = VaulthallaSpike;
+			productReference = F51000000000000000000002 /* VaulthallaSpike.app */;
+			productType = "com.apple.product-type.application";
+		};
+		F52000000000000000000001 /* SpikeFileProvider */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F52000000000000000000009 /* Build configuration list for PBXNativeTarget "SpikeFileProvider" */;
+			buildPhases = (
+				F52000000000000000000004 /* Sources */,
+				F52000000000000000000005 /* Frameworks */,
+				F52000000000000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				F52000000000000000000003 /* SpikeExtension */,
+				F54000000000000000000003 /* Shared */,
+			);
+			name = SpikeFileProvider;
+			packageProductDependencies = (
+				F52000000000000000000021 /* VHCore */,
+				F52000000000000000000022 /* VHContract */,
+				F52000000000000000000023 /* VHTransport */,
+				F52000000000000000000024 /* VHIdentity */,
+			);
+			productName = SpikeFileProvider;
+			productReference = F52000000000000000000002 /* SpikeFileProvider.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		F53000000000000000000001 /* SpikeAgent */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = F53000000000000000000009 /* Build configuration list for PBXNativeTarget "SpikeAgent" */;
+			buildPhases = (
+				F53000000000000000000004 /* Sources */,
+				F53000000000000000000005 /* Frameworks */,
+				F53000000000000000000006 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				F53000000000000000000003 /* SpikeAgent */,
+				F54000000000000000000003 /* Shared */,
+			);
+			name = SpikeAgent;
+			productName = SpikeAgent;
+			productReference = F53000000000000000000002 /* SpikeAgent.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		F50000000000000000000001 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2710;
+				LastUpgradeCheck = 2710;
+				TargetAttributes = {
+					F51000000000000000000001 = {
+						CreatedOnToolsVersion = 27.1;
+					};
+					F52000000000000000000001 = {
+						CreatedOnToolsVersion = 27.1;
+					};
+					F53000000000000000000001 = {
+						CreatedOnToolsVersion = 27.1;
+					};
+				};
+			};
+			buildConfigurationList = F50000000000000000000006 /* Build configuration list for PBXProject "FPSpike" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = F50000000000000000000002;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				F50000000000000000000005 /* XCLocalSwiftPackageReference "../.." */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = F50000000000000000000003 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				F51000000000000000000001 /* VaulthallaSpike */,
+				F52000000000000000000001 /* SpikeFileProvider */,
+				F53000000000000000000001 /* SpikeAgent */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		F51000000000000000000006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F52000000000000000000006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F53000000000000000000006 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		F51000000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F52000000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F53000000000000000000004 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		F5100000000000000000000C /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F52000000000000000000001 /* SpikeFileProvider */;
+			targetProxy = F5100000000000000000000D /* PBXContainerItemProxy */;
+		};
+		F5100000000000000000000E /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F53000000000000000000001 /* SpikeAgent */;
+			targetProxy = F5100000000000000000000F /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		F50000000000000000000007 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = QG2U5HNCG4;
+				ENABLE_HARDENED_RUNTIME = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		F50000000000000000000008 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = QG2U5HNCG4;
+				ENABLE_HARDENED_RUNTIME = YES;
+				MACOSX_DEPLOYMENT_TARGET = 27.0;
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		F5100000000000000000000A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/SpikeApp.entitlements;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "The spike connects to a Vaulthalla test node.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.0.1;
+				CURRENT_PROJECT_VERSION = 1;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.desktop.spike;
+				PRODUCT_NAME = VaulthallaSpike;
+			};
+			name = Debug;
+		};
+		F5100000000000000000000B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/SpikeApp.entitlements;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSUIElement = YES;
+				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "The spike connects to a Vaulthalla test node.";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MARKETING_VERSION = 0.0.1;
+				CURRENT_PROJECT_VERSION = 1;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.desktop.spike;
+				PRODUCT_NAME = VaulthallaSpike;
+			};
+			name = Release;
+		};
+		F5200000000000000000000A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/SpikeExtension.entitlements;
+				ENABLE_APP_SANDBOX = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/SpikeExtension-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Spike File Provider";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = 0.0.1;
+				CURRENT_PROJECT_VERSION = 1;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.desktop.spike.fileprovider;
+				PRODUCT_NAME = SpikeFileProvider;
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
+		F5200000000000000000000B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/SpikeExtension.entitlements;
+				ENABLE_APP_SANDBOX = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = "Config/SpikeExtension-Info.plist";
+				INFOPLIST_KEY_CFBundleDisplayName = "Spike File Provider";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@executable_path/../../../../Frameworks",
+				);
+				MARKETING_VERSION = 0.0.1;
+				CURRENT_PROJECT_VERSION = 1;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.desktop.spike.fileprovider;
+				PRODUCT_NAME = SpikeFileProvider;
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
+		};
+		F5300000000000000000000A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/SpikeAgent.entitlements;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSUIElement = YES;
+				MARKETING_VERSION = 0.0.1;
+				CURRENT_PROJECT_VERSION = 1;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.desktop.spike.agent;
+				PRODUCT_NAME = SpikeAgent;
+				SKIP_INSTALL = YES;
+			};
+			name = Debug;
+		};
+		F5300000000000000000000B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = Config/SpikeAgent.entitlements;
+				ENABLE_APP_SANDBOX = NO;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSUIElement = YES;
+				MARKETING_VERSION = 0.0.1;
+				CURRENT_PROJECT_VERSION = 1;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.desktop.spike.agent;
+				PRODUCT_NAME = SpikeAgent;
+				SKIP_INSTALL = YES;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		F50000000000000000000006 /* Build configuration list for PBXProject "FPSpike" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F50000000000000000000007 /* Debug */,
+				F50000000000000000000008 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		F51000000000000000000009 /* Build configuration list for PBXNativeTarget "VaulthallaSpike" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F5100000000000000000000A /* Debug */,
+				F5100000000000000000000B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		F52000000000000000000009 /* Build configuration list for PBXNativeTarget "SpikeFileProvider" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F5200000000000000000000A /* Debug */,
+				F5200000000000000000000B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		F53000000000000000000009 /* Build configuration list for PBXNativeTarget "SpikeAgent" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F5300000000000000000000A /* Debug */,
+				F5300000000000000000000B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		F50000000000000000000005 /* XCLocalSwiftPackageReference "../.." */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../..;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		F51000000000000000000021 /* VHCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = VHCore;
+		};
+		F51000000000000000000022 /* VHContract */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = VHContract;
+		};
+		F51000000000000000000023 /* VHTransport */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = VHTransport;
+		};
+		F51000000000000000000024 /* VHIdentity */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = VHIdentity;
+		};
+		F51000000000000000000025 /* VHNodes */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = VHNodes;
+		};
+		F52000000000000000000021 /* VHCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = VHCore;
+		};
+		F52000000000000000000022 /* VHContract */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = VHContract;
+		};
+		F52000000000000000000023 /* VHTransport */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = VHTransport;
+		};
+		F52000000000000000000024 /* VHIdentity */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = VHIdentity;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = F50000000000000000000001 /* Project object */;
+}

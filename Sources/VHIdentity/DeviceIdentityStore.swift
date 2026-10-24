@@ -293,6 +293,13 @@ public actor DeviceIdentityStore {
             kSecMatchLimit: kSecMatchLimitOne,
         ]
         applyScope(to: &query)
+        // SPIKE (vaulthalla/desktop#2): the data protection keychain answers errSecParam (-50) to an identity query
+        // with kSecMatchItemList and errSecNotAvailable (-25291) to one by kSecAttrPublicKeyHash; it honors the key's
+        // kSecAttrApplicationLabel (and tag). The certificate check below still pins the result.
+        if configuration.keychain == .dataProtection {
+            query[kSecMatchItemList] = nil
+            query[kSecAttrApplicationLabel] = key.applicationLabel
+        }
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         if status == errSecItemNotFound { return nil }
