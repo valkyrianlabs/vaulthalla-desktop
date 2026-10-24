@@ -128,7 +128,8 @@ import VHIdentity
         }
     }
 
-    /// Runs only in a signed host with a keychain access group (the app's test plan); skipped under `swift test`.
+    /// Runs only in a signed host with a keychain access group; skipped under `swift test`. The same steps run signed
+    /// through `tools/keychain-proof/run.sh` (vaulthalla/desktop#11).
     @Test(.enabled(if: TestKeychain.dataProtectionKeychainAvailable, "needs keychain entitlements (signed app)"))
     func secureEnclaveIdentity() async throws {
         try await TestKeychain.withStore(keychain: .dataProtection) { store in
@@ -138,9 +139,25 @@ import VHIdentity
             let fetched = try #require(try await store.identity(for: "node-a"))
             #expect(fetched.backend == .secureEnclave)
             #expect(fetched.spkiSHA256 == identity.spkiSHA256)
+            #expect(fetched.certificateDER == identity.certificateDER)
             let rotation = try await store.rotate(for: "node-a", serverSPKISHA256: Data.counting(from: 0))
             #expect(rotation.replacement.backend == .secureEnclave)
-            try await store.completeRotation(for: "node-a")
+            #expect(try await store.pendingRotation(for: "node-a")?.spkiSHA256 == rotation.replacement.spkiSHA256)
+            let completed = try await store.completeRotation(for: "node-a")
+            #expect(completed.spkiSHA256 == rotation.replacement.spkiSHA256)
+            #expect(try await store.identity(for: "node-a")?.spkiSHA256 == completed.spkiSHA256)
+
+            let hash = try publicKeyHash(completed.privateKey)
+            try await store.deleteIdentity(for: "node-a")
+            #expect(try await store.identity(for: "node-a") == nil)
+            let namespace = await store.configuration.namespace
+            #expect(
+                !TestKeychain.hasLeftovers(
+                    applicationTag: "\(namespace)/node-a", publicKeyHash: hash, keychain: .dataProtection))
+            #expect(
+                !TestKeychain.hasLeftovers(
+                    applicationTag: "\(namespace)/node-a",
+                    publicKeyHash: try publicKeyHash(identity.privateKey), keychain: .dataProtection))
         }
     }
 }

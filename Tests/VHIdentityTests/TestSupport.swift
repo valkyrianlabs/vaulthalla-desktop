@@ -59,10 +59,16 @@ enum TestKeychain {
     }
 
     /// True if the Keychain still holds a private key with `tag` or a certificate whose public-key hash is `hash`.
-    /// Both filters are honored by the file keychain (checked in `DeviceIdentityStore`'s design notes).
-    static func hasLeftovers(applicationTag tag: String, publicKeyHash hash: Data) -> Bool {
-        let key: [CFString: Any] = [kSecClass: kSecClassKey, kSecAttrApplicationTag: Data(tag.utf8)]
-        let certificate: [CFString: Any] = [kSecClass: kSecClassCertificate, kSecAttrPublicKeyHash: hash]
+    /// Both filters are honored by both keychains (`KeychainQueries`).
+    static func hasLeftovers(
+        applicationTag tag: String, publicKeyHash hash: Data, keychain: DeviceIdentityStore.Keychain = .fileBased
+    ) -> Bool {
+        var key: [CFString: Any] = [kSecClass: kSecClassKey, kSecAttrApplicationTag: Data(tag.utf8)]
+        var certificate: [CFString: Any] = [kSecClass: kSecClassCertificate, kSecAttrPublicKeyHash: hash]
+        if keychain == .dataProtection {
+            key[kSecUseDataProtectionKeychain] = true
+            certificate[kSecUseDataProtectionKeychain] = true
+        }
         return SecItemCopyMatching(key as CFDictionary, nil) != errSecItemNotFound
             || SecItemCopyMatching(certificate as CFDictionary, nil) != errSecItemNotFound
     }
