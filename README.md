@@ -1,6 +1,6 @@
 # Vaulthalla Desktop
 
-The native macOS cockpit for [Vaulthalla](https://github.com/vaulthalla/vaulthalla) deployments: pair your Mac with
+The native macOS cockpit for [Vaulthalla](https://github.com/vaulthalla/server) deployments: pair your Mac with
 each server once, then manage every node, browse vault files, back up vault keys to 1Password, and give AI agents a
 safe MCP surface. Swift 6 and SwiftUI, macOS 27+, Apple Silicon.
 

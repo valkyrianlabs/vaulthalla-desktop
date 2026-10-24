@@ -1,6 +1,6 @@
 # Vaulthalla Desktop: architecture and implementation plan
 
-Status: **approved** (2026-10-20). Decisions **[D#]** were settled by the maintainer the same day; see §8. Server paths are relative to the `vaulthalla/vaulthalla` repository.
+Status: **approved** (2026-10-20). Decisions **[D#]** were settled by the maintainer the same day; see §8. Server paths are relative to the `vaulthalla/server` repository.
 
 Vaulthalla Desktop is a native Swift 6 / SwiftUI app for macOS 27+ on Apple Silicon. It is the administrative
 cockpit for every Vaulthalla deployment the operator has paired. It covers administration, filesystem browsing, MCP
@@ -36,7 +36,7 @@ What the audit found missing:
 
 ## 2. Changes to the daemon and the web console
 
-All of these land in `vaulthalla/vaulthalla` under its own rules: silent builds, unity hygiene, the next migration
+All of these land in `vaulthalla/server` under its own rules: silent builds, unity hygiene, the next migration
 number, `.release/*_NEXT.md`, ops parity tests, and `.claude/context` kept true.
 
 **S1. Device listener and pairing** (the foundation; everything remote depends on it)
