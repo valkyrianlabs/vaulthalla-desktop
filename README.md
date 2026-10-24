@@ -20,6 +20,7 @@ business logic: every action is an operation the daemon authorizes.
 | `App/` | the Xcode project: SwiftUI app, design system, features. Source folders are synchronized: add files on disk, no project edits |
 | `contract/` | `wsContract.json` vendored from the server (`SOURCE.json` records the version); `tools/gen-contract.py` turns it into Swift |
 | `tools/interop/` | `vh-instance.sh`: a private daemon test instance for the opt-in live suite `Tests/VHNodesLiveTests` ([`docs/interop-testing.md`](docs/interop-testing.md)) |
+| `tools/keychain-proof/` | `run.sh <TEAM_ID>`: a team-signed proof that device identities work in the data protection keychain (Secure Enclave create, find, rotate, delete), which unsigned `swift test` and CI can't reach |
 | `docs/` | architecture and protocol documents |
 
 ## Build
@@ -35,6 +36,14 @@ xcodebuild -project App/Vaulthalla.xcodeproj -scheme Vaulthalla -derivedDataPath
 
 Signing is per developer: copy `App/Config/Signing.local.xcconfig.example` to `App/Config/Signing.local.xcconfig`
 (gitignored) and set your team. Without it the app is signed to run locally.
+
+The data protection keychain (Secure Enclave device keys) needs a team-signed process, so `swift test` covers it
+only through the pure query tests (`KeychainQueriesTests`). After changing `Sources/VHIdentity`'s Keychain code, run
+the signed proof (any team works, including a free Personal Team; it cleans up every item it writes):
+
+```sh
+tools/keychain-proof/run.sh <TEAM_ID> [bundle id]
+```
 
 UI regression sweep (renders every section at three window sizes from a DEBUG build; catches AppKit layout loops):
 

@@ -14,11 +14,12 @@ import Security
 /// - certificate: found through its `kSecAttrPublicKeyHash`, which equals the key's `kSecAttrApplicationLabel`. That
 ///   is also how the Keychain pairs the two into a `SecIdentity`.
 ///
-/// Why not query by certificate label or query `kSecClassIdentity` by attributes: the file-based keychain ignores a
+/// Why not query by certificate label or query `kSecClassIdentity` by tag or label: the file-based keychain ignores a
 /// label passed when adding a certificate, and it ignores `kSecAttrLabel`/`kSecAttrApplicationTag` in identity
 /// queries, returning unrelated identities. So every lookup starts from the key (whose tag and label are honored),
-/// reaches the certificate by public-key hash, asks for the identity of exactly that certificate
-/// (`kSecMatchItemList`), and checks the result is that certificate before using it.
+/// reaches the certificate by public-key hash (re-checked by SPKI), asks for the identity of exactly that key and
+/// certificate, and checks the identity's certificate is that certificate before using it. How the identity is asked
+/// for differs by keychain (the data protection keychain rejects `kSecMatchItemList` there): see ``KeychainQueries``.
 public actor DeviceIdentityStore {
     /// Where and under which names identities are stored.
     public struct Configuration: Sendable, Hashable {
@@ -52,9 +53,11 @@ public actor DeviceIdentityStore {
     }
 
     public let configuration: Configuration
+    private let queries: KeychainQueries
 
     public init(configuration: Configuration = Configuration()) {
         self.configuration = configuration
+        self.queries = KeychainQueries(configuration)
     }
 
     // MARK: Public API
@@ -188,35 +191,15 @@ public actor DeviceIdentityStore {
     }
 
     private func generateKey(_ name: KeyName, backend: KeyBackend) throws -> SecKey {
-        // AfterFirstUnlock, not WhenUnlocked: the menu bar extra and the MCP bridge reconnect while the screen is
-        // locked. ThisDeviceOnly: a device key must never migrate to another Mac through a backup.
-        let accessibility = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        var privateAttributes: [CFString: Any] = [
-            kSecAttrIsPermanent: true,
-            kSecAttrApplicationTag: name.tag,
-            kSecAttrLabel: name.label,
-        ]
-        var attributes: [CFString: Any] = [
-            kSecAttrKeyType: kSecAttrKeyTypeECSECPrimeRandom,
-            kSecAttrKeySizeInBits: 256,
-        ]
-        switch backend {
-        case .secureEnclave:
+        var accessControl: SecAccessControl?
+        if backend == .secureEnclave {
             // privateKeyUsage only: no user presence, so TLS handshakes never prompt.
             var error: Unmanaged<CFError>?
-            guard
-                let access = SecAccessControlCreateWithFlags(nil, accessibility, .privateKeyUsage, &error)
-            else { throw IdentityError.keyGeneration(describe(error)) }
-            attributes[kSecAttrTokenID] = kSecAttrTokenIDSecureEnclave
-            privateAttributes[kSecAttrAccessControl] = access
-        case .software:
-            privateAttributes[kSecAttrIsExtractable] = false
-            if configuration.keychain == .dataProtection {
-                privateAttributes[kSecAttrAccessible] = accessibility
-            }
+            accessControl = SecAccessControlCreateWithFlags(
+                nil, KeychainQueries.accessibility, .privateKeyUsage, &error)
+            if accessControl == nil { throw IdentityError.keyGeneration(describe(error)) }
         }
-        attributes[kSecPrivateKeyAttrs] = privateAttributes
-        applyScope(to: &attributes)
+        let attributes = queries.keyGeneration(name, backend: backend, accessControl: accessControl)
 
         var error: Unmanaged<CFError>?
         guard let key = SecKeyCreateRandomKey(attributes as CFDictionary, &error) else {
@@ -231,18 +214,13 @@ public actor DeviceIdentityStore {
     }
 
     private func addCertificate(_ certificate: SecCertificate) throws {
-        var attributes: [CFString: Any] = [kSecClass: kSecClassCertificate, kSecValueRef: certificate]
-        if configuration.keychain == .dataProtection {
-            attributes[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-        }
-        applyScope(to: &attributes)
-        let status = SecItemAdd(attributes as CFDictionary, nil)
+        let status = SecItemAdd(queries.addCertificate(certificate) as CFDictionary, nil)
         guard status == errSecSuccess else { throw IdentityError.keychain("add certificate", status) }
     }
 
     /// The private key stored in the slot and its application label (SHA-1 of the public key), or `nil`.
     private func copyKey(_ name: KeyName) throws -> (key: SecKey, applicationLabel: Data)? {
-        var query = keyQuery(name)
+        var query = queries.key(name)
         query[kSecReturnRef] = true
         query[kSecReturnAttributes] = true
         query[kSecMatchLimit] = kSecMatchLimitOne
@@ -260,7 +238,7 @@ public actor DeviceIdentityStore {
 
     /// The certificates whose public key is `key`, found by public-key hash and re-checked by SPKI.
     private func copyCertificates(for key: (key: SecKey, applicationLabel: Data)) throws -> [SecCertificate] {
-        var query = certificateQuery(publicKeyHash: key.applicationLabel)
+        var query = queries.certificates(publicKeyHash: key.applicationLabel)
         query[kSecReturnRef] = true
         query[kSecMatchLimit] = kSecMatchLimitAll
         var result: CFTypeRef?
@@ -282,38 +260,44 @@ public actor DeviceIdentityStore {
         }
     }
 
+    /// The identity of the slot's key and its certificate. The query differs by keychain (``KeychainQueries``); the
+    /// result is pinned to the certificate either way.
     private func copyIdentity(_ name: KeyName) throws -> SecIdentity? {
         guard let key = try copyKey(name), let certificate = try copyCertificates(for: key).last else {
             return nil
         }
-        var query: [CFString: Any] = [
-            kSecClass: kSecClassIdentity,
-            kSecMatchItemList: [certificate],
-            kSecReturnRef: true,
-            kSecMatchLimit: kSecMatchLimitOne,
-        ]
-        applyScope(to: &query)
+        let query = queries.identity(certificate: certificate, applicationLabel: key.applicationLabel)
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         if status == errSecItemNotFound { return nil }
-        guard status == errSecSuccess, let result, CFGetTypeID(result) == SecIdentityGetTypeID() else {
+        guard status == errSecSuccess, let result else {
             throw IdentityError.keychain("copy identity", status == errSecSuccess ? errSecInternalError : status)
         }
-        let identity = result as! SecIdentity  // type id checked above
-        var paired: SecCertificate?
-        guard SecIdentityCopyCertificate(identity, &paired) == errSecSuccess, let paired,
-            SecCertificateCopyData(paired) as Data == SecCertificateCopyData(certificate) as Data
-        else { throw IdentityError.certificate("the Keychain returned an identity for a different certificate") }
-        return identity
+        // One reference (kSecMatchLimitOne) or an array of them (kSecMatchLimitAll).
+        let candidates = (result as? [CFTypeRef]) ?? [result]
+        let expected = SecCertificateCopyData(certificate) as Data
+        for candidate in candidates {
+            guard CFGetTypeID(candidate) == SecIdentityGetTypeID() else {
+                throw IdentityError.keychain("copy identity", errSecInternalError)
+            }
+            let identity = candidate as! SecIdentity  // type id checked above
+            var paired: SecCertificate?
+            if SecIdentityCopyCertificate(identity, &paired) == errSecSuccess, let paired,
+                SecCertificateCopyData(paired) as Data == expected
+            {
+                return identity
+            }
+        }
+        throw IdentityError.certificate("the Keychain returned an identity for a different certificate")
     }
 
     /// Deletes the slot's key and the certificates for it. Only items this store wrote can match: the key by its
     /// namespaced tag and label, the certificates by that key's public-key hash (checked before deleting).
     private func deleteItems(_ name: KeyName) throws {
         if let key = try copyKey(name), try !copyCertificates(for: key).isEmpty {
-            try deleteAll(certificateQuery(publicKeyHash: key.applicationLabel), "delete certificates")
+            try deleteAll(queries.certificates(publicKeyHash: key.applicationLabel), "delete certificates")
         }
-        try deleteAll(keyQuery(name), "delete key")
+        try deleteAll(queries.key(name), "delete key")
     }
 
     private func deleteAll(_ query: [CFString: Any], _ operation: String) throws {
@@ -328,31 +312,7 @@ public actor DeviceIdentityStore {
     /// Moves a key to another slot. Its certificate follows by public-key hash, so it needs no update.
     private func relabel(_ name: KeyName, to target: KeyName) throws {
         let changes: [CFString: Any] = [kSecAttrLabel: target.label]
-        let status = SecItemUpdate(keyQuery(name) as CFDictionary, changes as CFDictionary)
+        let status = SecItemUpdate(queries.key(name) as CFDictionary, changes as CFDictionary)
         guard status == errSecSuccess else { throw IdentityError.keychain("relabel key", status) }
-    }
-
-    private func keyQuery(_ name: KeyName) -> [CFString: Any] {
-        var query: [CFString: Any] = [
-            kSecClass: kSecClassKey,
-            kSecAttrKeyClass: kSecAttrKeyClassPrivate,
-            kSecAttrApplicationTag: name.tag,
-            kSecAttrLabel: name.label,
-        ]
-        applyScope(to: &query)
-        return query
-    }
-
-    private func certificateQuery(publicKeyHash: Data) -> [CFString: Any] {
-        var query: [CFString: Any] = [kSecClass: kSecClassCertificate, kSecAttrPublicKeyHash: publicKeyHash]
-        applyScope(to: &query)
-        return query
-    }
-
-    private func applyScope(to query: inout [CFString: Any]) {
-        if configuration.keychain == .dataProtection {
-            query[kSecUseDataProtectionKeychain] = true
-            if let group = configuration.accessGroup { query[kSecAttrAccessGroup] = group }
-        }
     }
 }
