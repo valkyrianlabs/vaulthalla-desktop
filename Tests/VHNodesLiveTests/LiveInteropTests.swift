@@ -111,6 +111,20 @@ struct LiveInteropTests {
             #expect(helloResponse.statusCode == 200)
             #expect(hello == seededHello)
 
+            // A credential consumer (docs/architecture.md §3: the bridge, the File Provider extension) on the same
+            // Keychain without the lease: it connects with the owner's rotated key and can't rotate.
+            let consumerKeys = DeviceKeys(primary: keys.primary, development: nil, preferredBackend: .software)
+            let consumer = NodeSession(node: node, keys: consumerKeys, configuration: settings)
+            let consumerEvents = Recorder(consumer.events)
+            await consumer.start()
+            defer { Task { await consumer.stop() } }
+            try #require(await consumerEvents.first(within: .seconds(20)) { $0.status == .online } != nil,
+                         "the consumer never came online: \(consumerEvents.all)")
+            #expect(await consumer.identity?.deviceID == rotated)
+            await #expect(throws: CredentialOwnershipError.self) { try await consumer.rotateDeviceKey() }
+            let reader = CredentialReader(registry: nil, keys: consumerKeys)
+            #expect(await reader.check(NodeCredentials(node: node, identity: current)) == .accepted)
+
             // 6. Revocation from the CLI: the live session reports it and stays down.
             let mark = events.all.count
             try await LiveNode.vh(["device", "revoke", String(rotated.prefix(16))])
@@ -124,6 +138,11 @@ struct LiveInteropTests {
             #expect(afterRevocation.last == .revoked, "statuses after the revocation: \(afterRevocation)")
             #expect(!afterRevocation.contains(.online))
             #expect(await session.client == nil, "a revoked session keeps no connection")
+            // The consumer is told too: refused, reloaded, refused again. It records nothing.
+            try #require(await consumerEvents.first(within: .seconds(20)) { $0.status == .revoked } != nil,
+                         "the consumer wasn't told: \(consumerEvents.all)")
+            #expect(!consumerEvents.all.contains { if case .recordChanged = $0 { true } else { false } })
+            #expect(await reader.check(NodeCredentials(node: node, identity: current)) == .refused)
 
             // The lanes refuse the revoked key (a fresh TLS connection is pairing-only).
             await #expect(throws: DeviceHTTPError.forbidden) {
