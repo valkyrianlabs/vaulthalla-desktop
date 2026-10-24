@@ -12,9 +12,11 @@ extension KeychainSuite {
         func fallsBackToASoftwareKeyWithoutEntitlements() async throws {
             let fixture = try KeychainFixture.require()
             let namespace = await fixture.store.configuration.namespace
+            let registry = try TestRegistry()
+            defer { registry.remove() }
             let keys = DeviceKeys(
                 primary: DeviceIdentityStore(configuration: .init(namespace: namespace, keychain: .dataProtection)),
-                development: fixture.store)
+                development: fixture.store, lease: registry.lease)
             #expect(keys.preferredBackend == .secureEnclave)
 
             let created = try await keys.identityForPairing(nodeTag: "node-r", deviceName: "Test Mac",

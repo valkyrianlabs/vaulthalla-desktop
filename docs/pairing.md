@@ -119,6 +119,9 @@ one is `conflict`.
 Desktop (`DeviceIdentityStore.rotate`) keeps the new identity in a pending slot, sends the proof, and on success calls
 `completeRotation` and reconnects. If the reply is lost, on the next connect it tries the pending identity first;
 if that is refused it falls back to the current one and re-sends `rotate` (a fresh proof over the same new key).
+Only one process on the Mac rotates: the credential owner (architecture.md §3, "Credential ownership"). Every other
+process holding the old key is refused once the owner first connects with the new one; it reloads the Keychain and
+retries once, and treats a refusal that survives the reload as a revocation. None of this changes the protocol.
 
 ## 5. Server key rotation
 

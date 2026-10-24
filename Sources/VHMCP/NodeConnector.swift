@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import VHIdentity
 public import VHContract
 public import VHCore
@@ -31,6 +32,19 @@ public enum NodeConnectFailure: Error, Hashable, Sendable {
     /// The Keychain refused the lookup (for a development build's file-keychain key: the access prompt was denied).
     case keychain(String)
     case invalidAddress
+    /// The node registry can't be read.
+    case registry(String)
+
+    /// The consumer's failure in the bridge's terms.
+    public init(_ failure: CredentialFailure) {
+        switch failure {
+        case .unknownNode, .notPaired: self = .notPaired
+        case .revoked: self = .revoked
+        case .missingKey: self = .missingKey
+        case .keychain(let detail): self = .keychain(detail)
+        case .registry(let detail): self = .registry(detail)
+        }
+    }
 
     public var message: String {
         switch self {
@@ -39,6 +53,7 @@ public enum NodeConnectFailure: Error, Hashable, Sendable {
         case .missingKey: "This Mac's key for the node is missing. Pair it again in Vaulthalla."
         case .keychain(let detail): "This Mac's key for the node can't be read (\(detail))."
         case .invalidAddress: "The node's address can't be used."
+        case .registry(let detail): "The saved node list can't be read (\(detail))."
         }
     }
 }
@@ -48,42 +63,77 @@ public protocol NodeMCPConnector: Sendable {
     /// A transport presenting this Mac's identity for `node` and pinning the server's key. `idleTimeout` is how long
     /// a request may wait for the server to say anything.
     func connect(_ node: Node, idleTimeout: Duration) async throws(NodeConnectFailure) -> any NodeMCPTransport
+
+    /// The node refused the last transport made for it (HTTP 403): the owner may have rotated this Mac's key or
+    /// promoted a server pin since. Re-reads the credentials and makes a transport with them; returns the record it
+    /// used, which may be newer than `node`. The default connects again with `node`.
+    func reconnect(afterRefusalOf node: Node, idleTimeout: Duration) async throws(NodeConnectFailure)
+        -> (transport: any NodeMCPTransport, node: Node)
 }
 
-/// The app's trust: the device identity the app created for the node (``DeviceKeys``: Secure Enclave in the data
-/// protection keychain, or a development build's software key in the file keychain) and the server pins from the
-/// node registry. Nothing here creates, rotates or deletes a key.
-public struct KeychainNodeConnector: NodeMCPConnector {
-    public let keys: DeviceKeys
+extension NodeMCPConnector {
+    public func reconnect(afterRefusalOf node: Node, idleTimeout: Duration) async throws(NodeConnectFailure)
+        -> (transport: any NodeMCPTransport, node: Node)
+    {
+        (try await connect(node, idleTimeout: idleTimeout), node)
+    }
+}
 
-    public init(keys: DeviceKeys) {
-        self.keys = keys
+/// The app's trust: the device identity the credential owner created for the node (``DeviceKeys``: Secure Enclave in
+/// the data protection keychain, or a development build's software key in the file keychain) and the server pins from
+/// the node registry. A consumer (docs/architecture.md §3, "Credential ownership"): it reads both through a
+/// ``CredentialReader`` and creates, rotates, deletes and writes nothing. After a refusal it reloads the record and
+/// the Keychain and presents the newest key that isn't the refused one (the owner's rotated key).
+public struct KeychainNodeConnector: NodeMCPConnector {
+    public let reader: CredentialReader
+    public var keys: DeviceKeys { reader.keys }
+
+    /// The device id last presented to each node, to tell the refused key from a newer one.
+    private final class Presented: Sendable {
+        let ids = Mutex<[NodeID: String]>([:])
+    }
+    private let presented = Presented()
+
+    /// `registry`: where a reconnect after a refusal re-reads the record (nil: the bridge's record is used as given).
+    public init(keys: DeviceKeys, registry: NodeStore? = nil) {
+        self.reader = CredentialReader(registry: registry, keys: keys)
     }
 
     public func connect(_ node: Node, idleTimeout: Duration) async throws(NodeConnectFailure)
         -> any NodeMCPTransport
     {
-        let pin: Data
-        switch node.pairing {
-        case .paired(let serverSPKISHA256, _, _): pin = serverSPKISHA256
-        case .revoked: throw .revoked
-        case .unpaired, .pending: throw .notPaired
-        }
-        let identity: DeviceIdentity
+        let credentials: NodeCredentials
         do {
-            guard let found = try await keys.identity(for: node.id.rawValue) else { throw NodeConnectFailure.missingKey }
-            identity = found
-        } catch let failure as NodeConnectFailure {
-            throw failure
+            credentials = try await reader.load(node)
         } catch {
-            throw .keychain(String(describing: error))
+            throw NodeConnectFailure(error)
         }
+        return try transport(credentials, idleTimeout: idleTimeout)
+    }
+
+    public func reconnect(afterRefusalOf node: Node, idleTimeout: Duration) async throws(NodeConnectFailure)
+        -> (transport: any NodeMCPTransport, node: Node)
+    {
+        let refused = presented.ids.withLock { $0[node.id] }
+        let credentials: NodeCredentials
         do {
-            return try DeviceHTTPClient(configuration: .init(
-                endpoint: node.endpoint, identity: identity.secIdentity, serverSPKIPin: pin,
-                nextServerSPKIPin: node.nextServerSPKISHA256, timeout: idleTimeout))
+            credentials = try await reader.reload(node, refusing: refused)
+        } catch {
+            throw NodeConnectFailure(error)
+        }
+        return (try transport(credentials, idleTimeout: idleTimeout), credentials.node)
+    }
+
+    private func transport(_ credentials: NodeCredentials, idleTimeout: Duration) throws(NodeConnectFailure)
+        -> any NodeMCPTransport
+    {
+        let made: DeviceHTTPClient
+        do {
+            made = try DeviceHTTPClient(configuration: credentials.laneConfiguration(timeout: idleTimeout))
         } catch {
             throw .invalidAddress
         }
+        presented.ids.withLock { $0[credentials.node.id] = credentials.identity.deviceID }
+        return made
     }
 }

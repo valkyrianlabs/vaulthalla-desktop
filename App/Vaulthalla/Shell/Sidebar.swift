@@ -51,6 +51,9 @@ struct Sidebar: View {
             if let problem = model.registryProblem {
                 RegistryProblemBanner(message: problem, fileURL: model.registryURL) { model.loadNodes() }
                     .padding(10)
+            } else if !model.isCredentialOwner {
+                ConsumerBanner(owner: model.credentialOwner)
+                    .padding(10)
             }
         }
     }
@@ -133,6 +136,33 @@ struct NodeRow: View {
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
         .accessibilityValue(status.label)
+    }
+}
+
+/// This app is a credential consumer: another process holds the lease (docs/architecture.md §3).
+private struct ConsumerBanner: View {
+    var owner: CredentialLease.Holder?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Label("Read-only", systemImage: "lock.fill")
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(StatusTone.info.color)
+            Text(ownerText + " manages this Mac's keys and saved nodes. This window shows them and takes over when it quits.")
+                .font(.caption)
+                .foregroundStyle(.fgMuted)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(StatusTone.info.soft, in: RoundedRectangle(cornerRadius: Theme.radiusControl + 2, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: Theme.radiusControl + 2, style: .continuous).strokeBorder(StatusTone.info.line)
+        }
+    }
+
+    private var ownerText: String {
+        guard let owner else { return "Another Vaulthalla process" }
+        return "Another Vaulthalla process (\(owner.name), pid \(owner.pid))"
     }
 }
 

@@ -141,6 +141,45 @@ docs/                   this plan, the pairing protocol, release notes
   keys live in the Keychain and Secure Enclave. Nothing secret goes in `UserDefaults` or in logs.
   - `Logger` uses `.private` for everything user-derived.
   - Key material is held in a `SecretBytes` type that zeroes on deinit and has no `description`.
+- **Credential ownership: one owner, every other process a consumer** (desktop#3). A rotation in one process would
+  strand every other process presenting the old key, because the daemon clears `previous_spki_sha256` on the first
+  handshake with the new key (`docs/pairing.md` §4). So exactly one process on the Mac, the *owner*, creates, rotates
+  and deletes device keys and writes the registry (pairing outcomes, rotated device ids, server pin announcements and
+  promotions, revocations, node edits). The background agent is the intended owner; until it ships, the app is.
+  - **The lease.** Ownership is an exclusive BSD `flock(2)` lease on `credential-owner.lease` next to `nodes.json`
+    (`VHCore.CredentialLease`), taken without waiting. The kernel ties it to the open file, so it is released when the
+    owner exits or crashes, with nothing stale to clean up; two handles conflict even within one process; the file is
+    close-on-exec and never deleted. The holder writes its name and pid into the file for diagnostics only. The lease
+    location is derived from the registry location, which is injected (`NodeStore(fileURL:lease:)`), so moving the
+    registry to the App Group container (for the File Provider extension) moves the lease with it, and the agent takes
+    over by taking the same lease. Nothing is hardcoded to the app.
+  - **Enforced, not conventional.** `NodeStore` and `DeviceKeys` take the lease handle and check it before every
+    change: without a held lease (and, for the store, the lease of *its* registry) every mutation throws
+    (`NodeStore.Failure.notOwner`, `CredentialOwnershipError.notOwner`) before touching the file or the Keychain. A
+    process that never takes the lease can't reach the rotation or registry-mutation paths.
+  - **Roles.** `NodeSession.role` / `NodeSessions.role` is `.owner` while the session's `DeviceKeys` hold the lease,
+    else `.consumer`. A consumer session presents the identity the owner saved, never rotates (`rotateDeviceKey()`
+    throws), never resumes, completes or cancels the owner's rotation, and reports no `recordChanged` (an announced or
+    promoted server key stays in its memory). `NodeSessions.sync` restarts sessions whose role changed, so a takeover
+    needs no rebuild.
+  - **Consumers reload, then fail closed** (`VHNodes.CredentialReader`, generalized from the MCP bridge's retry and
+    shared by the app as consumer, the File Provider extension and `vaulthalla-mcp`). When a node refuses the key a
+    consumer presented (`device_unknown` on the ws, 403 on the lanes or `/mcp`), it re-reads the registry and the
+    Keychain and retries once with the newest identity that isn't the refused one: the owner's rotated key, or the
+    pending replacement of a rotation whose answer was lost (the owner's reconnect with it already ended the old key's
+    grace). A refusal that survives the reload is a revocation: `NodeSession` reports `.revoked`,
+    `CredentialReader.withCredentials` throws `CredentialFailure.revoked`, the bridge reports the node revoked and
+    drops its tools. A lane 403 can also be an RBAC refusal, so `withCredentials` asks the node directly first
+    (`check`: one ws `device.server.identity` with that key). A record the owner marked revoked ends every consumer at
+    once. The owner records the revocation (`recordChanged(.revoked)`); consumers only report it.
+  - **The app.** `VaulthallaApp` takes the lease at launch. If another process holds it (a second app instance today,
+    the agent later), the app runs as a consumer: the sidebar says read-only and who owns, edits are refused with a
+    message, pairing, Rotate Key Now and Unpair This Mac are disabled, sessions are consumers, and it re-reads the
+    registry every 2 s and takes the lease over as soon as the owner lets go. When the agent ships, the app stops
+    taking the lease and talks to the agent instead (an XPC client), and the agent becomes the only owner; a handoff
+    between a running app and a starting agent is part of that work.
+  - `vaulthalla-mcp` never takes the lease: its registry and keys are read-only by construction.
+  - Desktop still holds no business logic, and neither the pairing protocol nor the server changed.
 
 ## 4. Pairing protocol (summary; the normative spec is `docs/pairing.md`)
 
@@ -205,8 +244,9 @@ There is no device-scoped permission system.
   `Sources/VHMCP` + `Sources/vaulthalla-mcp`; the Xcode tool target of the same name is embedded by the app's
   "Embed MCP Bridge" phase and signed on copy with the app's identity when signing is on).
   - **Trust.** It reads the node registry (`nodes.json`) and presents the device identity the app created for each
-    node (`DeviceKeys`), pinning the server SPKI from the record, exactly like the app's HTTP lanes. It creates,
-    rotates and deletes nothing. A Secure Enclave key lives in the data protection keychain, so the helper must be
+    node (`DeviceKeys`), pinning the server SPKI from the record, exactly like the app's HTTP lanes. It is a
+    credential consumer (§3, "Credential ownership"): it never takes the lease, so it creates, rotates, deletes and
+    writes nothing. A Secure Enclave key lives in the data protection keychain, so the helper must be
     signed by the same team with the app's `keychain-access-groups` (`$(AppIdentifierPrefix)sh.vaulthalla.desktop`);
     that entitlement is restricted on macOS and a bare executable can't carry a provisioning profile, so the release
     build (D7) wraps the helper in a minimal bundle with an embedded profile if the plain binary is refused. Unsigned
@@ -225,8 +265,8 @@ There is no device-scoped permission system.
     (`isError`, structured `needs_confirmation`) or JSON-RPC error comes back verbatim, so the destructive gate and
     confirmations work exactly as with `vh mcp`.
   - **Per node:** `initialize` lazily, once per connection; `MCP-Protocol-Version` on every later request; a 400
-    (refused before anything ran) re-initializes and retries once; a 403 retries once on a fresh connection (the
-    app may have rotated the key), then reports that the node no longer accepts this Mac.
+    (refused before anything ran) re-initializes and retries once; a 403 retries once on a fresh connection made from
+    the reloaded registry record and Keychain (the owner may have rotated the key, §3), then reports the node revoked.
   - **Deadlines and cancellation.** A call is abandoned after `VAULTHALLA_MCP_TIMEOUT` seconds (default 600, `0`:
     none), the daemon's own variable and default; the node may still finish it. `notifications/cancelled` cancels the
     call's HTTP request and its answer is never sent. Calls run concurrently; `ping` is always answered.

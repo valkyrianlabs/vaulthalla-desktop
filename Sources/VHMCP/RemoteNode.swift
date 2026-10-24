@@ -39,8 +39,10 @@ enum NodeRequestFailure: Error, Sendable {
 /// The bridge's MCP client for one node: Streamable HTTP as the daemon's `/mcp` serves it (POST only, JSON
 /// responses, 202 for notifications, no MCP session id). `initialize` runs lazily, once per transport; the negotiated
 /// version rides every later request in `MCP-Protocol-Version`, and a 400 (a version or framing refusal, sent before
-/// anything runs) re-initializes and retries once. A 403 retries once on a fresh transport, because the app may have
-/// rotated this Mac's key since the transport was made.
+/// anything runs) re-initializes and retries once. A 403 (on `initialize` or any later request) retries once on a
+/// fresh transport made from reloaded credentials (``NodeMCPConnector/reconnect(afterRefusalOf:idleTimeout:)``),
+/// because the credential owner may have rotated this Mac's key since the transport was made; a 403 that survives
+/// the reload means the node revoked this Mac (``NodeConnectFailure/revoked``).
 actor RemoteNode {
     /// Versions the bridge can relay, newest first (the daemon's `kProtocolVersions`).
     static let protocolVersions = ["2025-11-25", "2025-06-18", "2025-03-26"]
@@ -56,6 +58,8 @@ actor RemoteNode {
     private var generation = 0
     private var protocolVersion: String?
     private var nextRequestID: Int64 = 1
+    /// The node refused the last transport: the next one is made from reloaded credentials.
+    private var reloadCredentials = false
 
     /// The last catalog the node returned; empty while it is unreachable.
     private(set) var tools: [JSONValue] = []
@@ -167,10 +171,19 @@ actor RemoteNode {
         -> JSONValue
     {
         var retried = false
+        var refusedAgain = false
         while true {
             try checkCancellation()
             let transport = try await currentTransport()
-            let version = try await initialize(transport, timeout: timeout)
+            let version: String
+            do throws(NodeRequestFailure) {
+                version = try await initialize(transport, timeout: timeout)
+            } catch .http(.forbidden) {
+                guard !refusedAgain else { throw .connect(.revoked) }
+                refusedAgain = true
+                refused()
+                continue
+            }
             let id = nextRequestID
             nextRequestID += 1
             let (status, body) = try await post(transport, RPC.request(id: id, method: method, params: params),
@@ -187,12 +200,10 @@ actor RemoteNode {
                 protocolVersion = nil
                 continue
             case 403:
-                if !retried {
-                    retried = true
-                    dropTransport()
-                    continue
-                }
-                throw .http(.forbidden)
+                guard !refusedAgain else { throw .connect(.revoked) }
+                refusedAgain = true
+                refused()
+                continue
             default:
                 throw .status(status)
             }
@@ -224,10 +235,25 @@ actor RemoteNode {
         }
     }
 
+    /// The node refused the transport's key: drop it, and make the next one from reloaded credentials.
+    private func refused() {
+        dropTransport()
+        reloadCredentials = true
+    }
+
     private func currentTransport() async throws(NodeRequestFailure) -> any NodeMCPTransport {
         if let transport { return transport }
         do {
-            let made = try await connector.connect(node, idleTimeout: idleTimeout)
+            let made: any NodeMCPTransport
+            if reloadCredentials {
+                let (fresh, record) = try await connector.reconnect(afterRefusalOf: node, idleTimeout: idleTimeout)
+                reloadCredentials = false
+                // The owner's newer record (a promoted pin, say); the registry sync catches up on its own.
+                node = record
+                made = fresh
+            } else {
+                made = try await connector.connect(node, idleTimeout: idleTimeout)
+            }
             if let transport { return transport }  // another request connected meanwhile
             transport = made
             generation += 1

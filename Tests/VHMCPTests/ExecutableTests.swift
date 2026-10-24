@@ -17,7 +17,7 @@ import VHCore
     func speaksMCPOnStdoutOnly() async throws {
         let registry = TempRegistry()
         defer { registry.remove() }
-        try registry.store.add(Node(id: NodeID(rawValue: "node-u"), displayName: "Spare",
+        try registry.writer.add(Node(id: NodeID(rawValue: "node-u"), displayName: "Spare",
                                     endpoint: NodeEndpoint(host: "192.0.2.1")))
 
         let secret = "hunter2-\(UUID().uuidString)"

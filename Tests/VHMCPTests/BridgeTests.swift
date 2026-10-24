@@ -12,8 +12,8 @@ import VHCore
     let beta = FakeDaemon(name: "beta", tools: Catalog.standard)
 
     private func client(settings: MCPBridge.Settings = Client.settings()) throws -> Client {
-        try registry.store.add(TempRegistry.paired("node-a", name: "Alpha"))
-        try registry.store.add(TempRegistry.paired("node-b", name: "Beta"))
+        try registry.writer.add(TempRegistry.paired("node-a", name: "Alpha"))
+        try registry.writer.add(TempRegistry.paired("node-b", name: "Beta"))
         return Client(registry: registry.store,
                       connector: FakeConnector(daemons: [NodeID(rawValue: "node-a"): alpha,
                                                          NodeID(rawValue: "node-b"): beta]),
@@ -155,7 +155,7 @@ import VHCore
 
     @Test func badNodeArgumentsAndUnknownTools() async throws {
         defer { registry.remove() }
-        try registry.store.add(TempRegistry.paired("node-c", name: "alpha"))
+        try registry.writer.add(TempRegistry.paired("node-c", name: "alpha"))
         let client = try client()
         _ = try await client.tools()
 
@@ -282,7 +282,7 @@ import VHCore
 
     @Test func unpairedNodesAreListedButOfferNothing() async throws {
         defer { registry.remove() }
-        try registry.store.add(Node(id: NodeID(rawValue: "node-p"), displayName: "Pending",
+        try registry.writer.add(Node(id: NodeID(rawValue: "node-p"), displayName: "Pending",
                                     endpoint: NodeEndpoint(host: "10.0.0.9"), pairing: .pending(code: "123456")))
         let client = try client()
         let listed = try await client.call("nodes_list", [:])

@@ -118,7 +118,14 @@ enum LiveKeychain {
         await KeychainLock.shared.acquire()
         let store = DeviceIdentityStore(configuration: .init(
             namespace: "sh.vaulthalla.desktop.test.\(UUID().uuidString.lowercased())", keychain: .fileBased))
-        let keys = DeviceKeys(primary: store, development: nil, preferredBackend: .software)
+        // The suite is the credential owner: it pairs, rotates and deletes (docs/architecture.md §3).
+        let leaseDirectory = FileManager.default.temporaryDirectory
+            .appending(path: "vh-live-lease-\(UUID().uuidString)", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: leaseDirectory) }
+        let lease = CredentialLease(forRegistry: leaseDirectory.appending(path: "nodes.json"), holder: "live-test")
+        try lease.acquire()
+        defer { lease.release() }
+        let keys = DeviceKeys(primary: store, development: nil, preferredBackend: .software, lease: lease)
         do {
             let result = try await body(keys)
             try await cleanUp(store)

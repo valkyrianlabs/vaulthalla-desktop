@@ -63,10 +63,14 @@ struct ThisMacPanel: View {
                             Label("Rotate Key Now", systemImage: "arrow.triangle.2.circlepath")
                         }
                     }
-                    .disabled(rotatingFrom != nil || model.sessions?.session(for: node.id) == nil)
-                    .help("Make a new key for this Mac, signed by the current one. The node switches to it on the next connection; nothing else changes.")
+                    .disabled(rotatingFrom != nil || model.sessions?.session(for: node.id) == nil
+                              || !model.isCredentialOwner)
+                    .help(model.isCredentialOwner
+                          ? "Make a new key for this Mac, signed by the current one. The node switches to it on the next connection; nothing else changes."
+                          : "Another Vaulthalla process manages this Mac's keys and rotates them.")
 
                     Button("Unpair This Mac…", systemImage: "minus.circle", role: .destructive) { unpairing = true }
+                        .disabled(!model.isCredentialOwner)
                         .help("Revoke this Mac on \(node.displayName) and delete its key here")
                     Spacer(minLength: 0)
                     Text("The key is rotated every 90 days on its own.")
@@ -117,7 +121,13 @@ struct ThisMacPanel: View {
         guard let deviceID = node.pairedDeviceID, let session = model.sessions?.session(for: node.id) else { return }
         rotated = false
         rotatingFrom = deviceID
-        Task { await session.rotateDeviceKey() }
+        Task {
+            do {
+                try await session.rotateDeviceKey()
+            } catch {
+                rotatingFrom = nil
+            }
+        }
     }
 }
 
@@ -161,6 +171,11 @@ private struct UnpairThisMac: ViewModifier {
         let model = self.model
         let id = node.id
         guard let deviceID = node.pairedDeviceID else { return }
+        // Revoking deletes the key and writes the registry: only the credential owner may.
+        guard model.isCredentialOwner else {
+            failure = .error(CredentialOwnershipError.notOwner(operation: "unpair this Mac").description)
+            return
+        }
         let mutation = NodeMutation(Ws.Device.Revoke.self, on: queries, invalidating: ["device.list"])
         guard await mutation.run(.init(deviceID: deviceID)) != nil else {
             failure = mutation.error ?? .error("\(node.displayName) asked for a confirmation this version can't give.")

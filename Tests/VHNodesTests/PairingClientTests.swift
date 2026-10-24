@@ -15,10 +15,13 @@ extension KeychainSuite {
         let fixture = try KeychainFixture.require()
         let daemon = try await MockDaemon.start(identity: fixture.server)
         defer { daemon.stop() }
-        let keys = DeviceKeys(primary: fixture.store, development: nil, preferredBackend: .software)
-        let identity = try await keys.identityForPairing(nodeTag: "node-a", deviceName: "Test Mac",
-                                                         replacingExisting: false)
-        try await body(daemon, keys, identity, fixture.store)
+        try await TestRegistry.with { registry in
+            // Pairing is the credential owner's.
+            let keys = registry.ownerKeys(fixture.store)
+            let identity = try await keys.identityForPairing(nodeTag: "node-a", deviceName: "Test Mac",
+                                                             replacingExisting: false)
+            try await body(daemon, keys, identity, fixture.store)
+        }
     }
 
     private func finalState(_ states: Recorder<PairingClient.State>) async -> PairingClient.State? {

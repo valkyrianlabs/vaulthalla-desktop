@@ -32,10 +32,12 @@ if !settings.apply(environment: environment) {
 }
 
 let registryURL = environment["VAULTHALLA_MCP_REGISTRY"].map { URL(fileURLWithPath: $0) } ?? NodeStore.defaultFileURL()
+// A credential consumer (docs/architecture.md §3): no lease, so the registry and the keys are read-only here.
+let registry = NodeStore(fileURL: registryURL)
 let writer = StandardIO.Writer()
 let bridge = MCPBridge(
-    registry: NodeStore(fileURL: registryURL),
-    connector: KeychainNodeConnector(keys: .standard()),
+    registry: registry,
+    connector: KeychainNodeConnector(keys: .standard(), registry: registry),
     settings: settings,
     log: log,
     output: { data in await writer.write(data) })

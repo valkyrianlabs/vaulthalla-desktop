@@ -10,6 +10,7 @@ extension KeychainSuite {
 @Suite struct NodeSessionTests {
     private struct Fixture: Sendable {
         let daemon: MockDaemon
+        /// The credential owner's keys (they rotate).
         let keys: DeviceKeys
         let store: DeviceIdentityStore
         let identity: DeviceIdentity
@@ -35,7 +36,9 @@ extension KeychainSuite {
             id: NodeID(rawValue: tag), displayName: "vh-test",
             endpoint: NodeEndpoint(host: "127.0.0.1", port: daemon.port),
             pairing: .paired(serverSPKISHA256: shared.server.spkiSHA256, deviceID: identity.deviceID, since: .now))
-        let keys = DeviceKeys(primary: store, development: nil, preferredBackend: .software)
+        let registry = try TestRegistry()
+        defer { registry.remove() }
+        let keys = registry.ownerKeys(store)
         do {
             try await body(Fixture(daemon: daemon, keys: keys, store: store, identity: identity, node: node))
             if keyAge != nil { try await store.deleteIdentity(for: tag) }
@@ -157,7 +160,7 @@ extension KeychainSuite {
         try await withPairedNode(keyAge: 3600) { fixture in
             let (session, events) = await start(fixture)
             #expect(await online(events))
-            await session.rotateDeviceKey()
+            try await session.rotateDeviceKey()
             let rotated = try #require(await rotatedDeviceID(events, from: fixture.identity.deviceID))
             try await expectRotated(fixture, events: events, to: rotated, rotations: 1)
             await session.stop()

@@ -85,7 +85,7 @@ struct LiveInteropTests {
             http.invalidate()
 
             // 5. Rotation on demand: the session reconnects with the new key and the daemon lists it.
-            await session.rotateDeviceKey()
+            try await session.rotateDeviceKey()
             let rotated = try #require(await Self.rotatedDeviceID(events, from: deviceID),
                                        "no rotation reported: \(events.all)")
             let index = events.all.firstIndex { $0.identityID == rotated } ?? 0

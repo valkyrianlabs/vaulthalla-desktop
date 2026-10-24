@@ -36,9 +36,9 @@ import VHNodes
 
             let registry = TempRegistry()
             defer { registry.remove() }
-            try registry.store.add(TempRegistry.paired("node-a", name: "Alpha", port: listenerA.port,
+            try registry.writer.add(TempRegistry.paired("node-a", name: "Alpha", port: listenerA.port,
                                                        pin: serverA.spkiSHA256))
-            try registry.store.add(TempRegistry.paired("node-b", name: "Beta", port: listenerB.port,
+            try registry.writer.add(TempRegistry.paired("node-b", name: "Beta", port: listenerB.port,
                                                        pin: serverB.spkiSHA256))
             let client = Client(registry: registry.store, connector: KeychainNodeConnector(keys: keys))
             try await client.initialize()
@@ -91,7 +91,7 @@ import VHNodes
 
             let registry = TempRegistry()
             defer { registry.remove() }
-            try registry.store.add(TempRegistry.paired("node-a", name: "Alpha", port: listener.port,
+            try registry.writer.add(TempRegistry.paired("node-a", name: "Alpha", port: listener.port,
                                                        pin: pinned.spkiSHA256))
             let client = Client(registry: registry.store, connector: KeychainNodeConnector(keys: keys))
             #expect(JSONValue.array(try await client.tools()).toolNames == ["nodes_list"])
@@ -108,13 +108,75 @@ import VHNodes
         try await withKeychain { store in
             let registry = TempRegistry()
             defer { registry.remove() }
-            try registry.store.add(TempRegistry.paired("node-a", name: "Alpha", port: 9))
+            try registry.writer.add(TempRegistry.paired("node-a", name: "Alpha", port: 9))
             let client = Client(registry: registry.store,
                                 connector: KeychainNodeConnector(keys: DeviceKeys(primary: store, development: nil)))
             let listed = try await client.call("nodes_list", [:])
             let row = try #require(listed["result"]?["structuredContent"]?["nodes"]?.arrayValue?.first)
             #expect(row["reachable"] == false)
             #expect(row["problem"]?.stringValue?.contains("key for the node is missing") == true)
+        }
+    }
+
+    /// The bridge is a credential consumer: when the owner (the app) rotates this Mac's key, the node refuses the old
+    /// one with a 403, and the bridge reloads the Keychain and the registry and retries once with the owner's new key.
+    /// When the node revokes the key, the reload changes nothing and the refusal stands: the node is reported revoked.
+    @Test func survivesTheOwnersRotationAndReportsARevocation() async throws {
+        try await withKeychain { store in
+            let registry = TempRegistry()
+            defer { registry.remove() }
+            let device = try await store.createIdentity(for: "node-a", deviceName: "Test Mac", backend: .software)
+            let server = try await store.createIdentity(for: "server-a", deviceName: "Server A", backend: .software)
+            let daemon = FakeDaemon(name: "alpha", tools: Catalog.standard)
+            let listener = try await MCPListener.start(identity: server, device: device.spkiSHA256, daemon: daemon)
+            defer { listener.stop() }
+            var node = TempRegistry.paired("node-a", name: "Alpha", port: listener.port, pin: server.spkiSHA256)
+            try registry.writer.add(node)
+
+            // The bridge's keys and registry carry no lease.
+            let consumerKeys = DeviceKeys(primary: store, development: nil)
+            let connector = KeychainNodeConnector(keys: consumerKeys, registry: registry.store)
+            #expect(connector.keys.role == .consumer)
+            let client = Client(registry: registry.store, connector: connector)
+            try await client.initialize()
+            let before = try await client.call("vh_read", ["node": "Alpha", "command": "status"])
+            #expect(before["result"]?.text == "alpha ran vh_read")
+
+            // The owner rotates: the new key replaces the old in the Keychain, the node accepts only the new one, and
+            // the owner records the new device id.
+            let owner = DeviceKeys(primary: store, development: nil, preferredBackend: .software, lease: registry.lease)
+            _ = try await owner.rotate(for: "node-a", serverSPKISHA256: server.spkiSHA256)
+            let rotated = try await owner.completeRotation(for: "node-a")
+            listener.accept(rotated.spkiSHA256)
+            node.pairing = .paired(serverSPKISHA256: server.spkiSHA256, deviceID: rotated.deviceID, since: .now)
+            try registry.writer.update(node)
+
+            let after = try await client.call("vh_read", ["node": "Alpha", "command": "status"])
+            #expect(after["result"]?.text == "alpha ran vh_read", "the call survives the rotation")
+            #expect(listener.clientSPKIs.first == device.spkiSHA256)
+            #expect(listener.clientSPKIs.last == rotated.spkiSHA256)
+
+            // Revoked: refused, reloaded (nothing newer), refused again.
+            listener.accept(nil)
+            let refused = try await client.call("vh_read", ["node": "Alpha", "command": "status"])
+            #expect(refused["result"]?["isError"] == true)
+            #expect(refused["result"]?.text.contains("isn't paired with the node any more") == true)
+            let listed = try await client.call("nodes_list", [:])
+            let row = try #require(listed["result"]?["structuredContent"]?["nodes"]?.arrayValue?.first)
+            #expect(row["reachable"] == false)
+            #expect(row["problem"]?.stringValue?.contains("revoked this Mac") == true)
+            #expect(JSONValue.array(try await client.tools()).toolNames == ["nodes_list"])
+
+            // The bridge changed nothing: the owner's key and record are as the owner left them.
+            #expect(try await store.identity(for: "node-a")?.deviceID == rotated.deviceID)
+            #expect(try await store.pendingRotation(for: "node-a") == nil)
+            let saved = try registry.store.reload().map(\.pairing)
+            guard case .paired(_, let savedID, _)? = saved.first, saved.count == 1 else {
+                Issue.record("the record changed: \(saved)")
+                return
+            }
+            #expect(savedID == rotated.deviceID)
+            await client.bridge.shutdown()
         }
     }
 
@@ -182,7 +244,8 @@ final class MCPListener: Sendable {
     private let listener: NWListener
     private let queue = DispatchQueue(label: "vh.test.mcp-listener")
     private let daemon: FakeDaemon
-    private let device: Data
+    /// The one device key the node accepts (nil: none, every key is revoked).
+    private let device: Mutex<Data?>
     private let connections = Mutex<[ObjectIdentifier: (NWConnection, Data?)]>([:])
     private let received = Mutex<[Request]>([])
     private let peers = Mutex<[Data]>([])
@@ -206,7 +269,12 @@ final class MCPListener: Sendable {
         parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(.loopback), port: .any)
         listener = try NWListener(using: parameters)
         self.daemon = daemon
-        self.device = device
+        self.device = Mutex(device)
+    }
+
+    /// The device row's key changes (a rotation the owner made), or is revoked (nil).
+    func accept(_ spki: Data?) {
+        device.withLock { $0 = spki }
     }
 
     var port: UInt16 { listener.port?.rawValue ?? 0 }
@@ -275,7 +343,7 @@ final class MCPListener: Sendable {
     }
 
     private func answer(_ request: Request, from spki: Data?) -> (Int, Data) {
-        guard spki == device else { return (403, Data(#"{"error":"device_unknown"}"#.utf8)) }
+        guard let spki, spki == device.withLock({ $0 }) else { return (403, Data(#"{"error":"device_unknown"}"#.utf8)) }
         guard request.target == "/mcp" else { return (404, Data()) }
         guard request.header("Origin") == nil else { return (403, Data(#"{"error":"Origin not allowed"}"#.utf8)) }
         guard request.method == "POST" else { return (405, Data()) }

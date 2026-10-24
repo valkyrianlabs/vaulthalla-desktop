@@ -7,6 +7,12 @@ import Synchronization
 /// needs the result of an edit (say, the node it just added) in the same turn it selects it. Every mutation writes the
 /// whole file atomically, so a crash leaves either the old or the new list, never a torn one. An unreadable file is
 /// reported and never overwritten: mutations throw until it is fixed or removed.
+///
+/// One writer: only the credential owner (the process holding this registry's ``CredentialLease``) changes the file.
+/// A store made without the lease, or whose lease isn't held, is read-only and every mutation throws
+/// ``Failure/notOwner``. Consumers (the MCP bridge, the File Provider extension, the app while another process owns)
+/// read it with ``reload()`` to see the owner's changes. A single writer also keeps the mutations' cache true: every
+/// edit starts from what this process last read or wrote, which another writer would silently undo.
 public final class NodeStore: Sendable {
     public static let currentVersion = 1
 
@@ -17,6 +23,8 @@ public final class NodeStore: Sendable {
         case unsupportedVersion(Int)
         case notFound(NodeID)
         case duplicate(NodeID)
+        /// This process isn't the credential owner: it may read the registry, never change it.
+        case notOwner
 
         public var description: String {
             switch self {
@@ -24,15 +32,29 @@ public final class NodeStore: Sendable {
             case .unsupportedVersion(let version): "The saved node list is format \(version), newer than this app supports."
             case .notFound(let id): "No node \(id)."
             case .duplicate(let id): "Node \(id) already exists."
+            case .notOwner:
+                "Another Vaulthalla process manages this Mac's node list, so this one can only read it. Quit the other "
+                    + "one to make changes here."
             }
         }
     }
 
     public let fileURL: URL
+    /// The lease that makes this process the registry's writer; nil for a consumer.
+    public let lease: CredentialLease?
     private let cache = Mutex<[Node]?>(nil)
 
-    public init(fileURL: URL) {
+    /// A store for the registry at `fileURL`. Writable only while `lease`, this registry's lease
+    /// (``CredentialLease/covers(registry:)``), is held; read-only without one.
+    public init(fileURL: URL, lease: CredentialLease? = nil) {
         self.fileURL = fileURL
+        self.lease = lease
+    }
+
+    /// Whether this process may change the registry now.
+    public var role: CredentialRole {
+        guard let lease, lease.isHeld, lease.covers(registry: fileURL) else { return .consumer }
+        return .owner
     }
 
     /// `~/Library/Application Support/Vaulthalla/nodes.json`.
@@ -124,7 +146,8 @@ public final class NodeStore: Sendable {
     }
 
     private func mutate(_ change: (inout [Node]) throws -> Void) throws -> [Node] {
-        try cache.withLock { cached in
+        guard role == .owner else { throw Failure.notOwner }
+        return try cache.withLock { cached in
             var nodes = try cached ?? readFile()
             try change(&nodes)
             try writeFile(nodes)
