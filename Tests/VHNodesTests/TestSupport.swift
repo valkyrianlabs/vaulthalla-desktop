@@ -127,6 +127,47 @@ actor KeychainLock {
     }
 }
 
+/// A node registry in a directory of its own, with its credential lease held: the test is the credential owner
+/// (docs/architecture.md §3). ``owner`` writes; ``consumer`` is the read-only view every other process gets.
+final class TestRegistry: Sendable {
+    let directory: URL
+    let fileURL: URL
+    let lease: CredentialLease
+    let owner: NodeStore
+    let consumer: NodeStore
+
+    init() throws {
+        directory = FileManager.default.temporaryDirectory
+            .appending(path: "vh-registry-test-\(UUID().uuidString)", directoryHint: .isDirectory)
+        fileURL = directory.appending(path: "nodes.json")
+        lease = CredentialLease(forRegistry: fileURL, holder: "test")
+        try lease.acquire()
+        owner = NodeStore(fileURL: fileURL, lease: lease)
+        consumer = NodeStore(fileURL: fileURL)
+    }
+
+    /// The owner's keys (they create, rotate and delete) and a consumer's (they only read), over one store.
+    func ownerKeys(_ store: DeviceIdentityStore) -> DeviceKeys {
+        DeviceKeys(primary: store, development: nil, preferredBackend: .software, lease: lease)
+    }
+
+    static func consumerKeys(_ store: DeviceIdentityStore) -> DeviceKeys {
+        DeviceKeys(primary: store, development: nil, preferredBackend: .software)
+    }
+
+    func remove() {
+        lease.release()
+        try? FileManager.default.removeItem(at: directory)
+    }
+
+    /// Runs `body` with a fresh registry, removed afterwards (also on failure).
+    static func with<R>(_ body: (TestRegistry) async throws -> R) async throws -> R {
+        let registry = try TestRegistry()
+        defer { registry.remove() }
+        return try await body(registry)
+    }
+}
+
 /// Collects a stream's elements so a test can wait for one that matches.
 final class Recorder<Element: Sendable>: Sendable {
     private final class Storage: Sendable {

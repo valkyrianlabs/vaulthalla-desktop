@@ -411,7 +411,7 @@ public actor MCPBridge {
         case .http(.transport), .http(.timeout):
             "The connection to \(node.displayName) failed (\(failure.message)) The command may or may not have run "
                 + "on the node: check before retrying."
-        case .http(.forbidden):
+        case .http(.forbidden), .connect(.revoked):
             "\(node.displayName) refused this Mac: it isn't paired with the node any more. Pair it again in Vaulthalla."
         default:
             "Can't reach \(node.displayName): \(failure.message)"

@@ -13,6 +13,15 @@ import os
 /// announced next server key, and promotes it once the server switched. It rotates the device key when the
 /// certificate is older than ``Configuration/rotationInterval`` (§4), including the retry rules for a lost reply.
 ///
+/// **Role.** Only the credential owner rotates and reports record changes. A session is the owner when its
+/// `DeviceKeys` hold the credential lease (``role``); otherwise it is a consumer (docs/architecture.md §3, "Credential
+/// ownership"): it presents the identity the owner saved and never rotates (``rotateDeviceKey()`` throws), never
+/// completes or cancels the owner's rotation, and reports no ``Event/recordChanged`` (it keeps an announced or
+/// promoted server key in memory only). When the node refuses its key (`device_unknown`), the owner may have rotated
+/// it: the session reloads the record and the Keychain (``CredentialReader``) and connects once more; a refusal that
+/// survives that reload is reported as ``Status/revoked``. A server key that no longer matches the pin is retried once
+/// with the reloaded record too, in case the owner promoted the announced key.
+///
 /// Isolation: an actor. Everything it reports (status, record changes, the identity in use) arrives in order on
 /// ``events``; feature code reads ``client`` per operation, because a key rotation replaces it.
 public actor NodeSession {
@@ -27,7 +36,7 @@ public actor NodeSession {
     public enum Event: Sendable {
         case status(Status)
         /// The node record changed and should be saved: a rotated device id (`pairing`), a revocation, or the server
-        /// key pins.
+        /// key pins. Owner sessions only: a consumer never writes the registry.
         case recordChanged(pairing: PairingState, nextServerSPKISHA256: Data?)
         /// The identity the session presents, once found, and after each rotation.
         case identity(deviceID: String, backend: KeyBackend)
@@ -50,6 +59,8 @@ public actor NodeSession {
     public nonisolated let nodeID: NodeID
     /// Everything the session reports, in order. One consumer; it ends when the session stops.
     public nonisolated let events: AsyncStream<Event>
+    /// Owner (its keys held the credential lease when it was made) or consumer.
+    public nonisolated let role: CredentialRole
 
     /// The node as the session knows it, including the changes it reported.
     public private(set) var node: Node
@@ -61,6 +72,8 @@ public actor NodeSession {
     public private(set) var client: WsClient?
 
     private let keys: DeviceKeys
+    /// A consumer's reloads after a refusal.
+    private let reader: CredentialReader
     private let configuration: Configuration
     private let eventSink: AsyncStream<Event>.Continuation
     private let log = Logger(subsystem: "sh.vaulthalla.desktop", category: "session")
@@ -71,13 +84,21 @@ public actor NodeSession {
     private var rotationRequested = false
     /// Wakes the current connection's loop (a requested rotation); nil between connections.
     private var signals: AsyncStream<Signal>.Continuation?
+    /// Consumer: the node refused a key and the credentials were reloaded since the last accepted connection.
+    private var reloadedAfterRefusal = false
+    /// Consumer: the server key didn't match and the record was reloaded since the last accepted connection.
+    private var reloadedPins = false
 
     private var nodeTag: String { nodeID.rawValue }
 
-    public init(node: Node, keys: DeviceKeys, configuration: Configuration = Configuration()) {
+    /// A session for `node`. Its role is `keys`' (``DeviceKeys/role``); a consumer reloads records from `registry`
+    /// (nil: it keeps `node` and reloads only the Keychain).
+    public init(node: Node, keys: DeviceKeys, registry: NodeStore? = nil, configuration: Configuration = Configuration()) {
         self.nodeID = node.id
         self.node = node
         self.keys = keys
+        self.role = keys.role
+        self.reader = CredentialReader(registry: registry, keys: keys)
         self.configuration = configuration
         (events, eventSink) = AsyncStream.makeStream(of: Event.self, bufferingPolicy: .unbounded)
     }
@@ -91,7 +112,11 @@ public actor NodeSession {
     /// Rotates this Mac's key for the node now (docs/pairing.md §4, "on demand"), on the current connection or as
     /// soon as one is up, even if an earlier rotation failed. Progress is reported as usual: an ``Event/identity``
     /// with the new device id and a ``Event/recordChanged`` once the daemon took it.
-    public func rotateDeviceKey() {
+    ///
+    /// - Throws: ``CredentialOwnershipError/notOwner(operation:)`` on a consumer session, or once the owner let go of
+    ///   the lease. Nothing is attempted.
+    public func rotateDeviceKey() throws(CredentialOwnershipError) {
+        guard role == .owner, keys.role == .owner else { throw .notOwner(operation: "rotate a device key") }
         rotationRequested = true
         signals?.yield(.rotate)
     }
@@ -121,6 +146,8 @@ public actor NodeSession {
         /// A rotation's answer was lost: start over, pending key first.
         case restart
         case pinMismatch(reason: String)
+        /// Consumer: the node refused this key (`device_unknown`).
+        case refused(DeviceIdentity)
         case revoked
     }
 
@@ -143,7 +170,8 @@ public actor NodeSession {
                     return
                 }
                 current = found
-                pending = try await keys.pendingRotation(for: nodeTag)
+                // Only the owner resumes its own unfinished rotation; a consumer presents what the owner saved.
+                pending = role == .owner ? try await keys.pendingRotation(for: nodeTag) : nil
             } catch {
                 log.error("device key lookup failed: \(String(describing: error), privacy: .public)")
                 publish(.offline(reason: "This Mac's key for the node can't be read (\(error))."))
@@ -169,6 +197,17 @@ public actor NodeSession {
                     if restartsLeft < 0 { rotationSuppressed = true }
                     break connections
                 case .pinMismatch(let reason):
+                    if role == .consumer, !reloadedPins {
+                        // The owner may have promoted the announced key since this session read the record.
+                        reloadedPins = true
+                        if let fresh = try? reader.record(nodeID), case .paired = fresh.pairing,
+                           fresh.pairing != node.pairing || fresh.nextServerSPKISHA256 != node.nextServerSPKISHA256 {
+                            log.info("server key differs from the pin; retrying with the reloaded record")
+                            node = fresh
+                            pin = currentPin
+                            continue
+                        }
+                    }
                     if let next = node.nextServerSPKISHA256, pin != next {
                         // The server may have switched to the key it announced: try that pin once.
                         log.info("server key differs from the pin; trying the announced next key")
@@ -178,14 +217,47 @@ public actor NodeSession {
                     publish(.offline(reason: reason))
                     eventSink.yield(.pairingRequired)
                     return
+                case .refused(let refused):
+                    guard !reloadedAfterRefusal else {
+                        reportRevoked()
+                        return
+                    }
+                    // The owner may have rotated the key: reload and connect once more with what it saved.
+                    reloadedAfterRefusal = true
+                    do {
+                        let fresh = try await reader.reload(node, refusing: refused.deviceID)
+                        log.info("device key refused; retrying with the reloaded credentials")
+                        node = fresh.node
+                        pin = currentPin
+                        candidate = fresh.identity
+                        fallback = nil
+                        retryRotation = false
+                    } catch {
+                        switch error {
+                        case .revoked:
+                            reportRevoked()
+                        case .missingKey:
+                            publish(.offline(reason: error.description))
+                            eventSink.yield(.pairingRequired)
+                        default:
+                            publish(.offline(reason: error.description))
+                        }
+                        return
+                    }
                 case .revoked:
-                    node.pairing = .revoked(at: .now)
-                    publish(.revoked)
-                    eventSink.yield(.recordChanged(pairing: node.pairing, nextServerSPKISHA256: node.nextServerSPKISHA256))
+                    reportRevoked()
                     return
                 }
             }
         }
+    }
+
+    /// The node doesn't accept this Mac any more. The owner records it; a consumer only reports it.
+    private func reportRevoked() {
+        node.pairing = .revoked(at: .now)
+        publish(.revoked)
+        guard role == .owner else { return }
+        eventSink.yield(.recordChanged(pairing: node.pairing, nextServerSPKISHA256: node.nextServerSPKISHA256))
     }
 
     private var currentPin: Data {
@@ -277,6 +349,7 @@ public actor NodeSession {
                                           timeout: configuration.requestTimeout)
         } catch {
             if DeviceRefusal(error) == .deviceUnknown {
+                if role == .consumer { return .refused(identity) }
                 guard isPending, let current = try? await keys.identity(for: nodeTag) else { return .revoked }
                 // The daemon never took the new key: fall back to the current one and send the rotation again.
                 log.info("pending device key refused; falling back to the current key")
@@ -288,8 +361,10 @@ public actor NodeSession {
             return nil
         }
 
+        reloadedAfterRefusal = false
+        reloadedPins = false
         var current = identity
-        if isPending {
+        if isPending, role == .owner {
             // The daemon accepted the new key, so the rotation went through and only its answer was lost.
             do {
                 current = try await keys.completeRotation(for: nodeTag)
@@ -303,6 +378,7 @@ public actor NodeSession {
         recordServerKeys(reply, connectedWith: pin)
         publish(.online)
 
+        guard role == .owner else { return nil }
         let age = Date.now.timeIntervalSince(current.notValidBefore)
         guard retryRotation || rotationRequested || (age >= configuration.rotationInterval && !rotationSuppressed)
         else { return nil }
@@ -312,6 +388,7 @@ public actor NodeSession {
 
     /// docs/pairing.md §4: sign the new key with the current one, send it, and switch once the daemon took it.
     private func rotate(on client: WsClient, current: DeviceIdentity) async -> Ending? {
+        guard role == .owner else { return nil }
         let rotation: IdentityRotation
         do {
             rotation = try await keys.rotate(for: nodeTag, serverSPKISHA256: currentPin)
@@ -357,7 +434,7 @@ public actor NodeSession {
     // MARK: - Record
 
     private func recordDeviceID(_ identity: DeviceIdentity) {
-        guard case .paired(let pin, _, let since) = node.pairing else { return }
+        guard role == .owner, case .paired(let pin, _, let since) = node.pairing else { return }
         node.pairing = .paired(serverSPKISHA256: pin, deviceID: identity.deviceID, since: since)
         eventSink.yield(.recordChanged(pairing: node.pairing, nextServerSPKISHA256: node.nextServerSPKISHA256))
     }
@@ -384,6 +461,8 @@ public actor NodeSession {
         guard pairing != node.pairing || next != node.nextServerSPKISHA256 else { return }
         node.pairing = pairing
         node.nextServerSPKISHA256 = next
+        // A consumer keeps the pins in memory for its own reconnects; only the owner's reach the registry.
+        guard role == .owner else { return }
         eventSink.yield(.recordChanged(pairing: pairing, nextServerSPKISHA256: next))
     }
 

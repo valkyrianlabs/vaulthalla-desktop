@@ -183,18 +183,28 @@ struct FakeConnector: NodeMCPConnector {
     }
 }
 
-/// A node registry in a temporary directory, removed by ``remove()``.
+/// A node registry in a temporary directory, removed by ``remove()``. The test plays the credential owner, which
+/// writes it (``writer``, holding the lease); the bridge gets the read-only ``store`` every consumer has.
 struct TempRegistry {
     let directory: URL
+    let lease: CredentialLease
+    let writer: NodeStore
     let store: NodeStore
 
     init() {
         directory = FileManager.default.temporaryDirectory
             .appending(path: "vh-mcp-test-\(UUID().uuidString)", directoryHint: .isDirectory)
-        store = NodeStore(fileURL: directory.appending(path: "nodes.json"))
+        let fileURL = directory.appending(path: "nodes.json")
+        lease = CredentialLease(forRegistry: fileURL, holder: "test")
+        try? lease.acquire()
+        writer = NodeStore(fileURL: fileURL, lease: lease)
+        store = NodeStore(fileURL: fileURL)
     }
 
-    func remove() { try? FileManager.default.removeItem(at: directory) }
+    func remove() {
+        lease.release()
+        try? FileManager.default.removeItem(at: directory)
+    }
 
     static func paired(_ id: String, name: String, host: String = "127.0.0.1", port: UInt16 = 36972,
                        pin: Data = Data(repeating: 7, count: 32)) -> Node {

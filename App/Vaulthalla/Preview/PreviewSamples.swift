@@ -34,7 +34,10 @@ enum PreviewSamples {
     static func model(nodes: [Node] = PreviewSamples.nodes, selecting id: NodeID? = nil) -> AppModel {
         let url = FileManager.default.temporaryDirectory
             .appending(path: "VaulthallaPreview-\(UUID().uuidString)/nodes.json")
-        let store = NodeStore(fileURL: url)
+        // Each preview gets its own registry, so its lease is always free: the model owns it.
+        let lease = CredentialLease(forRegistry: url, holder: "preview")
+        try? lease.acquire()
+        let store = NodeStore(fileURL: url, lease: lease)
         for node in nodes { _ = try? store.add(node) }
         let model = AppModel(store: store)
         if let id { model.selectNode(id) }

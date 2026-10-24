@@ -40,6 +40,11 @@ final class AppModel {
     private(set) var keyBackends: [NodeID: KeyBackend] = [:]
     /// Paired nodes whose session gave up for good (key missing, unannounced server key): only pairing again helps.
     private(set) var nodesNeedingPairing: Set<NodeID> = []
+    /// Whether this app manages the device keys and the node list (it holds the credential lease) or only reads
+    /// what another process manages (docs/architecture.md §3, "Credential ownership").
+    private(set) var credentialRole: CredentialRole
+    /// The process managing them while this app is a consumer, as it recorded itself.
+    private(set) var credentialOwner: CredentialLease.Holder?
 
     @ObservationIgnored let store: NodeStore
     /// One live session per paired node. nil in previews, which never connect.
@@ -50,21 +55,29 @@ final class AppModel {
     @ObservationIgnored private var isAppActive = true
     /// Vault key backups to 1Password across every node (Recovery Keys).
     @ObservationIgnored let recoveryKeys: RecoveryKeysModel
+    /// While a consumer: follows the owner's changes to the registry and takes the lease over once the owner exits.
+    @ObservationIgnored private var ownerWatch: Task<Void, Never>?
     #if DEBUG
     @ObservationIgnored private var previewTransports: [NodeID: any NodeTransport] = [:]
     #endif
 
+    /// `store` and `keys` carry the credential lease when this app owns the credentials; without it (or while
+    /// another process holds it) the model is a consumer: it shows the registry read-only and edits are refused.
     init(store: NodeStore, keys: DeviceKeys? = nil, recoveryKeys: RecoveryKeysModel = RecoveryKeysModel()) {
         self.store = store
         self.recoveryKeys = recoveryKeys
+        credentialRole = store.role
         loadNodes()
         recoveryKeys.app = self
         if let keys {
-            sessions = NodeSessions(keys: keys) { [weak self] id, event in self?.handle(event, from: id) }
+            sessions = NodeSessions(keys: keys, registry: store) { [weak self] id, event in self?.handle(event, from: id) }
             syncSessions()
             recoveryKeys.start()
+            if credentialRole == .consumer { watchOwner() }
         }
     }
+
+    var isCredentialOwner: Bool { credentialRole == .owner }
 
     /// The device keys pairing creates and sessions present.
     var deviceKeys: DeviceKeys? { sessions?.keys }
@@ -129,7 +142,7 @@ final class AppModel {
         keyBackends[id] = nil
         nodesNeedingPairing.remove(id)
         // The key was filed under this node's local id; nothing else can use it.
-        if let keys = deviceKeys {
+        if let keys = deviceKeys, isCredentialOwner {
             Task { try? await keys.deleteIdentity(for: id.rawValue) }
         }
         guard selectedNodeID == id else { return }
@@ -194,6 +207,36 @@ final class AppModel {
             errorMessage = Self.message(for: error)
             return false
         }
+    }
+
+    // MARK: - Credential ownership
+
+    /// A consumer re-reads the registry the owner writes, and takes the lease as soon as the owner lets go of it
+    /// (quits or crashes). The sessions then restart as owners (`NodeSessions.sync`).
+    private func watchOwner() {
+        guard ownerWatch == nil, let lease = store.lease else { return }
+        credentialOwner = lease.currentHolder()
+        ownerWatch = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                guard let self else { return }
+                if (try? lease.acquire()) != nil {
+                    self.credentialRole = self.store.role
+                    self.credentialOwner = nil
+                    self.ownerWatch = nil
+                    self.loadNodes()
+                    return
+                }
+                self.followOwner(holder: lease.currentHolder())
+            }
+        }
+    }
+
+    /// Picks up what the owner saved since the last look.
+    private func followOwner(holder: CredentialLease.Holder?) {
+        if holder != credentialOwner { credentialOwner = holder }
+        guard let saved = try? store.reload() else { return }
+        if saved != nodes || registryProblem != nil { loadNodes() }
     }
 
     // MARK: - Sessions

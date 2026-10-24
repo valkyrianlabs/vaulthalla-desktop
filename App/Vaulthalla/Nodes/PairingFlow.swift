@@ -58,6 +58,11 @@ final class PairingFlow {
             phase = .failed(.local("Pairing isn't available in this window."))
             return
         }
+        // Pairing creates a key and writes the registry: the credential owner's job alone.
+        guard model.isCredentialOwner else {
+            phase = .failed(.local(CredentialOwnershipError.notOwner(operation: "pair this Mac").description))
+            return
+        }
         model.prepareForPairing(node.id)
         // A revoked key can never be approved again, and a paired node being re-paired starts clean too: pairing
         // again always uses a new key (docs/pairing.md §6). An unpaired node keeps the key of an earlier attempt.

@@ -5,12 +5,19 @@ public import VHCore
 /// (``sync(_:)``); it starts a session for each paired node, restarts one whose address or pins changed, and tears
 /// down sessions of nodes that were removed or are no longer paired.
 ///
+/// **Role.** The sessions are owners while ``keys`` hold the credential lease, and consumers otherwise (``role``,
+/// docs/architecture.md §3, "Credential ownership"): only one process on the Mac runs owner sessions. A process that
+/// takes the lease over later (the previous owner exited) calls ``sync(_:)`` again, which restarts every session in
+/// the new role; one that lets go of it does the same to continue as a consumer.
+///
 /// Main-actor isolated: it is driven by the app's model, and it delivers every session's events there, in order.
 @MainActor
 public final class NodeSessions {
     public typealias EventHandler = @MainActor (NodeID, NodeSession.Event) -> Void
 
     public let keys: DeviceKeys
+    /// The registry consumer sessions reload records from after a refusal.
+    public let registry: NodeStore?
     public let configuration: NodeSession.Configuration
 
     private struct Entry {
@@ -18,6 +25,7 @@ public final class NodeSessions {
         /// What the session was started with, updated with the changes it reported itself, so saving those doesn't
         /// restart it.
         var basis: Basis
+        let role: CredentialRole
         let pump: Task<Void, Never>
     }
 
@@ -37,8 +45,10 @@ public final class NodeSessions {
     private var entries: [NodeID: Entry] = [:]
     private let onEvent: EventHandler
 
-    public init(keys: DeviceKeys, configuration: NodeSession.Configuration = .init(), onEvent: @escaping EventHandler) {
+    public init(keys: DeviceKeys, registry: NodeStore? = nil, configuration: NodeSession.Configuration = .init(),
+                onEvent: @escaping EventHandler) {
         self.keys = keys
+        self.registry = registry
         self.configuration = configuration
         self.onEvent = onEvent
     }
@@ -50,12 +60,16 @@ public final class NodeSessions {
 
     public var nodeIDs: Set<NodeID> { Set(entries.keys) }
 
+    /// The role new sessions get: owner while ``keys`` hold the credential lease.
+    public var role: CredentialRole { keys.role }
+
     /// Brings the sessions in line with `nodes`.
     public func sync(_ nodes: [Node]) {
         var wanted: [NodeID: Node] = [:]
         for node in nodes where node.pairing.isPairedState { wanted[node.id] = node }
 
-        for (id, entry) in entries where wanted[id].map(Basis.init) != entry.basis {
+        let role = role
+        for (id, entry) in entries where wanted[id].map(Basis.init) != entry.basis || entry.role != role {
             stop(id)
         }
         for (id, node) in wanted where entries[id] == nil {
@@ -75,7 +89,7 @@ public final class NodeSessions {
     }
 
     private func start(_ node: Node) {
-        let session = NodeSession(node: node, keys: keys, configuration: configuration)
+        let session = NodeSession(node: node, keys: keys, registry: registry, configuration: configuration)
         let id = node.id
         let pump = Task { [weak self] in
             for await event in session.events {
@@ -83,7 +97,7 @@ public final class NodeSessions {
                 self.deliver(event, from: id)
             }
         }
-        entries[id] = Entry(session: session, basis: Basis(node), pump: pump)
+        entries[id] = Entry(session: session, basis: Basis(node), role: session.role, pump: pump)
         Task { await session.start() }
     }
 
