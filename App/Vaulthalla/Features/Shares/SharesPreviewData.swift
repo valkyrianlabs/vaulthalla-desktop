@@ -198,13 +198,14 @@ nonisolated enum SharesPreviewData: PreviewFeature {
         let base = WsModel.FsEntryBase(
             id: 1000 + vaultID, name: path == "/" ? vault.name : String(path.split(separator: "/").last ?? ""),
             path: path, absPath: "/mnt/vaulthalla/\(vault.slug)\(path)", sizeBytes: 0, isHidden: false,
-            isSystem: false, createdAt: iso(-100 * day), updatedAt: iso(-day))
+            isSystem: false, createdAt: iso(-100 * day), updatedAt: iso(-day), metadataVersion: "m\(1000 + vaultID)-0")
         let files = (tree[path] ?? []).enumerated().map { index, item in
             let child = path == "/" ? "/\(item.0)" : "\(path)/\(item.0)"
             return WsModel.FsEntry(
                 id: 2000 + vaultID * 100 + Int64(index) + Int64(path.count * 10), name: item.0, path: child,
                 absPath: "/mnt/vaulthalla/\(vault.slug)\(child)", sizeBytes: item.2, isHidden: false, isSystem: false,
-                createdAt: iso(-50 * day), updatedAt: iso(-2 * day),
+                createdAt: iso(-50 * day), updatedAt: iso(-2 * day), metadataVersion: "m\(index)-0",
+                contentVersion: item.1 ? nil : "\"g\(index)-0\"",
                 type: item.1 ? WsModel.FsEntry.TypeValue.directory : WsModel.FsEntry.TypeValue.file)
         }
         return Ws.Fs.Dir.List.Response(vault: vault.name, path: path, entry: base, files: files)
