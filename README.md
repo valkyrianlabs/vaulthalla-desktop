@@ -14,10 +14,11 @@ business logic: every action is an operation the daemon authorizes.
 
 | Path | What |
 |---|---|
-| `Package.swift`, `Sources/`, `Tests/` | VaulthallaKit: `VHCore` (models, secret handling), `VHContract` (generated daemon contract), `VHTransport` (ws client, mTLS), `VHIdentity` (device keys and certificates), `VHOnePassword` (1Password helper client, backup status), `VHMCP` (the MCP bridge) |
+| `Package.swift`, `Sources/`, `Tests/` | VaulthallaKit: `VHCore` (models, secret handling), `VHContract` (generated daemon contract), `VHTransport` (ws client, mTLS), `VHIdentity` (device keys and certificates), `VHOnePassword` (1Password helper client, backup status), `VHMCP` (the MCP bridge), `VHFinder` (File Provider domains and the extension's readiness) |
 | `Sources/vaulthalla-mcp/` | the stdio MCP bridge the app embeds at `Contents/Helpers/vaulthalla-mcp` (see "AI agents" below) |
 | `Helpers/vaulthalla-1password/` | the Go helper that backs vault keys up to 1Password (desktop-app authorization); `./build.sh`, see its README |
 | `App/` | the Xcode project: SwiftUI app, design system, features. Source folders are synchronized: add files on disk, no project edits |
+| `App/Extensions/FileProvider/` | the File Provider extension (`sh.vaulthalla.desktop.fileprovider`, embedded in `Contents/PlugIns`): a foundation for Finder integration, no file operations yet ([`docs/architecture.md`](docs/architecture.md) §7) |
 | `contract/` | `wsContract.json` vendored from the server (`SOURCE.json` records the version); `tools/gen-contract.py` turns it into Swift |
 | `tools/interop/` | `vh-instance.sh`: a private daemon test instance for the opt-in live suite `Tests/VHNodesLiveTests` ([`docs/interop-testing.md`](docs/interop-testing.md)) |
 | `tools/keychain-proof/` | `run.sh <TEAM_ID>`: a team-signed proof that device identities work in the data protection keychain (Secure Enclave create, find, rotate, delete), which unsigned `swift test` and CI can't reach |
@@ -35,7 +36,11 @@ xcodebuild -project App/Vaulthalla.xcodeproj -scheme Vaulthalla -derivedDataPath
 ```
 
 Signing is per developer: copy `App/Config/Signing.local.xcconfig.example` to `App/Config/Signing.local.xcconfig`
-(gitignored) and set your team. Without it the app is signed to run locally.
+(gitignored) and set your team, or pass `DEVELOPMENT_TEAM=<team> -allowProvisioningUpdates` to `xcodebuild`. A team
+switches on the App Group (`<TEAM>.sh.vaulthalla.desktop`) and the shared keychain group, so the app and the File
+Provider extension share the node registry and device keys; the registry moves into the group container on first
+launch, keeping the old file as a backup. Without a team the app is signed to run locally and keeps its registry in
+Application Support ([`docs/architecture.md`](docs/architecture.md) §3, "Signing and the shared container").
 
 The data protection keychain (Secure Enclave device keys) needs a team-signed process, so `swift test` covers it
 only through the pure query tests (`KeychainQueriesTests`). After changing `Sources/VHIdentity`'s Keychain code, run

@@ -22,6 +22,7 @@ let package = Package(
         .library(name: "VHOnePassword", targets: ["VHOnePassword"]),
         .library(name: "VHKeyBackup", targets: ["VHKeyBackup"]),
         .library(name: "VHMCP", targets: ["VHMCP"]),
+        .library(name: "VHFinder", targets: ["VHFinder"]),
         .executable(name: "vaulthalla-mcp", targets: ["vaulthalla-mcp"]),
     ],
     dependencies: [
@@ -54,6 +55,13 @@ let package = Package(
             dependencies: ["VHCore", "VHContract", "VHTransport", "VHIdentity", "VHNodes"],
             swiftSettings: strict
         ),
+        // Finder integration (docs/architecture.md §7, File Provider): domain identity, naming and management, and the
+        // extension's readiness, without the FileProvider framework, so `swift test` covers them.
+        .target(
+            name: "VHFinder",
+            dependencies: ["VHCore", "VHIdentity", "VHNodes"],
+            swiftSettings: strict
+        ),
         .executableTarget(
             name: "vaulthalla-mcp",
             dependencies: ["VHMCP", "VHCore", "VHNodes"],
@@ -76,6 +84,11 @@ let package = Package(
         .testTarget(
             name: "VHMCPTests",
             dependencies: ["VHMCP", "VHNodes", "VHCore", "VHContract", "VHTransport", "VHIdentity"],
+            swiftSettings: strict
+        ),
+        .testTarget(
+            name: "VHFinderTests",
+            dependencies: ["VHFinder", "VHCore", "VHIdentity", "VHNodes"],
             swiftSettings: strict
         ),
         // Opt-in: runs only with VH_LIVE_NODE set, against a live daemon (docs/interop-testing.md).

@@ -1,9 +1,22 @@
 import Foundation
+import os
 import SwiftUI
 import VHCore
 import VHNodes
 
 @main
+enum Launch {
+    static func main() {
+        #if DEBUG
+        // `Vaulthalla --developer <command>`: the developer commands (DeveloperCommands.swift), headless.
+        if CommandLine.arguments.dropFirst().first == DeveloperCommands.flag {
+            DeveloperCommands.run(Array(CommandLine.arguments.dropFirst(2)))
+        }
+        #endif
+        VaulthallaApp.main()
+    }
+}
+
 struct VaulthallaApp: App {
     @State private var model = Self.makeModel()
 
@@ -12,21 +25,24 @@ struct VaulthallaApp: App {
         // `-VHDebugPreviewData YES`: the preview nodes, answering from PREVIEW DATA, without sessions (DebugSnapshot).
         if UserDefaults.standard.bool(forKey: "VHDebugPreviewData") { return PreviewSamples.liveModel() }
         #endif
-        // Until the background agent ships, the app is the credential owner (docs/architecture.md §3): it takes the
-        // lease next to the registry. If another process holds it, the app runs as a read-only consumer and takes the
-        // lease over once that process exits.
-        let registryURL = registryURL
-        let lease = CredentialLease(forRegistry: registryURL, holder: "app")
-        try? lease.acquire()
-        return AppModel(store: NodeStore(fileURL: registryURL, lease: lease), keys: DeviceKeys.standard(lease: lease))
-    }
-
-    private static var registryURL: URL {
         #if DEBUG
-        // `-VHDebugRegistry <path>`: run against another node list (DebugSnapshot, scripted checks).
-        if let path = UserDefaults.standard.string(forKey: "VHDebugRegistry") { return URL(filePath: path) }
+        // `-VHDebugRegistry <path>`: run against another node list (DebugSnapshot, scripted checks), never migrated.
+        if let path = UserDefaults.standard.string(forKey: "VHDebugRegistry") {
+            let lease = CredentialLease(forRegistry: URL(filePath: path), holder: "app")
+            try? lease.acquire()
+            return AppModel(store: NodeStore(fileURL: URL(filePath: path), lease: lease),
+                            keys: DeviceKeys.standard(lease: lease))
+        }
         #endif
-        return NodeStore.defaultFileURL()
+        // Until the background agent ships, the app is the credential owner (docs/architecture.md §3): it takes the
+        // lease next to the registry, moving the registry into the App Group container first when this build has
+        // the group. If another process holds the lease, the app runs as a read-only consumer and takes the lease
+        // over once that process exits.
+        let registry = RegistryOwnership.open(in: .current(), holder: "app")
+        Logger(subsystem: "sh.vaulthalla.desktop", category: "registry").notice(
+            "registry \(registry.location.description, privacy: .private): \(registry.migration.description, privacy: .public)")
+        return AppModel(store: NodeStore(fileURL: registry.location.registryURL, lease: registry.lease),
+                        keys: DeviceKeys.standard(lease: registry.lease), registry: registry)
     }
 
     var body: some Scene {

@@ -1,7 +1,8 @@
 public import Foundation
 import Synchronization
 
-/// The node registry on disk: `nodes.json` in Application Support, a versioned envelope `{"version": 1, "nodes": []}`.
+/// The node registry on disk: `nodes.json`, a versioned envelope `{"version": 1, "nodes": []}`. Where it lives is
+/// ``RegistryLocation``'s choice: the App Group container in signed builds, Application Support otherwise.
 ///
 /// Calls are synchronous and serialized by a mutex rather than an actor: the file is a few kilobytes, and the shell
 /// needs the result of an edit (say, the node it just added) in the same turn it selects it. Every mutation writes the
@@ -55,13 +56,6 @@ public final class NodeStore: Sendable {
     public var role: CredentialRole {
         guard let lease, lease.isHeld, lease.covers(registry: fileURL) else { return .consumer }
         return .owner
-    }
-
-    /// `~/Library/Application Support/Vaulthalla/nodes.json`.
-    public static func defaultFileURL() -> URL {
-        URL.applicationSupportDirectory
-            .appending(path: "Vaulthalla", directoryHint: .isDirectory)
-            .appending(path: "nodes.json", directoryHint: .notDirectory)
     }
 
     /// The saved nodes in the operator's order. A missing file is an empty registry.

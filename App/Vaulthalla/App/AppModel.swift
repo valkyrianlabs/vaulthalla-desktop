@@ -47,6 +47,9 @@ final class AppModel {
     private(set) var credentialOwner: CredentialLease.Holder?
 
     @ObservationIgnored let store: NodeStore
+    /// Where the registry lives and what launch did to it (the App Group migration). It also keeps the leases
+    /// alive: the registry's, and after a migration the old location's. nil when run against a given store.
+    @ObservationIgnored let registry: RegistryOwnership?
     /// One live session per paired node. nil in previews, which never connect.
     @ObservationIgnored private(set) var sessions: NodeSessions?
     /// Each connected node's server data (`queries(for:)`), kept while its session lives.
@@ -63,8 +66,10 @@ final class AppModel {
 
     /// `store` and `keys` carry the credential lease when this app owns the credentials; without it (or while
     /// another process holds it) the model is a consumer: it shows the registry read-only and edits are refused.
-    init(store: NodeStore, keys: DeviceKeys? = nil, recoveryKeys: RecoveryKeysModel = RecoveryKeysModel()) {
+    init(store: NodeStore, keys: DeviceKeys? = nil, recoveryKeys: RecoveryKeysModel = RecoveryKeysModel(),
+         registry: RegistryOwnership? = nil) {
         self.store = store
+        self.registry = registry
         self.recoveryKeys = recoveryKeys
         credentialRole = store.role
         loadNodes()

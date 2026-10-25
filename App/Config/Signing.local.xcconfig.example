@@ -1,3 +1,10 @@
-// Copy to Signing.local.xcconfig (gitignored) and fill in your team. Find it in Xcode → Settings → Accounts.
+// Copy to Signing.local.xcconfig (gitignored) and fill in your team. Find it in Xcode → Settings → Accounts. A free
+// Personal Team works for development (profiles for this Mac only, renewed every 7 days); never commit a team id.
+//
+// With a team, Base.xcconfig switches to the Team entitlements (App/Vaulthalla.Team.entitlements,
+// App/Extensions/FileProvider/FileProvider.Team.entitlements):
+//   App Group             <TEAM>.sh.vaulthalla.desktop               ($(TeamIdentifierPrefix)sh.vaulthalla.desktop)
+//   keychain access group <TEAM>.sh.vaulthalla.desktop               ($(AppIdentifierPrefix)sh.vaulthalla.desktop)
+// and signs with "Apple Development". Automatic signing registers two App IDs on the team the first time:
+// sh.vaulthalla.desktop and sh.vaulthalla.desktop.fileprovider (free teams may register 10 per 7 days).
 DEVELOPMENT_TEAM = ABCDE12345
-CODE_SIGN_IDENTITY = Apple Development

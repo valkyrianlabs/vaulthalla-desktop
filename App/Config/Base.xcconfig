@@ -1,14 +1,29 @@
 // Shared app settings. Signing identity is per developer: copy Signing.local.xcconfig.example to
-// Signing.local.xcconfig (gitignored) and set DEVELOPMENT_TEAM. Without it the app is signed to run locally.
+// Signing.local.xcconfig (gitignored) and set DEVELOPMENT_TEAM, or pass DEVELOPMENT_TEAM=<team> to xcodebuild.
+// Without a team the app is signed to run locally (ad hoc), or not at all (CI: CODE_SIGNING_ALLOWED=NO).
 MARKETING_VERSION = 0.1.0
 CURRENT_PROJECT_VERSION = 1
 PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.desktop
 MACOSX_DEPLOYMENT_TARGET = 27.0
 
 CODE_SIGN_STYLE = Automatic
-CODE_SIGN_IDENTITY = -
 ENABLE_HARDENED_RUNTIME = YES
-// Off on purpose: the 1Password desktop integration needs IPC the sandbox blocks (docs/architecture.md, D5).
+// Off on purpose: the 1Password desktop integration needs IPC the sandbox blocks (docs/architecture.md, D5). The
+// File Provider extension turns it on for itself.
 ENABLE_APP_SANDBOX = NO
 
 #include? "Signing.local.xcconfig"
+
+// Signing variant (docs/architecture.md §3, "Signing and the shared container"): Team when DEVELOPMENT_TEAM is set,
+// else Unsigned. The App Group and the keychain access group need a team, so only the Team entitlements name them;
+// Unsigned builds carry no group (the app keeps its registry in Application Support) and sign ad hoc.
+VH_SIGNING_ = Unsigned
+VH_SIGNING = $(VH_SIGNING_$(DEVELOPMENT_TEAM):default=Team)
+VH_SIGN_IDENTITY_Team = Apple Development
+VH_SIGN_IDENTITY_Unsigned = -
+CODE_SIGN_IDENTITY = $(VH_SIGN_IDENTITY_$(VH_SIGNING))
+// The App Group, team-prefixed macOS style (no portal registration or profile entry): <TEAM>.sh.vaulthalla.desktop.
+// The entitlements spell it $(TeamIdentifierPrefix)sh.vaulthalla.desktop (set only while signing); the extension's
+// Info.plist names it as its document group through this setting. Unsigned builds have no group, and the value is
+// inert there.
+VH_APP_GROUP = $(DEVELOPMENT_TEAM).sh.vaulthalla.desktop
