@@ -13,6 +13,12 @@ struct SettingsView: View {
             Tab("1Password", systemImage: "key.horizontal") {
                 OnePasswordSettingsView()
             }
+            #if DEBUG
+            // Developer only until the File Provider extension serves files (vaulthalla/desktop#4).
+            Tab("Finder", systemImage: "folder.badge.gearshape") {
+                FinderSettingsView()
+            }
+            #endif
             Tab("About", systemImage: "info.circle") {
                 AboutView()
             }

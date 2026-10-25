@@ -1,6 +1,6 @@
 # Vaulthalla Desktop: architecture and implementation plan
 
-Status: **approved** (2026-10-20). Decisions **[D#]** were settled by the maintainer the same day; see §8. Server paths are relative to the `vaulthalla/server` repository.
+Status: **approved** (2026-10-20). Decisions **[D#]** were settled by the maintainer the same day; see §9. Server paths are relative to the `vaulthalla/server` repository.
 
 Vaulthalla Desktop is a native Swift 6 / SwiftUI app for macOS 27+ on Apple Silicon. It is the administrative
 cockpit for every Vaulthalla deployment the operator has paired. It covers administration, filesystem browsing, MCP
@@ -109,7 +109,9 @@ Package.swift           VaulthallaKit: the app's logic as Swift packages (unit-t
   Sources/VHTransport   ws client over Network.framework: TLS 1.3 + client identity, SPKI pinning, request map,
                         per-command timeouts, reconnect with backoff, unsolicited-frame stream
   Sources/VHIdentity    device keys (Secure Enclave P-256), self-signed X.509, Keychain identity, SAS
+  Sources/VHFinder      File Provider domains (identity, naming, reconcile) and the extension's readiness (§7)
 App/                    Xcode project (thin): SwiftUI scenes, feature views, design system
+  Extensions/FileProvider  the File Provider extension (§7)
 contract/               vendored wsContract.json (+ the server version it came from); tools/gen-contract.py
 Helpers/                vaulthalla-1password (Go, §6); the Swift vaulthalla-mcp bridge (§5) is a package target
 docs/                   this plan, the pairing protocol, release notes
@@ -137,8 +139,9 @@ docs/                   this plan, the pairing protocol, release notes
 - **Files:** a virtualized `Table`/grid backed by `fs.*`. Downloads and uploads use the HTTP lanes on the device
   listener (URLSession with the same identity). Quick Look previews come from `/preview`, and drag-and-drop works
   with Finder.
-- **Persistence:** in Application Support, node records (id, name, endpoints, pinned server SPKI, device id). Device
-  keys live in the Keychain and Secure Enclave. Nothing secret goes in `UserDefaults` or in logs.
+- **Persistence:** node records (id, name, endpoints, pinned server SPKI, device id) in `nodes.json`: in the App Group
+  container for signed builds, in Application Support otherwise (see "Signing and the shared container" below).
+  Device keys live in the Keychain and Secure Enclave. Nothing secret goes in `UserDefaults` or in logs.
   - `Logger` uses `.private` for everything user-derived.
   - Key material is held in a `SecretBytes` type that zeroes on deinit and has no `description`.
 - **Credential ownership: one owner, every other process a consumer** (desktop#3). A rotation in one process would
@@ -151,8 +154,8 @@ docs/                   this plan, the pairing protocol, release notes
     owner exits or crashes, with nothing stale to clean up; two handles conflict even within one process; the file is
     close-on-exec and never deleted. The holder writes its name and pid into the file for diagnostics only. The lease
     location is derived from the registry location, which is injected (`NodeStore(fileURL:lease:)`), so moving the
-    registry to the App Group container (for the File Provider extension) moves the lease with it, and the agent takes
-    over by taking the same lease. Nothing is hardcoded to the app.
+    registry to the App Group container (for the File Provider extension; see "Signing and the shared container")
+    moves the lease with it, and the agent takes over by taking the same lease. Nothing is hardcoded to the app.
   - **Enforced, not conventional.** `NodeStore` and `DeviceKeys` take the lease handle and check it before every
     change: without a held lease (and, for the store, the lease of *its* registry) every mutation throws
     (`NodeStore.Failure.notOwner`, `CredentialOwnershipError.notOwner`) before touching the file or the Keychain. A
@@ -180,6 +183,70 @@ docs/                   this plan, the pairing protocol, release notes
     between a running app and a starting agent is part of that work.
   - `vaulthalla-mcp` never takes the lease: its registry and keys are read-only by construction.
   - Desktop still holds no business logic, and neither the pairing protocol nor the server changed.
+- **Signing and the shared container** (desktop#4; evidence from the desktop#2 spike). The File Provider extension
+  is sandboxed and must read the same registry and device keys as the app, so signed builds share an App Group and a
+  keychain access group.
+  - **Signing variants.** The team stays per developer: `App/Config/Signing.local.xcconfig` (gitignored) or
+    `DEVELOPMENT_TEAM=<team> -allowProvisioningUpdates` on the command line. A team id is never committed.
+    `Base.xcconfig` derives `VH_SIGNING` from `DEVELOPMENT_TEAM`: **Team** when it is set, **Unsigned** otherwise. The
+    targets use `Vaulthalla.$(VH_SIGNING).entitlements` and `FileProvider.$(VH_SIGNING).entitlements`. Team signs with
+    Apple Development; Unsigned signs ad hoc (or not at all in CI, `CODE_SIGNING_ALLOWED=NO`) and names no group,
+    because the group entitlements need a team.
+
+    | Bundle | Id | Team entitlements | Unsigned |
+    |---|---|---|---|
+    | app | `sh.vaulthalla.desktop` | `application-groups` `$(TeamIdentifierPrefix)sh.vaulthalla.desktop`, `keychain-access-groups` `$(AppIdentifierPrefix)sh.vaulthalla.desktop`; **unsandboxed** (1Password IPC, D5), hardened runtime | none |
+    | File Provider extension | `sh.vaulthalla.desktop.fileprovider` | `app-sandbox`, `network.client`, the same App Group and keychain group | `app-sandbox`, `network.client` |
+    | `vaulthalla-mcp` (bare tool) | `sh.vaulthalla.desktop.mcp` | none (signed with the app's identity; it can't carry the restricted keychain entitlement, §5) | none |
+
+    Automatic signing registers two App IDs on the team, the app and the extension. Their profiles carry only
+    `keychain-access-groups = <TEAM>.*`. The team-prefixed App Group (macOS style, not `group.`) needs no portal
+    registration or profile entry, and File Provider needs no capability (desktop#2 E2, E3). The extension's
+    `NSExtensionFileProviderDocumentGroup` is the same group (`VH_APP_GROUP`). At run time a process learns its group
+    from its own signature (`VHCore.AppGroup.entitledIdentifier()`, `SecTaskCopyValueForEntitlement`), so nothing is
+    configured twice.
+  - **Container layout.**
+
+    ```
+    ~/Library/Group Containers/<TEAM>.sh.vaulthalla.desktop/   signed builds
+      nodes.json                  the registry (the owner writes, everyone else reads)
+      credential-owner.lease      the owner's flock lease, next to the registry
+      File Provider Storage/      fileproviderd's own (not Desktop's)
+      (desktop#4) the per-domain databases
+    ~/Library/Application Support/Vaulthalla/                 before the move, and builds without a team
+      nodes.json                  the registry of builds without the App Group
+      nodes.json.migrated         after the move: the old registry, byte for byte (backup; removed in a later release)
+      nodes.json.moved            after the move: the marker {registry, appGroup, sha256, migratedAt}
+      credential-owner.lease      the old lease; the owner holds it after the move
+    ```
+  - **Migration** (`VHCore.RegistryMigration`, run by `RegistryOwnership.open` when the owner starts). The owner takes
+    the App Group registry's lease, which makes it the only migrator. It then takes the Application Support lease too,
+    so no other process can write either file meanwhile. If an older Desktop owns the old location, the migration
+    waits for a later launch and the app opens the old registry read-only, as before. The steps are copy, verify, then
+    switch, and nothing is ever deleted:
+    1. write `nodes.json.migrating` in the group (`F_FULLFSYNC`, then an atomic rename) and read it back (bytes and
+       nodes);
+    2. move it to `nodes.json` without replacing anything (`RENAME_EXCL`), and read that back;
+    3. write the marker (the switch);
+    4. rename the old file to `nodes.json.migrated`, then keep holding the old lease, so an older build started
+       alongside stays read-only.
+
+    Each crash point resumes. An interrupted copy is redone. A group registry identical to the old one, with no
+    marker, gets the marker. A marker with the old file still in place (the same hash) gets the rename. Running it
+    again changes nothing. It refuses instead of guessing in three cases, and the old file is never touched: an
+    unreadable or newer-format registry (`failed`: the app keeps the old location and reports the file as before),
+    two registries that differ with no marker (`conflict`: the group's started fresh and wins), and a marker naming
+    another team's container (`pointsElsewhere`: a team change; keys don't cross teams either, so nodes are paired
+    again).
+  - **Who reads which registry** (`RegistryLocation`). The owner: what `RegistryOwnership.open` returns. Consumers
+    (`vaulthalla-mcp`, a second app instance): `resolve`. With the group, the group's registry, unless an unmigrated
+    one still sits in Application Support. Without the group, wherever the marker points, else Application Support.
+    So an unsigned build or the plain `vaulthalla-mcp` binary follows a migration and uses the same registry and
+    lease as the signed app. The extension: only the group's registry (`RegistryLocation.appGroup`), since the sandbox
+    can't see Application Support.
+  - **Proof.** `swift test` covers every step and crash point (`RegistryMigrationTests`). The signed check
+    (desktop#4 PR) migrated an existing `nodes.json` byte for byte. Both the signed and the plain `vaulthalla-mcp`
+    then served the group's registry, and the sandboxed extension read it and found an app-created Secure Enclave key.
 
 ## 4. Pairing protocol (summary; the normative spec is `docs/pairing.md`)
 
@@ -243,8 +310,9 @@ There is no device-scoped permission system.
   therefore ships a `vaulthalla-mcp` stdio bridge at `Vaulthalla.app/Contents/Helpers/vaulthalla-mcp` (as built:
   `Sources/VHMCP` + `Sources/vaulthalla-mcp`; the Xcode tool target of the same name is embedded by the app's
   "Embed MCP Bridge" phase and signed on copy with the app's identity when signing is on).
-  - **Trust.** It reads the node registry (`nodes.json`) and presents the device identity the app created for each
-    node (`DeviceKeys`), pinning the server SPKI from the record, exactly like the app's HTTP lanes. It is a
+  - **Trust.** It reads the node registry (`nodes.json`, wherever the app keeps it: `RegistryLocation.resolve`, §3
+    "Signing and the shared container") and presents the device identity the app created for each node
+    (`DeviceKeys`), pinning the server SPKI from the record, exactly like the app's HTTP lanes. It is a
     credential consumer (§3, "Credential ownership"): it never takes the lease, so it creates, rotates, deletes and
     writes nothing. A Secure Enclave key lives in the data protection keychain, so the helper must be
     signed by the same team with the app's `keychain-access-groups` (`$(AppIdentifierPrefix)sh.vaulthalla.desktop`);
@@ -359,7 +427,60 @@ There is no device-scoped permission system.
 - **Hygiene:** keys never enter MCP results or agent context (the export is refused for MCP at the daemon), logs or
   caches. The 1Password item id is the only thing Desktop stores per vault.
 
-## 7. Workstreams and order
+## 7. Finder integration (File Provider)
+
+Epic desktop#1 (Stages A to D). The MVP is desktop#4. Spike findings are on desktop#2.
+
+- **Shape.** One `NSFileProviderReplicatedExtension` (`App/Extensions/FileProvider`, `sh.vaulthalla.desktop.fileprovider`,
+  embedded in `Contents/PlugIns`). It serves one domain per vault the operator selects, with
+  `supportsSyncingTrash = false` (deletes go to the server's trash and recovery). The extension holds the device
+  identity itself, as a read-only consumer (§3), so Finder keeps working with the app quit (desktop#2 E7, E8).
+- **Domains** (`Sources/VHFinder`, pure and tested by `swift test`).
+  - The identifier is `<node id>.<vault id>` (`VaultDomainID`). It survives renames and never contains `/` or `:`.
+    Node ids are limited to ASCII letters, digits, `-` and `_`, which every id Desktop makes satisfies.
+  - The display name is `<vault> · <node label>` (`VaultDomain`). Finder drops spaces from the folder name:
+    `~/Library/CloudStorage/Vaulthalla-<name>`.
+  - `DomainPlan.reconcile` turns the existing domains into the wanted ones (add, remove, and rename by remove and
+    add). `DomainRegistrar` is the seam: `FileProviderDomains` (`NSFileProviderManager`) in the app, a fake in tests.
+    The system ties every domain to the extension embedded in the calling app, so only Vaulthalla's own executable
+    can manage them.
+- **The consent gate.** A new domain stays `userEnabled == false`, showing nothing and starting no extension (FP
+  -2011), until the operator turns Vaulthalla on under System Settings ▸ General ▸ Login Items & Extensions ▸ File
+  Providers. No API does it. The testing-mode bypass needs a paid team (desktop#2 E5, E6). `DomainSnapshot.state`
+  reports `needsUserApproval`, and `FileProviderSettings.fileProvidersURL` deep-links to the list
+  (`x-apple.systempreferences:com.apple.ExtensionsPreferences?extensionPointIdentifier=com.apple.fileprovider-nonui`).
+- **As built (foundation, the first slice of desktop#4).**
+  - The extension shows an empty, read-only root and an empty working set. It refuses every file operation
+    (`NSFeatureUnsupportedError`).
+  - It opens the group's registry and the shared keychain (data protection only) through `CredentialReader`, without a
+    lease. It logs `ExtensionReadiness` for its domain: `ready` with the device id and key backend, or why not
+    (`noAppGroup`, `registryMissing`, unknown node, not paired, revoked, missing key).
+  - Debug builds: `VH_FILEPROVIDER_SELFCHECK=<domain> <appex>/Contents/MacOS/VaulthallaFileProvider` runs that check
+    in the extension's own sandbox and exits, because fileproviderd won't start the extension before the consent
+    gate.
+  - Domain management is developer-only for now: Settings ▸ Finder (Debug builds) lists, adds and removes domains,
+    shows the approval state and links to System Settings. `Vaulthalla.app/Contents/MacOS/Vaulthalla --developer
+    registry|domains|add-domain|remove-domain|remove-all-domains` does the same headless for scripted checks.
+  - Several builds of the extension on one Mac compete. pluginkit elects one copy of
+    `sh.vaulthalla.desktop.fileprovider`, and domain calls from a build whose own copy isn't the elected one fail with
+    -2001 (underlying -2014). Unregister stale copies (`pluginkit -r <appex>`, `lsregister -u <app>`), or check
+    `pluginkit -m -v -D -i sh.vaulthalla.desktop.fileprovider`.
+- **Background agent: packaging decision** (desktop#2 E11; not built yet). The future per-user agent is **the app's
+  own main executable in a headless mode** (`Contents/MacOS/Vaulthalla` with an argument), registered with
+  `SMAppService.agent` (a LaunchAgent plist whose `BundleProgram` is the app's executable) or `SMAppService.mainApp`.
+  - Not a nested `Contents/Library/LoginItems/*.app`. The File Provider client framework takes the provider from
+    the caller's main bundle, and a nested app embeds no extension, so `signalEnumerator` fails (-2001, underlying
+    -2014) and fileproviderd logs "provider identifier shouldn't be nil".
+  - Not a bare tool in `Contents/MacOS`. `keychain-access-groups` is restricted and needs a provisioning profile,
+    which a bare executable can't embed: AMFI kills it (-413). Without that entitlement it can't read the device key.
+  - The app's executable under launchd does both: it reads the shared key and signals the working set. The agent
+    takes over the credential lease from the app (§3) and signals domains when the server reports changes. The
+    `--developer` commands are not the agent: they run one command and exit.
+- **Next (desktop#4).** Item mapping, versions and error mapping in `VHFinder`. Enumeration and the working set,
+  `fetchContents` and partial fetch, create, modify with conflict copies, delete, rename and move, thumbnails, and a
+  per-domain database in the group container. A user-facing vault picker replaces the developer toggle.
+
+## 8. Workstreams and order
 
 | # | Workstream | Repo | Depends on | Parallel with |
 |---|---|---|---|---|
@@ -378,7 +499,7 @@ Each workstream is a self-contained brief for a subagent with disjoint files. Se
 `/verify` and their parity tests. Desktop workstreams prove themselves with `swift test` and `xcodebuild`, plus the
 Xcode MCP (`xcrun mcpbridge`) for previews and UI checks once it is enabled.
 
-## 8. Decisions (approved 2026-10-20)
+## 9. Decisions (approved 2026-10-20)
 
 - **D1. Opt-in remote listener.** The device listener runs by default on loopback only, so a Desktop on the same
   machine pairs without setup. One action in the web console or CLI (`vh device remote enable`) binds it to all

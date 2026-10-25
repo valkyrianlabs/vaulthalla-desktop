@@ -7,7 +7,9 @@
 //
 // Environment:
 //   VAULTHALLA_MCP_TIMEOUT   seconds a tool call may take (default 600, 0 = no limit)
-//   VAULTHALLA_MCP_REGISTRY  the node registry to read (default ~/Library/Application Support/Vaulthalla/nodes.json)
+//   VAULTHALLA_MCP_REGISTRY  the node registry to read. Default: wherever the app keeps it (RegistryLocation): the
+//                            App Group container (~/Library/Group Containers/<TEAM>.sh.vaulthalla.desktop/nodes.json)
+//                            once the app migrated it there, else ~/Library/Application Support/Vaulthalla/nodes.json
 
 import Foundation
 import VHCore
@@ -31,7 +33,10 @@ if !settings.apply(environment: environment) {
     log(.warning, "VAULTHALLA_MCP_TIMEOUT isn't a number of seconds; using the default")
 }
 
-let registryURL = environment["VAULTHALLA_MCP_REGISTRY"].map { URL(fileURLWithPath: $0) } ?? NodeStore.defaultFileURL()
+// With the App Group entitlement the group's registry; without it (a plain or `swift run` build) the marker the app's
+// migration left in Application Support leads there, so the bridge reads the registry the app owns either way.
+let registryURL = environment["VAULTHALLA_MCP_REGISTRY"].map { URL(fileURLWithPath: $0) }
+    ?? RegistryLocation.resolve(in: .current()).registryURL
 // A credential consumer (docs/architecture.md §3): no lease, so the registry and the keys are read-only here.
 let registry = NodeStore(fileURL: registryURL)
 let writer = StandardIO.Writer()
