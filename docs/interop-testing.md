@@ -73,6 +73,47 @@ pairing window allows five requests and ten per minute per address: wait a minut
 ssh dev 'sudo bash ~/work/vh-instance.sh down'   # stop the daemon, drop the DB, remove /tmp/vhi_interop
 ```
 
+## Finder (File Provider)
+
+`tools/interop/finder-e2e.py` drives one File Provider domain through POSIX access only (`ls`, `cat`, `dd`, writes,
+`mv`, `rm` in `~/Library/CloudStorage/Vaulthalla-<name>`), with the app quit, and checks every step against `vh` on the
+node (docs/architecture.md §7). It needs a Team-signed build (the App Group and the shared keychain group), and the
+provider switched on once by a person in System Settings ▸ General ▸ Login Items & Extensions ▸ File Providers: nothing
+can do that from the command line (desktop#2). Add the domains after that: a domain added while the provider was still
+off can stay `needsUserApproval` after the switch, with nothing in System Settings to approve it; removing and adding it
+again brings it up enabled (seen on macOS 27.0.1, docs/architecture.md §7).
+
+```sh
+# Mac: one signed build, installed as the only registered copy
+xcodebuild -project App/Vaulthalla.xcodeproj -scheme Vaulthalla -configuration Debug DEVELOPMENT_TEAM=<team> \
+    -allowProvisioningUpdates -derivedDataPath build/SignedData build
+cp -R build/SignedData/Build/Products/Debug/Vaulthalla.app ~/Applications/
+APP=~/Applications/Vaulthalla.app/Contents/MacOS/Vaulthalla
+ssh dev '/tmp/vhi_interop/vh device pair'                   # open the window as the seeded user
+$APP --developer pair 10.0.0.11:36982 dev-interop           # prints the code; approve it on the node:
+ssh dev '/tmp/vhi_interop/vh device pending'                # then: vh device approve <request> --code <code>
+$APP --developer add-domain <node id> 3 interop-vault       # prints the CloudStorage root
+ssh dev '/tmp/vhi_interop/vh-admin vault recovery set 3 --local-versioning on --yes'
+# a 48 MiB /big.bin for the partial read (byte i = (13 i + 5) mod 251), put with `vh fs put`
+tools/interop/finder-e2e.py --root ~/Library/CloudStorage/Vaulthalla-interop-vault·dev-interop \
+    --domain <node id>.3 --vault 3 --vh "ssh dev /tmp/vhi_interop/vh"
+```
+
+A local node is the same with a private, non-installed test-mode daemon on 127.0.0.1 (the server repository's
+`tools/macos/test-db.sh` and a `VH_TEST_MODE=1` `vaulthalla-server` from its `build-macos`, as
+`tools/macos/storage_smoke.py` runs it). Never pair with an installed Vaulthalla. Afterwards: `--developer
+remove-all-domains`, `vh device revoke` on each node, `--developer unpair <node id>`, stop the instances, and
+`pluginkit -r` / `lsregister -u` every build copy you registered.
+
+## Findings: Finder E2E (2026-10-24, server main 95b10f14)
+
+- Both nodes, 21/21 each with the app quit (the remote dev-box instance, and a private test-mode daemon on this Mac).
+- **Server bug (not Desktop's):** `vh fs ls` fails with `[json.exception.type_error.316] invalid UTF-8 byte` for a folder
+  holding a long name with a multi-byte character (a conflict copy named after "Cooper’s Mac Studio"). The shell
+  table (`core/src/protocols/shell/Table.cpp`) ellipsizes and wraps by bytes at the daemon's 80-column fallback width,
+  cutting a UTF-8 sequence, and the CLI answer then can't be serialized. Reproduced with `vh fs put` alone.
+  `finder-e2e.py` reads such files with `vh fs get` instead of listing them.
+
 ## Findings so far (2026-10-20, server `feat/device-pairing` 7ce0e9fa)
 
 - **URLSession hides HTTP 403 behind `NSURLErrorClientCertificateRequired`** on a connection whose server asked for a

@@ -139,11 +139,16 @@ final class HTTPTestServer: Sendable {
     private static func reason(_ status: Int) -> String {
         switch status {
         case 200: "OK"
+        case 201: "Created"
         case 202: "Accepted"
         case 206: "Partial Content"
         case 403: "Forbidden"
         case 404: "Not Found"
         case 409: "Conflict"
+        case 411: "Length Required"
+        case 412: "Precondition Failed"
+        case 413: "Content Too Large"
+        case 428: "Precondition Required"
         case 503: "Service Unavailable"
         case 416: "Range Not Satisfiable"
         default: "Status"

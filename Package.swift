@@ -55,11 +55,12 @@ let package = Package(
             dependencies: ["VHCore", "VHContract", "VHTransport", "VHIdentity", "VHNodes"],
             swiftSettings: strict
         ),
-        // Finder integration (docs/architecture.md §7, File Provider): domain identity, naming and management, and the
-        // extension's readiness, without the FileProvider framework, so `swift test` covers them.
+        // Finder integration (docs/architecture.md §7, File Provider): domain identity, naming and management, the
+        // extension's readiness, and the replica (items, versions, errors, conflicts, anchors, the per-domain database,
+        // enumeration, fetches and writes) without the FileProvider framework, so `swift test` covers them.
         .target(
             name: "VHFinder",
-            dependencies: ["VHCore", "VHIdentity", "VHNodes"],
+            dependencies: ["VHCore", "VHContract", "VHTransport", "VHIdentity", "VHNodes"],
             swiftSettings: strict
         ),
         .executableTarget(
@@ -78,7 +79,8 @@ let package = Package(
         ),
         .testTarget(
             name: "VHNodesTests",
-            dependencies: ["VHNodes", "VHCore", "VHContract", "VHTransport", "VHIdentity", "VHKeyBackup", "VHOnePassword"],
+            dependencies: ["VHNodes", "VHCore", "VHContract", "VHTransport", "VHIdentity", "VHKeyBackup", "VHOnePassword",
+                           "VHFinder"],
             swiftSettings: strict
         ),
         .testTarget(
@@ -88,7 +90,7 @@ let package = Package(
         ),
         .testTarget(
             name: "VHFinderTests",
-            dependencies: ["VHFinder", "VHCore", "VHIdentity", "VHNodes"],
+            dependencies: ["VHFinder", "VHCore", "VHContract", "VHTransport", "VHIdentity", "VHNodes"],
             swiftSettings: strict
         ),
         // Opt-in: runs only with VH_LIVE_NODE set, against a live daemon (docs/interop-testing.md).

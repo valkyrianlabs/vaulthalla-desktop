@@ -14,11 +14,11 @@ business logic: every action is an operation the daemon authorizes.
 
 | Path | What |
 |---|---|
-| `Package.swift`, `Sources/`, `Tests/` | VaulthallaKit: `VHCore` (models, secret handling), `VHContract` (generated daemon contract), `VHTransport` (ws client, mTLS), `VHIdentity` (device keys and certificates), `VHOnePassword` (1Password helper client, backup status), `VHMCP` (the MCP bridge), `VHFinder` (File Provider domains and the extension's readiness) |
+| `Package.swift`, `Sources/`, `Tests/` | VaulthallaKit: `VHCore` (models, secret handling), `VHContract` (generated daemon contract), `VHTransport` (ws client, mTLS), `VHIdentity` (device keys and certificates), `VHOnePassword` (1Password helper client, backup status), `VHMCP` (the MCP bridge), `VHFinder` (File Provider domains and the replica: items, versions, errors, conflicts, the per-domain database) |
 | `Sources/vaulthalla-mcp/` | the stdio MCP bridge the app embeds at `Contents/Helpers/vaulthalla-mcp` (see "AI agents" below) |
 | `Helpers/vaulthalla-1password/` | the Go helper that backs vault keys up to 1Password (desktop-app authorization); `./build.sh`, see its README |
 | `App/` | the Xcode project: SwiftUI app, design system, features. Source folders are synchronized: add files on disk, no project edits |
-| `App/Extensions/FileProvider/` | the File Provider extension (`sh.vaulthalla.desktop.fileprovider`, embedded in `Contents/PlugIns`): a foundation for Finder integration, no file operations yet ([`docs/architecture.md`](docs/architecture.md) §7) |
+| `App/Extensions/FileProvider/` | the File Provider extension (`sh.vaulthalla.desktop.fileprovider`, embedded in `Contents/PlugIns`): Finder integration: browse, read (whole and ranges), create, edit with conflict copies, rename, move, delete, thumbnails ([`docs/architecture.md`](docs/architecture.md) §7) |
 | `contract/` | `wsContract.json` vendored from the server (`SOURCE.json` records the version); `tools/gen-contract.py` turns it into Swift |
 | `tools/interop/` | `vh-instance.sh`: a private daemon test instance for the opt-in live suite `Tests/VHNodesLiveTests` ([`docs/interop-testing.md`](docs/interop-testing.md)) |
 | `tools/keychain-proof/` | `run.sh <TEAM_ID>`: a team-signed proof that device identities work in the data protection keychain (Secure Enclave create, find, rotate, delete), which unsigned `swift test` and CI can't reach |
