@@ -169,7 +169,7 @@ nonisolated final class FilesPreviewTransport: NodeTransport {
         WsModel.FsEntry(id: Int64(abs(path.rawValue.hashValue % 100_000)), name: name, path: path.rawValue,
                         absPath: "/mnt/vaulthalla/preview\(path.rawValue)", sizeBytes: 0, isHidden: false,
                         isSystem: false, createdAt: stamp(daysAgo: 400), updatedAt: stamp(daysAgo: 3),
-                        type: WsModel.FsEntry.TypeValue.directory, fileCount: files, subdirectoryCount: folders)
+                        metadataVersion: "m\(path.rawValue.count)-0", type: WsModel.FsEntry.TypeValue.directory, fileCount: files, subdirectoryCount: folders)
     }
 
     static func file(_ name: String, at folder: VaultPath, size: Int64, days: Int, mime: String? = nil,
@@ -178,7 +178,8 @@ nonisolated final class FilesPreviewTransport: NodeTransport {
         return WsModel.FsEntry(
             id: Int64(abs(path.rawValue.hashValue % 1_000_000)), name: name, path: path.rawValue,
             absPath: "/mnt/vaulthalla/preview\(path.rawValue)", sizeBytes: size, isHidden: false, isSystem: false,
-            createdAt: stamp(daysAgo: days + 10), updatedAt: stamp(daysAgo: days), type: WsModel.FsEntry.TypeValue.file,
+            createdAt: stamp(daysAgo: days + 10), updatedAt: stamp(daysAgo: days), metadataVersion: "m\(days)-0",
+            contentVersion: "\"g\(days)-0\"", type: WsModel.FsEntry.TypeValue.file,
             mimeType: mime.map { .value($0) } ?? .null,
             preview: .init(kind: thumbnail ? "rendered_image" : "unsupported", renderer: thumbnail ? "image" : "none",
                            requires: "preview", thumbnail: thumbnail))
@@ -187,7 +188,8 @@ nonisolated final class FilesPreviewTransport: NodeTransport {
     static func base(_ entry: WsModel.FsEntry) -> WsModel.FsEntryBase {
         WsModel.FsEntryBase(id: entry.id, name: entry.name, path: entry.path, absPath: entry.absPath,
                             sizeBytes: entry.sizeBytes, isHidden: false, isSystem: false, createdAt: entry.createdAt,
-                            updatedAt: entry.updatedAt)
+                            updatedAt: entry.updatedAt, metadataVersion: entry.metadataVersion,
+                            contentVersion: entry.contentVersion)
     }
 
     // MARK: Recovery

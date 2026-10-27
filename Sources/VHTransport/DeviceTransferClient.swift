@@ -121,6 +121,61 @@ public final class DeviceTransferClient: Sendable {
         return Int64(contentRange[contentRange.index(after: slash)...].trimmingCharacters(in: .whitespaces))
     }
 
+    // MARK: - Ranges
+
+    /// What a ranged GET (``fetchRange(_:range:ifRange:into:acceptWhole:progress:)``) got.
+    public enum RangeAnswer: Hashable, Sendable {
+        /// 206: `length` bytes written at `offset` of the file; `total` is the representation's length
+        /// (`Content-Range`), `etag` its validator.
+        case partial(offset: Int64, length: Int64, total: Int64?, etag: String?)
+        /// 200 accepted (`acceptWhole`): the whole representation, written from offset 0.
+        case whole(length: Int64, etag: String?)
+        /// 200 refused: the validator didn't match (`If-Range`), so the node sent the whole representation, and only
+        /// the asked-for version would do. Nothing was written; the transfer was stopped at its first byte.
+        case changed(etag: String?)
+        /// 416: nothing at that offset any more (the file shrank).
+        case unsatisfiable(total: Int64?)
+    }
+
+    /// GETs `range` of `request`'s representation into `file` at the same offset (creating it, sparse, when missing),
+    /// with `If-Range: ifRange` when given, so a changed file never mixes into the bytes already there. A 200 (the
+    /// validator didn't match, or the node ignored the range) is written from offset 0 when `acceptWhole`, and
+    /// stopped otherwise. Other answers outside 2xx throw.
+    public func fetchRange(_ request: URLRequest, range: ClosedRange<Int64>, ifRange: String?, into file: URL,
+                           acceptWhole: Bool,
+                           progress: @escaping @Sendable (_ done: Int64, _ total: Int64?) -> Void = { _, _ in })
+        async throws(TransferError) -> RangeAnswer
+    {
+        var request = request
+        request.setValue("bytes=\(range.lowerBound)-\(range.upperBound)", forHTTPHeaderField: "Range")
+        if let ifRange { request.setValue(ifRange, forHTTPHeaderField: "If-Range") }
+        let sink = RangeSink(file: file, offset: range.lowerBound, acceptWhole: acceptWhole, progress: progress)
+        let result = await run(session.dataTask(with: request), handler: StreamingDelegate.Handler(
+            response: { sink.begin($0) },
+            data: { sink.write($0) },
+            sent: { _, _ in },
+            complete: { _ in },
+            admit: { sink.admits($0) }))
+        sink.close()
+        if sink.refusedWhole { return .changed(etag: sink.etag) }
+        switch result {
+        case .failure(let error):
+            throw sink.failure ?? error
+        case .success(let response):
+            if let failure = sink.failure { throw failure }
+            switch response.statusCode {
+            case 206:
+                return .partial(offset: range.lowerBound, length: sink.written, total: sink.total, etag: sink.etag)
+            case 200:
+                return .whole(length: sink.written, etag: sink.etag)
+            case 416:
+                return .unsatisfiable(total: Self.totalLength(contentRange: response.value(forHTTPHeaderField: "Content-Range")))
+            default:
+                throw TransferError.answer(status: response.statusCode, body: sink.errorBody)
+            }
+        }
+    }
+
     // MARK: - Upload
 
     /// Sends `file` as the body of `request` (a PUT), reporting the bytes sent. Returns the answer's body and response,
@@ -267,6 +322,87 @@ private final class DownloadSink: @unchecked Sendable {
     }
 }
 
+/// Writes a ranged answer's body at its offset of a file (``DeviceTransferClient/fetchRange``). Called on the
+/// session's serial delegate queue.
+private final class RangeSink: @unchecked Sendable {
+    private let file: URL
+    private let offset: Int64
+    private let acceptWhole: Bool
+    private let progress: @Sendable (Int64, Int64?) -> Void
+    private var handle: FileHandle?
+    private var isError = false
+    private(set) var written: Int64 = 0
+    private(set) var total: Int64?
+    private(set) var etag: String?
+    private(set) var failure: TransferError?
+    private(set) var errorBody = Data()
+    private(set) var refusedWhole = false
+
+    init(file: URL, offset: Int64, acceptWhole: Bool, progress: @escaping @Sendable (Int64, Int64?) -> Void) {
+        self.file = file
+        self.offset = offset
+        self.acceptWhole = acceptWhole
+        self.progress = progress
+    }
+
+    func admits(_ response: HTTPURLResponse) -> Bool {
+        !(response.statusCode == 200 && !acceptWhole)
+    }
+
+    func begin(_ response: HTTPURLResponse) {
+        etag = response.value(forHTTPHeaderField: "ETag")
+        switch response.statusCode {
+        case 206:
+            total = DeviceTransferClient.totalLength(contentRange: response.value(forHTTPHeaderField: "Content-Range"))
+            open(at: offset, truncate: false)
+        case 200 where acceptWhole:
+            total = response.expectedContentLength >= 0 ? response.expectedContentLength : nil
+            open(at: 0, truncate: true)
+        case 200:
+            refusedWhole = true
+        default:
+            isError = true
+        }
+    }
+
+    private func open(at position: Int64, truncate: Bool) {
+        let path = file.path(percentEncoded: false)
+        do {
+            if !FileManager.default.fileExists(atPath: path) {
+                guard FileManager.default.createFile(atPath: path, contents: nil, attributes: [.posixPermissions: 0o600])
+                else { throw CocoaError(.fileWriteUnknown) }
+            }
+            let opened = try FileHandle(forWritingTo: file)
+            if truncate { try opened.truncate(atOffset: 0) }
+            try opened.seek(toOffset: UInt64(position))
+            handle = opened
+        } catch {
+            failure = .disk(error.localizedDescription)
+        }
+    }
+
+    func write(_ data: Data) {
+        if isError {
+            if errorBody.count < 65536 { errorBody.append(data) }
+            return
+        }
+        guard failure == nil, let handle else { return }
+        do {
+            try handle.write(contentsOf: data)
+            written += Int64(data.count)
+            progress(written, total)
+        } catch {
+            failure = .disk(error.localizedDescription)
+        }
+    }
+
+    func close() {
+        try? handle?.synchronize()
+        try? handle?.close()
+        handle = nil
+    }
+}
+
 /// The streaming session's delegate: TLS challenges through ``TrustDelegate``, everything else to the task's
 /// handler. URLSession calls it on one serial queue.
 final class StreamingDelegate: NSObject, URLSessionDataDelegate, Sendable {
@@ -275,6 +411,8 @@ final class StreamingDelegate: NSObject, URLSessionDataDelegate, Sendable {
         var data: @Sendable (Data) -> Void
         var sent: @Sendable (Int64, Int64) -> Void
         var complete: @Sendable ((any Error)?) -> Void
+        /// Whether to take the response's body; false cancels the task (it completes as cancelled).
+        var admit: @Sendable (HTTPURLResponse) -> Bool = { _ in true }
     }
 
     private let trust: TrustDelegate
@@ -307,8 +445,9 @@ final class StreamingDelegate: NSObject, URLSessionDataDelegate, Sendable {
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse)
         async -> URLSession.ResponseDisposition
     {
-        if let http = response as? HTTPURLResponse { handler(dataTask.taskIdentifier)?.response(http) }
-        return .allow
+        guard let http = response as? HTTPURLResponse, let handler = handler(dataTask.taskIdentifier) else { return .allow }
+        handler.response(http)
+        return handler.admit(http) ? .allow : .cancel
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {

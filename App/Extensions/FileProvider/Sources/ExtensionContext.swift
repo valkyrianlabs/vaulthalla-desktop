@@ -32,6 +32,18 @@ struct ExtensionContext: Sendable {
     func readiness(for domainIdentifier: String) async -> ExtensionReadiness {
         await ExtensionReadiness.check(domainIdentifier: domainIdentifier, registry: registry, reader: reader)
     }
+
+    /// The domain's replica database (``ReplicaLocation``): in the App Group, where the app removes it with the
+    /// domain; in the extension's own container in a build without the group.
+    func storeURL(for domainIdentifier: String) -> URL {
+        ReplicaLocation.storeURL(domain: domainIdentifier,
+                                 in: environment.groupContainer ?? URL.applicationSupportDirectory)
+    }
+
+    /// What conflict copies say they came from: the Mac's name as the user set it.
+    static var macName: String {
+        Host.current().localizedName ?? ProcessInfo.processInfo.hostName
+    }
 }
 
 #if DEBUG

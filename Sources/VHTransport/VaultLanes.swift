@@ -122,6 +122,23 @@ public struct VaultLanes: Sendable {
                          progress: @escaping @Sendable (_ done: Int64, _ total: Int64?) -> Void)
         async throws(TransferError) -> Int64
     {
+        try await fetch(vaultID: vaultID, path: path, isDirectory: isDirectory, to: destination, progress: progress)
+            .length
+    }
+
+    /// ``download(vaultID:path:isDirectory:to:progress:)`` of a file, also returning the strong validator (the
+    /// file's `content_version`) of the bytes it placed.
+    public func downloadContent(vaultID: Int64, path: String, to destination: URL,
+                                progress: @escaping @Sendable (_ done: Int64, _ total: Int64?) -> Void = { _, _ in })
+        async throws(TransferError) -> DeviceTransferClient.Downloaded
+    {
+        try await fetch(vaultID: vaultID, path: path, isDirectory: false, to: destination, progress: progress)
+    }
+
+    private func fetch(vaultID: Int64, path: String, isDirectory: Bool, to destination: URL,
+                       progress: @escaping @Sendable (_ done: Int64, _ total: Int64?) -> Void)
+        async throws(TransferError) -> DeviceTransferClient.Downloaded
+    {
         let query: [URLQueryItem] = [
             .init(name: "vault_id", value: String(vaultID)), .init(name: "path", value: path),
             .init(name: "disposition", value: "attachment"),
@@ -141,7 +158,7 @@ public struct VaultLanes: Sendable {
                     request, to: partial, resume: resume, isDirectory: isDirectory,
                     validator: { value in etag.withLock { $0 = value } }, progress: progress)
                 try place(partial, at: destination)
-                return done.length
+                return done
             } catch {
                 if case .disk = error { throw error }
                 try await retry(after: error, attempt: &attempt)
@@ -380,7 +397,7 @@ public struct VaultLanes: Sendable {
 
     // MARK: - Plumbing
 
-    private func url(_ path: String, _ query: [URLQueryItem] = []) throws(TransferError) -> URL {
+    func url(_ path: String, _ query: [URLQueryItem] = []) throws(TransferError) -> URL {
         do {
             return try http.url(path: path, query: query)
         } catch {
@@ -388,7 +405,7 @@ public struct VaultLanes: Sendable {
         }
     }
 
-    private func send(_ request: URLRequest) async throws(TransferError) -> (Data, HTTPURLResponse) {
+    func send(_ request: URLRequest) async throws(TransferError) -> (Data, HTTPURLResponse) {
         do {
             return try await http.data(for: request)
         } catch {
@@ -405,7 +422,7 @@ public struct VaultLanes: Sendable {
     }
 
     /// Waits before the next attempt when `error` is worth retrying and attempts remain; rethrows it otherwise.
-    private func retry(after error: TransferError, attempt: inout Int) async throws(TransferError) {
+    func retry(after error: TransferError, attempt: inout Int) async throws(TransferError) {
         guard error.isRetryable, attempt < policy.retries, !Task.isCancelled else { throw error }
         let delay = policy.backoff * (1 << attempt)
         attempt += 1

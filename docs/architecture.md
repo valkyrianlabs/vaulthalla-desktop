@@ -109,7 +109,7 @@ Package.swift           VaulthallaKit: the app's logic as Swift packages (unit-t
   Sources/VHTransport   ws client over Network.framework: TLS 1.3 + client identity, SPKI pinning, request map,
                         per-command timeouts, reconnect with backoff, unsolicited-frame stream
   Sources/VHIdentity    device keys (Secure Enclave P-256), self-signed X.509, Keychain identity, SAS
-  Sources/VHFinder      File Provider domains (identity, naming, reconcile) and the extension's readiness (§7)
+  Sources/VHFinder      File Provider domains, the extension's readiness, and the vault replica (§7)
 App/                    Xcode project (thin): SwiftUI scenes, feature views, design system
   Extensions/FileProvider  the File Provider extension (§7)
 contract/               vendored wsContract.json (+ the server version it came from); tools/gen-contract.py
@@ -449,18 +449,68 @@ Epic desktop#1 (Stages A to D). The MVP is desktop#4. Spike findings are on desk
   Providers. No API does it. The testing-mode bypass needs a paid team (desktop#2 E5, E6). `DomainSnapshot.state`
   reports `needsUserApproval`, and `FileProviderSettings.fileProvidersURL` deep-links to the list
   (`x-apple.systempreferences:com.apple.ExtensionsPreferences?extensionPointIdentifier=com.apple.fileprovider-nonui`).
-- **As built (foundation, the first slice of desktop#4).**
-  - The extension shows an empty, read-only root and an empty working set. It refuses every file operation
-    (`NSFeatureUnsupportedError`).
-  - It opens the group's registry and the shared keychain (data protection only) through `CredentialReader`, without a
-    lease. It logs `ExtensionReadiness` for its domain: `ready` with the device id and key backend, or why not
-    (`noAppGroup`, `registryMissing`, unknown node, not paired, revoked, missing key).
-  - Debug builds: `VH_FILEPROVIDER_SELFCHECK=<domain> <appex>/Contents/MacOS/VaulthallaFileProvider` runs that check
-    in the extension's own sandbox and exits, because fileproviderd won't start the extension before the consent
-    gate.
-  - Domain management is developer-only for now: Settings ▸ Finder (Debug builds) lists, adds and removes domains,
-    shows the approval state and links to System Settings. `Vaulthalla.app/Contents/MacOS/Vaulthalla --developer
-    registry|domains|add-domain|remove-domain|remove-all-domains` does the same headless for scripted checks.
+  - **Order matters (desktop#4, macOS 27.0.1).** The switch is per provider, and System Settings lists no domains.
+    Domains added after the provider is on start enabled with no further consent. Two domains added before it was on
+    were not both enabled by the switch: one came up active, the other stayed `needsUserApproval` (`fileproviderctl
+    dump`: `enabled: no`) with nothing in System Settings to approve it. Removing it and adding it again brought it
+    up enabled at once. Onboarding (desktop#6, #7) therefore needs an approval state per vault, adds domains only once
+    the provider is on where it can, and offers "remove and add again" for a domain stuck in `needsUserApproval`
+    while another domain of the provider is enabled.
+- **As built (the MVP, desktop#4).** The extension (`App/Extensions/FileProvider`) is a thin adapter: every call goes to
+  the domain's `VaultReplica` (`Sources/VHFinder`, tested by `swift test` against the mock daemon and the lanes test
+  server), which maps and caches. The server decides; Swift holds no storage, encryption, RBAC or sealing logic.
+  - **Identity.** `NodeLink` is a read-only credential consumer (§3): a consumer `NodeSession` for ws (it reloads the
+    credentials after `device_unknown` and reports `.revoked` when the refusal survives), and `VaultLanes` for the
+    identity that session presents, made again when it changes. A lane 403 reloads and retries once; a 403 that survives
+    is checked with `CredentialReader.check`: a refused key fails closed, an accepted one is the account's access. After
+    a revocation, a missing key or an unpaired record every call is `NSFileProviderError.notAuthenticated` until the
+    extension starts again.
+  - **Items.** The identifier is `e<FsEntry.id>` (stable across rename and move, vaulthalla/server#257); the root, the
+    working set and the trash are the system's own. `itemVersion` is `{content_version, metadata_version}` for files
+    (the content half is the strong ETag, quotes included, so it doubles as `If-Range` and `If-Match`) and
+    `metadata_version` for both halves of folders and symlinks. Capabilities are conservative and never derived from
+    RBAC: read, write, rename, reparent and delete for files and folders (symlinks: no write), no trashing
+    (`supportsSyncingTrash = false`). The root carries `contentPolicy = downloadLazilyAndEvictOnRemoteUpdate`.
+  - **Replica database** (`ReplicaStore`, SQLite): `<App Group>/FileProvider/<domain>.sqlite`. Entry id, parent, name,
+    path, kind, size, dates, versions, and whether the system enumerated the folder. A cache, never a source of truth:
+    one it can't open is deleted and made again with a new store id. The app deletes it with its domain.
+  - **Enumeration and changes.** A folder's first page lists it (`fs.dir.list`, Lookup-filtered by the server,
+    vaulthalla/server#255) and marks it enumerated; later pages come from the database. The working set is every entry
+    the database knows. Without a change journal (vaulthalla/server#259), `enumerateChanges` lists every enumerated
+    folder again (parents first, each by its current path) and diffs: every new, changed or gone row takes the next
+    revision, and the anchor is `vh1:a:<store id>:<revision>` (pages `vh1:p:<offset>`, both under 500 bytes). A folder
+    that is gone or no longer listable goes with its subtree: lost visibility arrives as deletions. An anchor from
+    another store expires (`syncAnchorExpired`).
+  - **Contents.** `fetchContents` streams `/download/content` (resumable) into the domain's temporary directory and
+    returns the item at the ETag of those bytes. `fetchPartialContents` widens the range to the system's alignment and
+    sends `Range` + `If-Range: <content_version>`. With `strictVersioning`, a changed file is
+    `versionNoLongerAvailable` (the reader sees ESTALE and asks again); otherwise the new version is fetched whole.
+  - **Writes.** Create: a file is `PUT /upload/content` with `If-None-Match: *` (412 or 409 is a filename collision),
+    a folder `fs.dir.create` (an existing folder is the answer under `mayAlreadyExist`); symlinks and `.DS_Store` are
+    excluded from sync. Modify: rename or move first (`fs.entry.rename`, or `fs.entry.move` into another folder; the
+    server authorizes the destination, vaulthalla/server#256; paths below a moved folder follow), then the contents with
+    `If-Match: <base content_version>`.
+  - **Conflicts: never an overwrite.** The server's version is checked before the upload, and the upload itself is
+    conditional. When the server's file changed since the edit's base (the check, a 412, or a lost answer after which
+    the version moved), the local edit is uploaded as `"<name> (conflict from <Mac name> <yyyy-MM-dd HHmm>)<.ext>"`
+    beside it (with `If-None-Match: *`, a counter when that name is taken), the server's version stays the item, the
+    system downloads it again, and the working set is signalled so the copy appears. With the system's
+    `failOnConflict` option the extension answers `localVersionConflictingWithServer` instead. The extension doesn't
+    declare `NSExtensionFileProviderSupportsFailingUploadOnConflict` yet, so the conflict copy is the path in use.
+  - **Delete.** `fs.entry.delete`, into the server's trash and recovery (`recovery.*`). A file changed on the server
+    since the base is `deletionRejected`; a non-empty folder without `.recursive` is `directoryNotEmpty`.
+  - **Thumbnails.** `NSFileProviderThumbnailing` asks `/preview/batch` for readiness and fetches `/preview` for the
+    ready ones; others get none.
+  - **Errors.** `FinderError` maps refusals: `notAuthenticated`, `serverUnreachable`, `noSuchItem`,
+    `filenameCollision`, `insufficientQuota`, `cannotSynchronize` (a write the server refused), a Cocoa read-permission
+    error for a refused read, `deletionRejected`, `versionNoLongerAvailable`, `syncAnchorExpired`, `excludedFromSync`,
+    with the POSIX code underneath. Anything else is transient and retried by the system.
+  - **Debug UX.** Domain management stays developer-only: Settings ▸ Finder (Debug builds) and
+    `Vaulthalla.app/Contents/MacOS/Vaulthalla --developer registry|domains|add-domain|remove-domain|remove-all-domains|
+    pair|unpair|signal`. `pair <host:port> [name]` pairs as the credential owner with the app quit and prints the code
+    to approve; `signal <domain>` asks the extension for the working set's changes (the agent's job later, desktop#5).
+    `VH_FILEPROVIDER_SELFCHECK=<domain> <appex>/Contents/MacOS/VaulthallaFileProvider` checks readiness in the
+    extension's own sandbox.
   - Several builds of the extension on one Mac compete. pluginkit elects one copy of
     `sh.vaulthalla.desktop.fileprovider`, and domain calls from a build whose own copy isn't the elected one fail with
     -2001 (underlying -2014). Unregister stale copies (`pluginkit -r <appex>`, `lsregister -u <app>`), or check
@@ -476,9 +526,8 @@ Epic desktop#1 (Stages A to D). The MVP is desktop#4. Spike findings are on desk
   - The app's executable under launchd does both: it reads the shared key and signals the working set. The agent
     takes over the credential lease from the app (§3) and signals domains when the server reports changes. The
     `--developer` commands are not the agent: they run one command and exit.
-- **Next (desktop#4).** Item mapping, versions and error mapping in `VHFinder`. Enumeration and the working set,
-  `fetchContents` and partial fetch, create, modify with conflict copies, delete, rename and move, thumbnails, and a
-  per-domain database in the group container. A user-facing vault picker replaces the developer toggle.
+- **Next.** Freshness from a background agent that signals the working set (desktop#5), the real Finder UX (desktop#6),
+  the local plaintext policy (desktop#8), and the server's change journal and push (vaulthalla/server#259, #260).
 
 ## 8. Workstreams and order
 

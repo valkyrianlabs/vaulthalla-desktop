@@ -49,8 +49,8 @@ import VHContract
                       mime: String? = nil, thumbnail: Bool? = nil, hidden: Bool = false) -> WsModel.FsEntry {
         WsModel.FsEntry(
             id: 1, name: name, path: "/f/\(name)", absPath: "/mnt/f/\(name)", sizeBytes: size, isHidden: hidden,
-            isSystem: false, createdAt: "2026-01-01T00:00:00Z", updatedAt: updated,
-            type: dir ? WsModel.FsEntry.TypeValue.directory : WsModel.FsEntry.TypeValue.file,
+            isSystem: false, createdAt: "2026-01-01T00:00:00Z", updatedAt: updated, metadataVersion: "m1-0",
+            contentVersion: dir ? nil : "\"g1-0\"", type: dir ? WsModel.FsEntry.TypeValue.directory : WsModel.FsEntry.TypeValue.file,
             mimeType: mime.map { .value($0) } ?? (dir ? nil : .null),
             preview: thumbnail.map { .init(kind: "rendered_image", renderer: "image", requires: "preview", thumbnail: $0) },
             fileCount: dir ? 3 : nil)

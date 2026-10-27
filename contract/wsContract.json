@@ -1961,13 +1961,6 @@
           "types": [
             "boolean"
           ]
-        },
-        {
-          "name": "init_r2_test_vault",
-          "required": true,
-          "types": [
-            "boolean"
-          ]
         }
       ],
       "name": "DevConfig"
@@ -2493,6 +2486,22 @@
           ]
         },
         {
+          "description": "Opaque version of the entry's own metadata (\"m<id>-<hex16>\"): a hash of vault, parent, name, mode, owner, group and updated_at, so it changes on rename, move, mode change and any updated_at change and matches again only for the same metadata. Compare for equality only.",
+          "name": "metadata_version",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Files only: the strong generation ETag GET /download/content serves for the current bytes, exactly (quotes included; usable as If-Match / If-None-Match / If-Range). Changes on every content write, never on rename or move.",
+          "name": "content_version",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
           "enum": [
             "file",
             "directory",
@@ -2552,7 +2561,7 @@
       "name": "FsEntry"
     },
     {
-      "description": "The listed directory or looked-up entry itself (`entry` of fs.dir.list / fs.metadata): fs::model::to_json(Entry) on the Entry base (core/src/fs/model/Entry.cpp), so it carries no type, mime_type, preview or counts.",
+      "description": "The listed directory or looked-up entry itself (`entry` of fs.dir.list / fs.metadata): fs::model::to_json(Entry) on the Entry base (core/src/fs/model/Entry.cpp), so it carries no type, mime_type, preview or counts (a file still carries content_version).",
       "fields": [
         {
           "minimum": 0,
@@ -2683,6 +2692,22 @@
           "required": false,
           "types": [
             "integer"
+          ]
+        },
+        {
+          "description": "Opaque version of the entry's own metadata (\"m<id>-<hex16>\"): a hash of vault, parent, name, mode, owner, group and updated_at, so it changes on rename, move, mode change and any updated_at change and matches again only for the same metadata. Compare for equality only.",
+          "name": "metadata_version",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Files only: the strong generation ETag GET /download/content serves for the current bytes, exactly (quotes included; usable as If-Match / If-None-Match / If-Range). Changes on every content write, never on rename or move.",
+          "name": "content_version",
+          "required": false,
+          "types": [
+            "string"
           ]
         }
       ],
@@ -17106,7 +17131,7 @@
       "name": "WebsocketServerConfig"
     }
   ],
-  "models_hash": "0fc0e2fa8255c90834b8b3466187617ad7bd7887df3bb7baa90d57fbfabf1cac",
+  "models_hash": "540aadf56707a312f350cc7510385baa09eacaed912950ff5da1afb9776ba0a5",
   "ws": [
     {
       "auth": "session",
@@ -19747,7 +19772,7 @@
       "client_timeout_ms": 30000,
       "command": "fs.dir.list",
       "confirmations": [],
-      "description": "List a directory (List on the path).",
+      "description": "List a directory (List on the path). Children the caller cannot Lookup are left out, as in FUSE readdir, and so is what they hold from child folders' size and counts and the folder's own size.",
       "input": "payload",
       "operation": "fs.list",
       "payload": [
@@ -20262,7 +20287,7 @@
       "client_timeout_ms": 180000,
       "command": "fs.entry.move",
       "confirmations": [],
-      "description": "Move an entry (Move on the source).",
+      "description": "Move an entry: Move on the source; into another folder also Write (files) or Touch (directories) at the destination, for the entry and everything it carries.",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -20347,7 +20372,7 @@
       "client_timeout_ms": 60000,
       "command": "fs.entry.rename",
       "confirmations": [],
-      "description": "Rename an entry (Rename on the source).",
+      "description": "Rename an entry: Rename on the source; into another folder also Write (files) or Touch (directories) at the destination, for the entry and everything it carries.",
       "input": "payload",
       "operation": "fs.rename",
       "payload": [
@@ -38095,5 +38120,5 @@
       "variants": []
     }
   ],
-  "ws_hash": "cba52446e8e2bc3eda732c6bdac1884cbfa3b1f2326d7b0f37500c8a92a04893"
+  "ws_hash": "686e357625cb73a67b350e65eb9ed5e057a42c96013fa6e5215e5ca9d55af074"
 }
