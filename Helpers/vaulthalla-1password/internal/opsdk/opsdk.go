@@ -12,7 +12,7 @@ import (
 
 	"github.com/1password/onepassword-sdk-go"
 
-	"github.com/vaulthalla/desktop/helpers/vaulthalla-1password/internal/store"
+	"github.com/valkyrianlabs/vaulthalla-desktop/helpers/vaulthalla-1password/internal/store"
 )
 
 const IntegrationName = "Vaulthalla Desktop"

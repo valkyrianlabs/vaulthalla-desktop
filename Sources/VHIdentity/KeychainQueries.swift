@@ -15,7 +15,7 @@ import Security
 /// The file-based keychain ignores key attributes in identity queries (it returns unrelated identities), so it can only
 /// be pinned to the certificate with `kSecMatchItemList`. The data protection keychain answers `errSecParam` (-50) to
 /// an identity query with `kSecMatchItemList`, and `errSecNotAvailable` (-25291) to one by `kSecAttrPublicKeyHash`,
-/// but it honors the key's `kSecAttrApplicationLabel` (vaulthalla/desktop#11, found by the #2 spike). The
+/// but it honors the key's `kSecAttrApplicationLabel` (valkyrianlabs/vaulthalla-desktop#11, found by the #2 spike). The
 /// application label is the SHA-1 of the public key, the same value as the certificate's public-key hash, so it names
 /// exactly the identities of our key. Either way the store then checks that the identity's certificate is the one it
 /// found (byte for byte), and that certificate was already checked to carry our key's SPKI.

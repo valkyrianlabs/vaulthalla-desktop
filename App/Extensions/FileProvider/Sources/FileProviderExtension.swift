@@ -6,7 +6,7 @@ import VHCore
 import VHFinder
 import VHNodes
 
-/// Vaulthalla's File Provider extension: one domain per vault the operator selects (vaulthalla/desktop#1, #4).
+/// Vaulthalla's File Provider extension: one domain per vault the operator selects (valkyrianlabs/vaulthalla-desktop#1, #4).
 ///
 /// This is the foundation only (docs/architecture.md §7). The domain shows an empty, read-only root and an empty
 /// working set, and every file operation is refused. What it does now is find the shared state the way the full

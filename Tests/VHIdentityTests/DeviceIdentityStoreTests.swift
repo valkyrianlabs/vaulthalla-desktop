@@ -129,7 +129,7 @@ import VHIdentity
     }
 
     /// Runs only in a signed host with a keychain access group; skipped under `swift test`. The same steps run signed
-    /// through `tools/keychain-proof/run.sh` (vaulthalla/desktop#11).
+    /// through `tools/keychain-proof/run.sh` (valkyrianlabs/vaulthalla-desktop#11).
     @Test(.enabled(if: TestKeychain.dataProtectionKeychainAvailable, "needs keychain entitlements (signed app)"))
     func secureEnclaveIdentity() async throws {
         try await TestKeychain.withStore(keychain: .dataProtection) { store in

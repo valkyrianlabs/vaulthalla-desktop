@@ -1,4 +1,4 @@
-// Signed-build proof for DeviceIdentityStore in the data protection keychain (vaulthalla/desktop#11). Run it with
+// Signed-build proof for DeviceIdentityStore in the data protection keychain (valkyrianlabs/vaulthalla-desktop#11). Run it with
 // tools/keychain-proof/run.sh, never from CI: it needs a team-signed app with keychain-access-groups.
 //
 // Every item it writes is under a namespace unique to the run (sh.vaulthalla.desktop.proof.<uuid>), and all of them

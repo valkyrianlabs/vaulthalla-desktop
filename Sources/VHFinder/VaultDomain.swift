@@ -1,6 +1,6 @@
 public import VHCore
 
-/// Which vault a File Provider domain shows: one domain per vault the operator selects (vaulthalla/desktop#1), on a
+/// Which vault a File Provider domain shows: one domain per vault the operator selects (valkyrianlabs/vaulthalla-desktop#1), on a
 /// node of this Mac's registry.
 ///
 /// Its identifier is `<node id>.<vault id>`, which survives renames of the node and the vault and contains neither `/`

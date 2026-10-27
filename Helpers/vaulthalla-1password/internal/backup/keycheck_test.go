@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vaulthalla/desktop/helpers/vaulthalla-1password/internal/store"
+	"github.com/valkyrianlabs/vaulthalla-desktop/helpers/vaulthalla-1password/internal/store"
 )
 
 // sequentialKey is the documented test key: bytes 00 01 … 1f.
