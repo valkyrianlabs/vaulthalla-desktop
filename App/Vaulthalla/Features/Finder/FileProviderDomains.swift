@@ -14,7 +14,7 @@ nonisolated struct FileProviderDomains: DomainRegistrar {
     func add(_ domain: VaultDomain) async throws {
         let made = NSFileProviderDomain(identifier: NSFileProviderDomainIdentifier(rawValue: domain.id.identifier),
                                         displayName: domain.displayName)
-        // Deleting in Finder sends files to the server's trash and recovery, not a synced Trash (vaulthalla/desktop#4).
+        // Deleting in Finder sends files to the server's trash and recovery, not a synced Trash (valkyrianlabs/vaulthalla-desktop#4).
         made.supportsSyncingTrash = false
         try await NSFileProviderManager.add(made)
     }

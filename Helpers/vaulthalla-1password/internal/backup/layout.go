@@ -11,7 +11,7 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/vaulthalla/desktop/helpers/vaulthalla-1password/internal/store"
+	"github.com/valkyrianlabs/vaulthalla-desktop/helpers/vaulthalla-1password/internal/store"
 )
 
 // The item layout (docs/architecture.md §6, decision D6). One API Credential item per (node, Vaulthalla vault):

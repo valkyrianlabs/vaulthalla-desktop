@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/vaulthalla/desktop/helpers/vaulthalla-1password/internal/store"
+	"github.com/valkyrianlabs/vaulthalla-desktop/helpers/vaulthalla-1password/internal/store"
 )
 
 func attested(n int, k byte, keyID uint32, sig string) ver {

@@ -5,7 +5,7 @@ package main
 import (
 	"testing"
 
-	"github.com/vaulthalla/desktop/helpers/vaulthalla-1password/internal/backup"
+	"github.com/valkyrianlabs/vaulthalla-desktop/helpers/vaulthalla-1password/internal/backup"
 )
 
 // A release build can't be switched into fake mode from the environment.

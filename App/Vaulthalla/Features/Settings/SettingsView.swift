@@ -14,7 +14,7 @@ struct SettingsView: View {
                 OnePasswordSettingsView()
             }
             #if DEBUG
-            // Developer only until the File Provider extension serves files (vaulthalla/desktop#4).
+            // Developer only until the File Provider extension serves files (valkyrianlabs/vaulthalla-desktop#4).
             Tab("Finder", systemImage: "folder.badge.gearshape") {
                 FinderSettingsView()
             }

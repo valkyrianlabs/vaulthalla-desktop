@@ -1,6 +1,6 @@
 #!/bin/bash
 # Signed-build proof that DeviceIdentityStore creates, finds, rotates and deletes Secure Enclave identities in the
-# data protection keychain (vaulthalla/desktop#11). CI can't run it: it needs a team-signed app, because
+# data protection keychain (valkyrianlabs/vaulthalla-desktop#11). CI can't run it: it needs a team-signed app, because
 # keychain-access-groups is a restricted entitlement that only a provisioning profile grants.
 #
 #   tools/keychain-proof/run.sh <TEAM_ID> [bundle id]

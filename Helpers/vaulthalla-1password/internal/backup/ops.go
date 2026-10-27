@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/vaulthalla/desktop/helpers/vaulthalla-1password/internal/store"
+	"github.com/valkyrianlabs/vaulthalla-desktop/helpers/vaulthalla-1password/internal/store"
 )
 
 // Results. None of these carries key material except RevealResult, which encodes itself (jsonAppender).

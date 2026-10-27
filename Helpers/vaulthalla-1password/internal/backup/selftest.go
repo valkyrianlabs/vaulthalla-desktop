@@ -6,7 +6,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/vaulthalla/desktop/helpers/vaulthalla-1password/internal/store"
+	"github.com/valkyrianlabs/vaulthalla-desktop/helpers/vaulthalla-1password/internal/store"
 )
 
 // SelfTest is the maintainer's manual check: connect to the account (1Password asks for approval), list vaults,

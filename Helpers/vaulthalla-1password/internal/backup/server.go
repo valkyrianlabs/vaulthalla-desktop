@@ -21,7 +21,7 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/vaulthalla/desktop/helpers/vaulthalla-1password/internal/store"
+	"github.com/valkyrianlabs/vaulthalla-desktop/helpers/vaulthalla-1password/internal/store"
 )
 
 // Handler handles one op. raw aliases the request line, which is wiped after the response is written. Secrets the

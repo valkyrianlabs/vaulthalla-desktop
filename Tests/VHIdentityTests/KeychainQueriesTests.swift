@@ -7,7 +7,7 @@ import Testing
 /// Keychain, so it runs everywhere, including unsigned `swift test`, where the data protection paths can't run.
 ///
 /// The data protection keychain answers `errSecParam` to an identity query with `kSecMatchItemList` and
-/// `errSecNotAvailable` to one by `kSecAttrPublicKeyHash` (vaulthalla/desktop#11), which made every signed build fail
+/// `errSecNotAvailable` to one by `kSecAttrPublicKeyHash` (valkyrianlabs/vaulthalla-desktop#11), which made every signed build fail
 /// to create or find a Secure Enclave identity.
 @Suite struct KeychainQueriesTests {
     static let group = "QG2U5HNCG4.sh.vaulthalla.desktop"

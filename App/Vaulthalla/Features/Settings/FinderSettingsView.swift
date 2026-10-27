@@ -6,7 +6,7 @@ import VHCore
 import VHFinder
 import VHNodes
 
-/// Debug builds only, until the File Provider extension serves files (vaulthalla/desktop#4): where the registry
+/// Debug builds only, until the File Provider extension serves files (valkyrianlabs/vaulthalla-desktop#4): where the registry
 /// lives, and this app's File Provider domains, one per vault, to add, remove and check for the operator's approval.
 struct FinderSettingsView: View {
     @Environment(AppModel.self) private var model

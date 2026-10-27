@@ -10,8 +10,8 @@ import (
 	"runtime"
 	"runtime/debug"
 
-	"github.com/vaulthalla/desktop/helpers/vaulthalla-1password/internal/backup"
-	"github.com/vaulthalla/desktop/helpers/vaulthalla-1password/internal/opsdk"
+	"github.com/valkyrianlabs/vaulthalla-desktop/helpers/vaulthalla-1password/internal/backup"
+	"github.com/valkyrianlabs/vaulthalla-desktop/helpers/vaulthalla-1password/internal/opsdk"
 )
 
 const sdkModule = "github.com/1password/onepassword-sdk-go"

@@ -9,8 +9,8 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/vaulthalla/desktop/helpers/vaulthalla-1password/internal/backup"
-	"github.com/vaulthalla/desktop/helpers/vaulthalla-1password/internal/store"
+	"github.com/valkyrianlabs/vaulthalla-desktop/helpers/vaulthalla-1password/internal/backup"
+	"github.com/valkyrianlabs/vaulthalla-desktop/helpers/vaulthalla-1password/internal/store"
 )
 
 // fakeSetup switches the test build into fake mode when VH_OP_FAKE=1: an in-memory 1Password (store.Memory) plus

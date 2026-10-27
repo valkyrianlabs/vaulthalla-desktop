@@ -15,8 +15,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/vaulthalla/desktop/helpers/vaulthalla-1password/internal/backup"
-	"github.com/vaulthalla/desktop/helpers/vaulthalla-1password/internal/opsdk"
+	"github.com/valkyrianlabs/vaulthalla-desktop/helpers/vaulthalla-1password/internal/backup"
+	"github.com/valkyrianlabs/vaulthalla-desktop/helpers/vaulthalla-1password/internal/opsdk"
 )
 
 // version is stamped by build.sh (-ldflags "-X main.version=...").
