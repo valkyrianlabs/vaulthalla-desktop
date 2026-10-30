@@ -21,6 +21,8 @@ final class MockDaemon: Sendable {
     enum Reply: Sendable {
         case ok(JSONValue)
         case refuse(String, code: String)
+        /// An ERROR answer with `data` as given (nil: no `data` at all, as the router's "Unknown command").
+        case refuseWith(String, data: JSONValue?)
     }
 
     typealias Responder = @Sendable (JSONValue) -> Reply
@@ -285,11 +287,16 @@ final class MockDaemon: Sendable {
                 state.payloads[command, default: []].append(payload)
                 return state.responders[command]
             }
-            guard let responder else { return inbound.ok(.object([:])) }
+            guard let responder else {
+                // A daemon that predates meta.hello (≤ 1.18.0) unless a test scripts one: the router's answer.
+                if command == "meta.hello" { return inbound.refuse("Unknown command", data: nil) }
+                return inbound.ok(.object([:]))
+            }
             let reply = { @Sendable in
                 switch responder.respond(payload) {
                 case .ok(let data): inbound.ok(data)
                 case .refuse(let message, let code): inbound.refuse(message, code: code)
+                case .refuseWith(let message, let data): inbound.refuse(message, data: data)
                 }
             }
             if let delay = responder.delay {
@@ -485,8 +492,14 @@ struct Inbound: Sendable {
     }
 
     func refuse(_ message: String, code: String) {
-        peer.send(["command": .string(command + ".response"), "status": "ERROR", "requestId": .string(requestId),
-                   "error": .string(message), "data": ["code": .string(code)]])
+        refuse(message, data: ["code": .string(code)])
+    }
+
+    func refuse(_ message: String, data: JSONValue?) {
+        var frame: JSONObject = ["command": .string(command + ".response"), "status": "ERROR",
+                                 "requestId": .string(requestId), "error": .string(message)]
+        frame["data"] = data
+        peer.send(.object(frame))
     }
 }
 

@@ -32,9 +32,33 @@ enum QueryProblem: Equatable {
         case .timeout: self = .noAnswerYet
         case .contractMismatch: self = .mismatch
         case .unauthorized(let message), .invalid(let message), .conflict(let message), .error(let message),
-             .needsConfirmation(_, let message):
+             .needsConfirmation(_, let message), .refused(_, let message):
             self = .failed(message)
+        case .unknownCommand: self = .failed(CompatibilityWords.unknownCommand)
+        case .protocolUnsupported(let mismatch): self = .failed(mismatch.message)
         }
+    }
+}
+
+/// What to say when a node runs another Vaulthalla than this build expects.
+enum CompatibilityWords {
+    /// The node doesn't have the command (`unknown_command`).
+    static let unknownCommand = "This node's Vaulthalla doesn't have this yet. Update Vaulthalla on the node to use it."
+
+    /// An answer that didn't decode (`contractMismatch`). On a legacy node (no `meta.hello`, so ≤ 1.18) the likely
+    /// cause is a release older than this build supports: say which one it needs.
+    static func mismatch(node: String, legacy: Bool) -> String {
+        legacy
+            ? "\(node) runs Vaulthalla \(WsProtocol.newestLegacyServer) or earlier and answered in a shape this "
+                + "version of Vaulthalla Desktop doesn't understand. Desktop needs Vaulthalla "
+                + "\(WsProtocol.oldestServer) or later: update Vaulthalla on the node."
+            : "It answered in a shape this version of Vaulthalla Desktop doesn't understand. "
+                + "Updating one of them fixes it."
+    }
+
+    /// The compact form, for a line in a page.
+    static func shortMismatch(legacy: Bool) -> String {
+        legacy ? "Needs Vaulthalla \(WsProtocol.oldestServer) or later on the node." : "Not readable by this version."
     }
 }
 
@@ -91,6 +115,8 @@ struct ProblemPanel: View {
     var subject: String
     var retry: () -> Void
 
+    @Environment(AppModel.self) private var model
+
     var body: some View {
         Panel {
             switch problem {
@@ -122,7 +148,8 @@ struct ProblemPanel: View {
                 EmptyState(
                     "\(node.displayName) runs a different Vaulthalla",
                     systemImage: "arrow.triangle.2.circlepath",
-                    message: "It answered in a shape this version of Vaulthalla Desktop doesn't understand. Updating one of them fixes it."
+                    message: CompatibilityWords.mismatch(node: node.displayName,
+                                                         legacy: model.nodeProtocol(for: node.id)?.isLegacy == true)
                 )
             case .failed(let message):
                 EmptyState("Couldn't load \(subject)", systemImage: "exclamationmark.triangle", message: message) {
@@ -138,13 +165,17 @@ struct InlineProblem: View {
     var error: WsError
     var subject: String
 
+    @Environment(NodeQueries.self) private var queries: NodeQueries?
+
     var body: some View {
         let (icon, text): (String, String) = switch QueryProblem(error) {
         case .denied: ("lock", "You don't have access to \(subject).")
         case .notFound(let message): ("questionmark.circle", message)
         case .offline: ("bolt.horizontal.circle", "Not connected.")
         case .noAnswerYet: ("hourglass", "No answer yet.")
-        case .mismatch: ("arrow.triangle.2.circlepath", "Not readable by this version.")
+        case .mismatch:
+            ("arrow.triangle.2.circlepath",
+             CompatibilityWords.shortMismatch(legacy: queries?.nodeProtocol?.isLegacy == true))
         case .failed(let message): ("exclamationmark.triangle", message)
         }
         Label(text, systemImage: icon)
@@ -160,6 +191,8 @@ struct StaleBanner: View {
     var updatedAt: Date
     var refreshError: WsError?
     var connected: Bool
+
+    @Environment(AppModel.self) private var model
 
     var body: some View {
         if let text {
@@ -187,7 +220,10 @@ struct StaleBanner: View {
         case .noAnswerYet: "Showing data from \(time). \(node.displayName) hasn't answered the latest refresh yet."
         case .denied(let message): "Showing data from \(time). The latest refresh was refused: \(message)"
         case .notFound(let message), .failed(let message): "Showing data from \(time). The latest refresh failed: \(message)"
-        case .mismatch: "Showing data from \(time). The latest answer wasn't readable by this version."
+        case .mismatch:
+            model.nodeProtocol(for: node.id)?.isLegacy == true
+                ? "Showing data from \(time). \(CompatibilityWords.shortMismatch(legacy: true))"
+                : "Showing data from \(time). The latest answer wasn't readable by this version."
         }
     }
 }

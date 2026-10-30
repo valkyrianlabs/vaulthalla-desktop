@@ -174,7 +174,8 @@ public actor NodeLink: ReplicaLink {
         case .pairingRequired:
             let reason = if case .offline(let why) = status { why } else { "Pair this Mac with the node again." }
             _ = fail(.notAuthenticated(reason))
-        case .identity, .recordChanged:
+        case .identity, .recordChanged, .protocolNegotiated:
+            // ws calls on an incompatible node are refused by the session itself; lanes check it in `withLanes`.
             break
         }
     }
@@ -194,6 +195,10 @@ public actor NodeLink: ReplicaLink {
         async throws(FinderError) -> T
     {
         let first = try await currentLanes()
+        if let mismatch = await session?.nodeProtocol?.mismatch {
+            // The lanes belong to a protocol this build doesn't speak with the node either: nothing is sent.
+            throw FinderError(TransferError.protocolUnsupported(mismatch.message), during: operation)
+        }
         do throws(TransferError) {
             return try await body(first.client)
         } catch .forbidden {

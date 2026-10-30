@@ -43,6 +43,8 @@ private struct ServerConfirmation<R: WsRequest>: ViewModifier where R.Payload: D
 struct MutationError: View {
     var error: WsError?
 
+    @Environment(NodeQueries.self) private var queries: NodeQueries?
+
     var body: some View {
         if let error {
             Callout(tone: tone(error), systemImage: QueryProblem(error) == .noAnswerYet ? "hourglass" : "exclamationmark.circle") {
@@ -64,6 +66,8 @@ struct MutationError: View {
         case .noAnswerYet: "No answer yet. The node may still be working on it; check before trying again."
         case .offline: "Not connected to the node. Nothing was changed."
         case .denied(let message): "Not allowed: \(message)"
+        case .mismatch where queries?.nodeProtocol?.isLegacy == true: CompatibilityWords.shortMismatch(legacy: true)
+        case .failed(let message): message
         default: error.message
         }
     }

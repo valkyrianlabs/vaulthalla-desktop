@@ -280,6 +280,25 @@ import VHCore
         await client.bridge.shutdown()
     }
 
+    @Test(arguments: [
+        (ProtocolSupport?.none, "without remote MCP"),
+        (.some(.unknown), "without remote MCP"),
+        (.some(.no), "Update Vaulthalla on the node"),
+        (.some(.yes), "although its Vaulthalla serves remote MCP"),
+    ])
+    func aMissingEndpointIsReadAgainstTheNodesCapabilities(announced: ProtocolSupport?, words: String) async throws {
+        defer { registry.remove() }
+        alpha.set { $0.missingEndpoint = true }
+        let node = Node(id: NodeID(rawValue: "node-a"), displayName: "Alpha",
+                        endpoint: NodeEndpoint(host: "alpha.local", port: 36982),
+                        pairing: .paired(serverSPKISHA256: Data(repeating: 1, count: 32), deviceID: "d", since: .now))
+        let remote = RemoteNode(node: node, connector: FakeConnector(daemons: [node.id: alpha], mcp: announced),
+                                idleTimeout: .seconds(5), clientVersion: "test")
+        #expect(await remote.refreshTools(timeout: .seconds(5)) == false)
+        let problem = try #require(await remote.problem)
+        #expect(problem.contains(words), "\(problem)")
+    }
+
     @Test func unpairedNodesAreListedButOfferNothing() async throws {
         defer { registry.remove() }
         try registry.writer.add(Node(id: NodeID(rawValue: "node-p"), displayName: "Pending",

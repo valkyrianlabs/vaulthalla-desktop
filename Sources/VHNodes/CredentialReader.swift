@@ -217,6 +217,23 @@ public struct CredentialReader: Sendable {
         await check(credentials, pin: credentials.serverPin, timeout: timeout, tryingNext: true)
     }
 
+    /// Asks the node what it speaks (`meta.hello`, ``NodeProtocol``) over one ws connection with `credentials`, for
+    /// a process without a session of its own (the MCP bridge). nil when it decided nothing (unreachable, no answer).
+    public func negotiate(_ credentials: NodeCredentials, timeout: Duration = .seconds(10)) async -> NodeProtocol? {
+        let client: WsClient
+        do {
+            client = try WsClient(configuration: .init(
+                endpoint: credentials.node.endpoint,
+                security: .mutualTLS(identity: credentials.identity.secIdentity, serverSPKIPin: credentials.serverPin,
+                                     onServerSPKI: { _ in }),
+                connectTimeout: timeout))
+        } catch {
+            return nil
+        }
+        defer { Task { await client.close() } }
+        return await client.negotiate(timeout: timeout)
+    }
+
     private func check(_ credentials: NodeCredentials, pin: Data, timeout: Duration, tryingNext: Bool) async
         -> DeviceCheck
     {

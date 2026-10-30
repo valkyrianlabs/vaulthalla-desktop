@@ -19,7 +19,7 @@ business logic: every action is an operation the daemon authorizes.
 | `Helpers/vaulthalla-1password/` | the Go helper that backs vault keys up to 1Password (desktop-app authorization); `./build.sh`, see its README |
 | `App/` | the Xcode project: SwiftUI app, design system, features. Source folders are synchronized: add files on disk, no project edits |
 | `App/Extensions/FileProvider/` | the File Provider extension (`sh.vaulthalla.app.fileprovider`, embedded in `Contents/PlugIns`): Finder integration: browse, read (whole and ranges), create, edit with conflict copies, rename, move, delete, thumbnails ([`docs/architecture.md`](docs/architecture.md) §7) |
-| `contract/` | `wsContract.json` vendored from the server (`SOURCE.json` records the version); `tools/gen-contract.py` turns it into Swift |
+| `contract/` | `wsContract.json` vendored from the server (`SOURCE.json` records the version) and `compat-baseline.json`, the oldest supported server's contract (1.17.0); `tools/gen-contract.py` turns them into Swift ([`docs/architecture.md`](docs/architecture.md) §3, "Protocol negotiation") |
 | `tools/interop/` | `vh-instance.sh`: a private daemon test instance for the opt-in live suite `Tests/VHNodesLiveTests` ([`docs/interop-testing.md`](docs/interop-testing.md)) |
 | `tools/keychain-proof/` | `run.sh <TEAM_ID>`: a team-signed proof that device identities work in the data protection keychain (Secure Enclave create, find, rotate, delete), which unsigned `swift test` and CI can't reach |
 | `docs/` | architecture and protocol documents |
@@ -62,7 +62,12 @@ Refresh the contract after a server change:
 
 ```sh
 python3 tools/gen-contract.py --from ../vaulthalla      # copies the server's generated contract, regenerates Swift
+python3 tools/gen-contract.py --baseline-from ../vaulthalla --baseline-ref v1.17.0   # moves the compatibility baseline
+python3 tools/gen-contract.py --check && python3 tools/test_gen_contract.py          # what CI runs
 ```
+
+Response members newer than the baseline are generated optional, so Desktop decodes every server from the baseline
+on. Raising the baseline (dropping support for older servers) also raises `WsProtocol.oldestServer`.
 
 ## Release
 

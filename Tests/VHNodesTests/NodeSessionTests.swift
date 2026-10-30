@@ -1,8 +1,10 @@
 import Foundation
 import Testing
+import VHContract
 import VHCore
 import VHIdentity
 @testable import VHNodes
+import VHTransport
 
 /// `NodeSession` and `NodeSessions` against the mock daemon: Device sessions by client SPKI, revocation, reconnects,
 /// server key announcements and device key rotation (docs/pairing.md §4–§6).
@@ -69,6 +71,118 @@ extension KeychainSuite {
             let client = try #require(await session.client)
             // Feature code uses the same connection.
             #expect(try await client.send(command: "meta.contract.get", payload: .null) == [:])
+            await session.stop()
+        }
+    }
+
+    // MARK: Protocol negotiation
+
+    /// A `meta.hello` answer as the spec words it.
+    static func hello(version: Int = 1, min: Int = 1, max: Int = 1, release: String = "1.19.0",
+                      capabilities: [String] = ["device.lanes.download", "device.server.identity",
+                                                "errors.unknown_command_code"],
+                      commands: [String] = ["device.server.identity", "meta.hello", "storage.vault.list"])
+        -> JSONValue
+    {
+        [
+            "server": ["name": "vaulthalla", "version": .string(release)],
+            "protocol": ["version": .integer(Int64(version)), "min": .integer(Int64(min)), "max": .integer(Int64(max))],
+            "capabilities": .array(capabilities.map(JSONValue.string)),
+            "commands": .array(commands.map(JSONValue.string)),
+            "contract": ["contract_version": 3, "contract_hash": "c", "ws_hash": "w", "models_hash": "m"],
+        ]
+    }
+
+    @Test func negotiatesBeforeReportingOnline() async throws {
+        try await withPairedNode { fixture in
+            fixture.daemon.answer("meta.hello") { _ in .ok(Self.hello()) }
+            let (session, events) = await start(fixture)
+            #expect(await online(events))
+            // The outcome arrives before the connection reports online, so sections never start without it.
+            let negotiated = events.all.firstIndex { if case .protocolNegotiated = $0 { true } else { false } }
+            let reportedOnline = events.all.firstIndex { $0.status == .online }
+            #expect(try #require(negotiated) < #require(reportedOnline))
+            let settled = try #require(await session.nodeProtocol)
+            #expect(settled.state == .negotiated)
+            #expect(settled.version == 1 && settled.serverVersion == "1.19.0" && settled.serverRange == 1...1)
+            #expect(settled.productLabel == "Vaulthalla 1.19.0 · protocol 1")
+            #expect(settled.contract?.wsHash == "w")
+            #expect(await session.supports(command: .storageVaultList) == .yes)
+            #expect(await session.supports(command: .storageVaultAccessibleList) == .no)
+            #expect(await session.supports(capability: .downloadLane) == .yes)
+            #expect(await session.supports(capability: .deviceMCP) == .no)
+            // What Desktop says about itself.
+            let sent = try #require(fixture.daemon.payloads(of: "meta.hello").first)
+            #expect(sent["client"]?["name"] == "vaulthalla-desktop")
+            #expect(sent["protocol"] == ["min": 1, "max": 1])
+            await session.stop()
+        }
+    }
+
+    @Test func legacyDaemonAnswersUnknownCommand() async throws {
+        try await withPairedNode { fixture in
+            // The mock answers meta.hello as a daemon ≤ 1.18.0 does: ERROR "Unknown command", no code.
+            let (session, events) = await start(fixture)
+            #expect(await online(events))
+            let settled = try #require(await session.nodeProtocol)
+            #expect(settled == .legacy && settled.version == 1 && settled.productLabel == "Vaulthalla 1.18 or earlier")
+            #expect(await session.supports(command: .storageVaultAccessibleList) == .unknown)
+            #expect(await session.supports(capability: .deviceMCP) == .unknown)
+            // Feature calls go through as before.
+            fixture.daemon.answer("meta.contract.get") { _ in
+                .ok(["contract_version": 2, "contract_hash": "c", "ws_hash": "w", "models_hash": "m"])
+            }
+            #expect(try await session.send(Ws.Meta.Contract.Get.self, payload: WsNoPayload()).wsHash == "w")
+            await session.stop()
+        }
+    }
+
+    @Test func incompatibleNodeStaysConnectedButRefusesFeatureCalls() async throws {
+        try await withPairedNode { fixture in
+            fixture.daemon.answer("meta.hello") { _ in
+                .refuseWith("No common protocol version.", data: [
+                    "code": "protocol_unsupported", "server_min": 2, "server_max": 3, "server_version": "2.0.0",
+                ])
+            }
+            let (session, events) = await start(fixture)
+            #expect(await online(events))
+            let settled = try #require(await session.nodeProtocol)
+            #expect(settled.state == .incompatible(serverMin: 2, serverMax: 3, serverVersion: "2.0.0",
+                                                   reason: .desktopTooOld))
+            #expect(settled.productLabel == "Vaulthalla 2.0.0 · protocol 2–3")
+            #expect(await session.supports(command: .storageVaultList) == .no)
+            let mismatch = ProtocolMismatch(serverMin: 2, serverMax: 3, serverVersion: "2.0.0")
+            await #expect(throws: WsError.protocolUnsupported(mismatch)) {
+                try await session.send(Ws.Meta.Contract.Get.self, payload: WsNoPayload())
+            }
+            #expect(fixture.daemon.count(of: "meta.contract.get") == 0)
+            #expect(mismatch.message.contains("needs a newer Vaulthalla Desktop"))
+            await session.stop()
+        }
+    }
+
+    @Test func reconnectRenegotiates() async throws {
+        try await withPairedNode { fixture in
+            let (session, events) = await start(fixture)
+            #expect(await online(events))
+            #expect(await session.nodeProtocol == .legacy)
+            // The node was upgraded meanwhile.
+            fixture.daemon.answer("meta.hello") { _ in .ok(Self.hello(release: "1.19.0")) }
+            let seen = events.all.count
+            fixture.daemon.dropConnections()
+            #expect(await online(events, after: seen))
+            #expect(await session.nodeProtocol?.serverVersion == "1.19.0")
+            #expect(fixture.daemon.count(of: "meta.hello") == 2)
+            await session.stop()
+        }
+    }
+
+    @Test func skipsTheIdentityCheckWhenTheNodeLacksIt() async throws {
+        try await withPairedNode { fixture in
+            fixture.daemon.answer("meta.hello") { _ in .ok(Self.hello(capabilities: [])) }
+            let (session, events) = await start(fixture)
+            #expect(await online(events))
+            #expect(fixture.daemon.count(of: "device.server.identity") == 0)
             await session.stop()
         }
     }

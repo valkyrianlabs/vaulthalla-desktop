@@ -25,7 +25,8 @@ struct NodeOverviewView: View {
     }
 }
 
-/// Name, address, contract and this Mac's side of the pairing.
+/// Name, address, the Vaulthalla it runs (release and protocol, from `meta.hello`), its contract and this Mac's side
+/// of the pairing.
 private struct NodeIdentityPanel: View {
     var node: Node
     var queries: NodeQueries?
@@ -33,7 +34,9 @@ private struct NodeIdentityPanel: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        let contract = queries?.query(Ws.Meta.Contract.Get.self)
+        let settled = model.nodeProtocol(for: node.id)
+        // A negotiated node reported its contract in the hello; others are asked (`meta.contract.get`).
+        let contract = settled?.contract == nil ? queries?.query(Ws.Meta.Contract.Get.self) : nil
         Panel(title: "Node", subtitle: "Its identity, and the record Desktop keeps for it. Nothing here is secret.") {
             DefinitionList(items: details(contract: contract), monospacedValues: ["Address", "Device ID", "Server key"])
         } actions: {
@@ -45,13 +48,19 @@ private struct NodeIdentityPanel: View {
         }
     }
 
-    /// The node record, the contract it runs once connected, and this Mac's side of the pairing.
+    /// The node record, what it runs once connected, and this Mac's side of the pairing.
     private func details(contract: NodeQuery<Ws.Meta.Contract.Get>?) -> [(term: String, value: String)] {
+        let settled = model.nodeProtocol(for: node.id)
         var items: [(term: String, value: String)] = [
             ("Name", node.displayName),
             ("Address", node.endpoint.description),
         ]
-        if let contract {
+        if node.pairing.isPaired {
+            items.append(("Vaulthalla", Self.describe(settled, status: model.status(for: node))))
+        }
+        if let identity = settled?.contract {
+            items.append(("Contract", Self.describe(identity)))
+        } else if let contract {
             items.append(("Contract", Self.describe(contract)))
         }
         items.append(("Pairing", node.pairing.summary))
@@ -66,7 +75,28 @@ private struct NodeIdentityPanel: View {
         return items
     }
 
-    /// "Version 2, same as this app" from `meta.contract.get`; the daemon reports no release version.
+    /// "Vaulthalla 1.19.0 · protocol 1", "Vaulthalla 1.18 or earlier" (a legacy node, no `meta.hello`), the
+    /// incompatible release and range with which side to update, or "—" until a connection settled it.
+    private static func describe(_ settled: NodeProtocol?, status: NodeConnectionStatus) -> String {
+        guard let settled else { return status == .online || status == .connecting ? "Asking…" : "—" }
+        if let mismatch = settled.mismatch {
+            return switch mismatch.side {
+            case .desktopTooOld: "\(settled.productLabel), needs a newer Vaulthalla Desktop"
+            case .serverTooOld: "\(settled.productLabel), needs a newer Vaulthalla on the node"
+            case .unclear: "\(settled.productLabel), incompatible with this app"
+            }
+        }
+        return settled.productLabel
+    }
+
+    /// "Version 3, same as this app" from the hello's contract identity.
+    private static func describe(_ identity: NodeProtocol.ContractIdentity) -> String {
+        let same = identity.matchesThisBuild
+        return "Version \(identity.contractVersion), "
+            + (same ? "same as this app" : "differs from this app's (\(identity.wsHash.prefix(8))…)")
+    }
+
+    /// "Version 2, same as this app" from `meta.contract.get` (a legacy node reports no release version).
     private static func describe(_ query: NodeQuery<Ws.Meta.Contract.Get>) -> String {
         if let value = query.value {
             let same = value.wsHash == WsContract.wsHash

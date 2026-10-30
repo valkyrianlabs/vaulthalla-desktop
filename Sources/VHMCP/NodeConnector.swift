@@ -69,9 +69,19 @@ public protocol NodeMCPConnector: Sendable {
     /// used, which may be newer than `node`. The default connects again with `node`.
     func reconnect(afterRefusalOf node: Node, idleTimeout: Duration) async throws(NodeConnectFailure)
         -> (transport: any NodeMCPTransport, node: Node)
+
+    /// Whether the node announced `capability` in `meta.hello` (``NodeProtocol``): the bridge asks for `device.mcp`
+    /// when `/mcp` answers 404, to tell a node without remote MCP from a refusal. Unknown for a legacy node, or when
+    /// the node couldn't be asked; the default is unknown.
+    func support(for capability: WsCapability, of node: Node) async -> ProtocolSupport
 }
 
 extension NodeMCPConnector {
+    /// No negotiation: unknown, so a missing `/mcp` reads as before (an older daemon).
+    public func support(for capability: WsCapability, of node: Node) async -> ProtocolSupport {
+        .unknown
+    }
+
     public func reconnect(afterRefusalOf node: Node, idleTimeout: Duration) async throws(NodeConnectFailure)
         -> (transport: any NodeMCPTransport, node: Node)
     {
@@ -122,6 +132,14 @@ public struct KeychainNodeConnector: NodeMCPConnector {
             throw NodeConnectFailure(error)
         }
         return (try transport(credentials, idleTimeout: idleTimeout), credentials.node)
+    }
+
+    /// One ws connection with the saved credentials and `meta.hello` (``CredentialReader/negotiate(_:timeout:)``).
+    public func support(for capability: WsCapability, of node: Node) async -> ProtocolSupport {
+        guard let credentials = try? await reader.load(node),
+              let settled = await reader.negotiate(credentials)
+        else { return .unknown }
+        return settled.supports(capability: capability)
     }
 
     private func transport(_ credentials: NodeCredentials, idleTimeout: Duration) throws(NodeConnectFailure)

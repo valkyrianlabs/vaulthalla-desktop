@@ -308,12 +308,14 @@ struct KeyBackupTests {
 
     /// A live Device session to the mock daemon with `vaults`, and the fake 1Password helper.
     private func withLab(
-        _ vaults: [DaemonKeys.Vault], versions: [Int64: [Int]], _ body: (Lab) async throws -> Void
+        _ vaults: [DaemonKeys.Vault], versions: [Int64: [Int]], hello: JSONValue? = nil,
+        _ body: (Lab) async throws -> Void
     ) async throws {
         let shared = try KeychainFixture.require()
         let daemon = try await MockDaemon.start(identity: shared.server)
         defer { daemon.stop() }
         daemon.register(shared.device.spkiSHA256)
+        if let hello { daemon.answer("meta.hello") { _ in .ok(hello) } }
         let node = Node(
             id: NodeID(rawValue: "node-a"), displayName: "vh-test",
             endpoint: NodeEndpoint(host: "127.0.0.1", port: daemon.port),
@@ -480,6 +482,23 @@ struct KeyBackupTests {
                 return
             }
             #expect(message.contains("Update it first"))
+        }
+    }
+
+    @Test func aNegotiatedNodeWithoutKeyBackupIsNotAsked() async throws {
+        // meta.hello lists the node's commands: vault.keys.export isn't one of them.
+        let hello = NodeSessionTests.hello(commands: ["meta.hello", "vault.keys.status"])
+        let vaults = [Self.photos(current: 1, needed: [], rotating: false)]
+        try await withLab(vaults, versions: [7: [1]], hello: hello) { lab in
+            let vault = try await lab.sync.prepare()
+            let row = try await lab.row(7, in: vault)
+            let outcome = await lab.sync.run([row], nodes: [lab.node], into: vault)[row.id]
+            guard case .failed(.export, let message) = outcome else {
+                Issue.record("expected an export failure")
+                return
+            }
+            #expect(message.contains("Update it first"))
+            #expect(lab.daemon.count(of: "vault.keys.export") == 0)
         }
     }
 

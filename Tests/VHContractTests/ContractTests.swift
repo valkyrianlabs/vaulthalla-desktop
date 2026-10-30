@@ -130,6 +130,32 @@ private func vendoredContract() throws -> JSONValue {
         #expect(Set(contractSamples.map(\.command)).count == entries.count)
     }
 
+    @Test func membersNewerThanTheBaselineDecodeWhenAbsent() throws {
+        // Per-tier rollup retention came with 1.18; the 1.17 baseline doesn't send it.
+        #expect(WsContract.relaxedMembers.contains("StatsSnapshotsConfig.rollup_5m_retention_days"))
+        let older = #"""
+        {"enabled": true, "runtime_interval_seconds": 60, "gauge_observation_interval_seconds": 60,
+         "vault_interval_seconds": 300, "retention_days": 30}
+        """#
+        let decoded = try JSONDecoder().decode(WsModel.StatsSnapshotsConfig.self, from: Data(older.utf8))
+        #expect(decoded.rollup5mRetentionDays == nil && decoded.rollup1hRetentionDays == nil)
+        // Members the baseline already had stay required.
+        #expect(throws: DecodingError.self) {
+            try JSONDecoder().decode(WsModel.StatsSnapshotsConfig.self, from: Data(#"{"enabled": true}"#.utf8))
+        }
+        #expect(WsContract.baselineServerVersion == WsProtocol.oldestServer)
+    }
+
+    @Test func capabilitiesAndProtocolMatchTheVendoredDaemon() throws {
+        // Every capability this build checks is one the daemon declares (a typo would read as "no" forever).
+        for capability in WsCapability.used {
+            #expect(WsContract.capabilities[capability.rawValue] != nil, "\(capability) isn't in the contract")
+        }
+        // The daemon this contract came from speaks a protocol this build speaks.
+        let server = try #require(WsContract.serverProtocol)
+        #expect(server.overlaps(WsProtocol.supported))
+    }
+
     @Test func requiredMembersAreRequired() {
         // `meta.contract.get` requires ws_hash.
         #expect(throws: DecodingError.self) {

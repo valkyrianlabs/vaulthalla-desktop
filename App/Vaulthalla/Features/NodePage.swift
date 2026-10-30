@@ -1,5 +1,7 @@
 import SwiftUI
+import VHContract
 import VHCore
+import VHTransport
 
 /// The scaffold every per-node section uses: a header naming the node and section, then the content.
 struct NodePage<Content: View>: View {
@@ -14,7 +16,12 @@ struct NodePage<Content: View>: View {
             VStack(alignment: .leading, spacing: Theme.stackSpacing + 8) {
                 SectionHeader(eyebrow: node.displayName, title: section.title, subtitle: section.summary) {
                     let status = model.status(for: node)
-                    StatusBadge(label: status.label, tone: status.tone, pulse: status.isTransitional)
+                    HStack(spacing: 6) {
+                        if model.incompatibility(for: node) != nil {
+                            StatusBadge(label: "Incompatible", tone: .danger)
+                        }
+                        StatusBadge(label: status.label, tone: status.tone, pulse: status.isTransitional)
+                    }
                 }
                 content
             }
@@ -35,6 +42,14 @@ struct NodeUnavailablePanel: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
+        if let mismatch = model.incompatibility(for: node) {
+            IncompatibleNodePanel(node: node, section: section, mismatch: mismatch)
+        } else {
+            unavailable
+        }
+    }
+
+    private var unavailable: some View {
         Panel {
             switch model.status(for: node) {
             case .notPaired:
@@ -80,6 +95,32 @@ struct NodeUnavailablePanel: View {
                     message: "\(node.displayName) is connected, but this version of Vaulthalla Desktop can't show \(section.title.lowercased()) yet."
                 )
             }
+        }
+    }
+}
+
+/// Where a node's features would appear when it runs a Vaulthalla this build shares no protocol version with: what
+/// it runs, and which side to update. The node stays connected (its overview shows its release); nothing is sent.
+struct IncompatibleNodePanel: View {
+    var node: Node
+    var section: NodeSection
+    var mismatch: ProtocolMismatch
+
+    var body: some View {
+        Panel {
+            EmptyState(
+                title,
+                systemImage: "arrow.triangle.2.circlepath",
+                message: "\(mismatch.message) \(section.title) appears here once both sides share a protocol version."
+            )
+        }
+    }
+
+    private var title: String {
+        switch mismatch.side {
+        case .desktopTooOld: "\(node.displayName) needs a newer Vaulthalla Desktop"
+        case .serverTooOld: "\(node.displayName) needs a newer Vaulthalla"
+        case .unclear: "\(node.displayName) runs an incompatible Vaulthalla"
         }
     }
 }

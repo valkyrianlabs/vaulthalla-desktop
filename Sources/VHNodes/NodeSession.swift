@@ -2,16 +2,20 @@ public import Foundation
 public import VHCore
 public import VHIdentity
 public import VHTransport
-import VHContract
+public import VHContract
 import os
 
 /// The live connection to one paired node: a `WsClient` presenting this Mac's device identity and pinning the
 /// server's SPKI, kept up until ``stop()``.
 ///
-/// After every connect it asks `device.server.identity` (docs/pairing.md §5): that proves the connection is a Device
-/// session (a revoked key gets `device_unknown`, and the session reports `.revoked` and stops reconnecting), records an
-/// announced next server key, and promotes it once the server switched. It rotates the device key when the
-/// certificate is older than ``Configuration/rotationInterval`` (§4), including the retry rules for a lost reply.
+/// After every connect it negotiates the protocol with `meta.hello` (``nodeProtocol``, docs/architecture.md §3,
+/// "Protocol negotiation"): a node whose protocol range doesn't overlap this build's stays connected for display, but
+/// feature calls through the session (``send(_:payload:)``, ``sendSensitive(_:payload:)``) are refused here with
+/// `WsError.protocolUnsupported`. Then it asks `device.server.identity` (docs/pairing.md §5): that proves the
+/// connection is a Device session (a revoked key gets `device_unknown`, and the session reports `.revoked` and stops
+/// reconnecting), records an announced next server key, and promotes it once the server switched. It rotates the
+/// device key when the certificate is older than ``Configuration/rotationInterval`` (§4), including the retry rules for
+/// a lost reply.
 ///
 /// **Role.** Only the credential owner rotates and reports record changes. A session is the owner when its
 /// `DeviceKeys` hold the credential lease (``role``); otherwise it is a consumer (docs/architecture.md §3, "Credential
@@ -43,6 +47,9 @@ public actor NodeSession {
         /// The session stopped for good and only pairing again helps: this Mac's key is missing, or the server
         /// presents a key it never announced. Reported after the `.offline` status that explains it.
         case pairingRequired
+        /// What `meta.hello` settled after a connect, before that connection reports `.online`; nil when it decided
+        /// nothing (no answer in time), in which case support stays unknown until the next connect.
+        case protocolNegotiated(NodeProtocol?)
     }
 
     public struct Configuration: Sendable {
@@ -52,6 +59,8 @@ public actor NodeSession {
         public var requestTimeout: Duration = .seconds(15)
         /// Device keys older than this are rotated on the next connect.
         public var rotationInterval: TimeInterval = 90 * 24 * 60 * 60
+        /// The release `meta.hello` reports (`CFBundleShortVersionString`).
+        public var clientVersion = Ws.Meta.Hello.clientVersion
 
         public init() {}
     }
@@ -70,6 +79,9 @@ public actor NodeSession {
     /// The connection for feature code. Replaced after a key rotation or a server key switch, so fetch it per
     /// operation rather than keeping it.
     public private(set) var client: WsClient?
+    /// What `meta.hello` settled on the latest connection that answered it; nil before any did. Kept through a
+    /// reconnect, replaced by the next negotiation.
+    public private(set) var nodeProtocol: NodeProtocol?
 
     private let keys: DeviceKeys
     /// A consumer's reloads after a refusal.
@@ -340,9 +352,62 @@ public actor NodeSession {
         return Task.isCancelled ? .stopped : ending
     }
 
+    // MARK: - Protocol
+
+    /// Whether the node has the ws command (``NodeProtocol/supports(command:)``); unknown before a negotiation.
+    public func supports(command: WsCommand) -> ProtocolSupport {
+        nodeProtocol?.supports(command: command) ?? .unknown
+    }
+
+    /// Whether the node announced the capability (``NodeProtocol/supports(capability:)``); unknown before a
+    /// negotiation.
+    public func supports(capability: WsCapability) -> ProtocolSupport {
+        nodeProtocol?.supports(capability: capability) ?? .unknown
+    }
+
+    /// The connection for a feature call, or why there is none: `.disconnected`, or `.protocolUnsupported` on a node
+    /// this build can't speak to (nothing is sent).
+    func featureClient() throws(WsError) -> WsClient {
+        if let mismatch = nodeProtocol?.mismatch { throw .protocolUnsupported(mismatch) }
+        guard let client else { throw .disconnected }
+        return client
+    }
+
+    /// `meta.hello` on a fresh connection: records and reports the outcome. A legacy daemon's "Unknown command" is an
+    /// outcome (``NodeProtocol/legacy``); no answer in time keeps what the last connection settled.
+    private func negotiate(on client: WsClient) async {
+        let settled = await client.negotiate(clientVersion: configuration.clientVersion,
+                                             timeout: configuration.requestTimeout)
+        if let settled {
+            nodeProtocol = settled
+            switch settled.state {
+            case .negotiated:
+                log.info("""
+                    negotiated protocol \(settled.version ?? 0) with \(settled.serverVersion ?? "?", privacy: .public)
+                    """)
+            case .legacy:
+                log.info("legacy daemon (no meta.hello): protocol \(WsProtocol.legacyVersion) assumed")
+            case .incompatible:
+                log.error("no common protocol: \(settled.mismatch?.message ?? "", privacy: .public)")
+            }
+        } else {
+            log.info("meta.hello decided nothing; protocol support stays unknown")
+        }
+        eventSink.yield(.protocolNegotiated(settled ?? nodeProtocol))
+    }
+
+    // MARK: - Checks
+
     /// The checks after each connect. nil keeps the connection.
     private func connected(_ client: WsClient, identity: DeviceIdentity, pin: Data, isPending: Bool,
                            retryRotation: Bool) async -> Ending? {
+        await negotiate(on: client)
+        // A node that says it lacks `device.server.identity` has nothing to check; a legacy one is asked anyway.
+        guard nodeProtocol?.supports(capability: .serverIdentity) != .no else {
+            log.info("node announces no device.server.identity; skipping the identity check")
+            publish(.online)
+            return nil
+        }
         let reply: ServerIdentityAnnouncement.Response
         do {
             reply = try await client.send(ServerIdentityAnnouncement.self, payload: WsNoPayload(),
@@ -355,8 +420,13 @@ public actor NodeSession {
                 log.info("pending device key refused; falling back to the current key")
                 return .reconnect(current, retryingRotation: true)
             }
-            // An older daemon without the command, or no answer yet: the connection itself is fine.
-            log.info("device.server.identity failed: \(error.message, privacy: .public)")
+            // An older daemon without the command (`isUnknownCommand`), or no answer yet: the connection itself is
+            // fine.
+            if error.isUnknownCommand {
+                log.info("device.server.identity unknown to this daemon")
+            } else {
+                log.info("device.server.identity failed: \(error.message, privacy: .public)")
+            }
             publish(.online)
             return nil
         }

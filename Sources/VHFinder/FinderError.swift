@@ -96,10 +96,12 @@ public enum FinderError: Error, Hashable, Sendable, CustomStringConvertible {
         case .notFound: self = .noSuchItem
         case .conflict: self = .filenameCollision
         case .invalid(let text), .contractMismatch(let text): self = .cannotSynchronize(text)
-        case .needsConfirmation(_, let text):
+        case .needsConfirmation(_, let text), .refused(_, let text):
             // `device_unknown`: the node refused this key. The credential consumer reloads and decides; until then
             // this Mac can't act for the node.
             self = DeviceRefusal(error) == .deviceUnknown ? .notAuthenticated(text) : .cannotSynchronize(text)
+        case .unknownCommand(let text): self = .cannotSynchronize(text)
+        case .protocolUnsupported: self = .cannotSynchronize(error.message)
         case .timeout: self = .serverUnreachable(error.message)
         case .disconnected: self = .serverUnreachable(error.message)
         case .cancelled: self = .cancelled
@@ -126,6 +128,7 @@ public enum FinderError: Error, Hashable, Sendable, CustomStringConvertible {
         case .cancelled: self = .cancelled
         case .disk(let detail): self = .transient(detail)
         case .unexpectedAnswer(let detail): self = .transient(detail)
+        case .laneUnavailable, .protocolUnsupported: self = .cannotSynchronize(error.message)
         case .status(let code, let text):
             if code >= 500 || code == 408 {
                 self = .transient(error.message)

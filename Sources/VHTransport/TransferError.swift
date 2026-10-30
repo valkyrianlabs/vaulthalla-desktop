@@ -1,4 +1,5 @@
 import Foundation
+public import VHContract
 
 /// Why a transfer on the device listener's HTTP lanes stopped, in terms a person can act on.
 public enum TransferError: Error, Hashable, Sendable {
@@ -26,6 +27,33 @@ public enum TransferError: Error, Hashable, Sendable {
     case disk(String)
     /// The node's answer couldn't be read (a JSON body without the expected members).
     case unexpectedAnswer(String)
+    /// The node's Vaulthalla doesn't serve this lane to devices (its `meta.hello` doesn't announce the lane's
+    /// capability), so a 404 there means the lane is missing, not the item.
+    case laneUnavailable(Lane)
+    /// The node and this build share no protocol version; nothing was sent.
+    case protocolUnsupported(String)
+
+    /// The device listener's HTTP lanes, each announced by a capability.
+    public enum Lane: String, Hashable, Sendable, CaseIterable {
+        case preview, download, upload
+
+        /// The `meta.hello` capability that says the node serves it.
+        public var capability: WsCapability {
+            switch self {
+            case .preview: .previewLane
+            case .download: .downloadLane
+            case .upload: .uploadLane
+            }
+        }
+
+        var noun: String {
+            switch self {
+            case .preview: "previews"
+            case .download: "downloads"
+            case .upload: "uploads"
+            }
+        }
+    }
 
     /// The sentence for the Transfers panel.
     public var message: String {
@@ -43,6 +71,9 @@ public enum TransferError: Error, Hashable, Sendable {
         case .cancelled: "Cancelled."
         case .disk(let detail): "The file couldn't be written or read on this Mac (\(detail))."
         case .unexpectedAnswer(let detail): "The server's answer couldn't be read (\(detail))."
+        case .laneUnavailable(let lane):
+            "This node's Vaulthalla doesn't serve \(lane.noun) to Desktop. Update Vaulthalla on the node."
+        case .protocolUnsupported(let message): message
         }
     }
 
@@ -63,6 +94,17 @@ public enum TransferError: Error, Hashable, Sendable {
         case .timeout: self = .timeout
         case .cancelled: self = .cancelled
         case .invalidURL: self = .connection("the node's address can't be used")
+        }
+    }
+
+    /// A lane failure read against what the node announced for `lane`: when it is known not to serve the lane, a 404
+    /// (and anything else that only says "not here") is ``laneUnavailable(_:)``. Known to serve it, or unknown (a
+    /// legacy node), the failure stands: a 404 is the item.
+    public func interpreted(for lane: Lane, support: ProtocolSupport) -> TransferError {
+        guard support == .no else { return self }
+        switch self {
+        case .notFound, .status(404, _), .status(405, _), .status(501, _): return .laneUnavailable(lane)
+        default: return self
         }
     }
 
