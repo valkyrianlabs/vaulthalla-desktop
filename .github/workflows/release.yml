@@ -10,7 +10,7 @@ name: Release
 #   MACOS_PROFILE_MCP                                 "Vaulthalla Desktop Finder" and "Vaulthalla Desktop MCP", base64
 #   MACOS_NOTARY_APPLE_ID, MACOS_NOTARY_TEAM_ID, MACOS_NOTARY_PASSWORD   notarytool credentials
 #   SPARKLE_ED_PRIVATE_KEY                            the EdDSA key that signs updates (public half: SUPublicEDKey)
-#   HOMEBREW_TAP_TOKEN                                contents:write on vaulthalla/homebrew-tap (the cask)
+#   HOMEBREW_TAP_TOKEN                                contents:write on valkyrianlabs/homebrew-tap (the cask)
 on:
   push:
     tags: ['v*']
@@ -161,7 +161,8 @@ jobs:
           set -euo pipefail
           version=${GITHUB_REF_NAME#v}
           if [ -z "$TAP_TOKEN" ]; then echo "::warning::no HOMEBREW_TAP_TOKEN: cask not updated"; exit 0; fi
-          git clone -q "https://x-access-token:${TAP_TOKEN}@github.com/vaulthalla/homebrew-tap.git" tap
+          git clone -q "https://x-access-token:${TAP_TOKEN}@github.com/valkyrianlabs/homebrew-tap.git" tap
+          mkdir -p tap/Casks
           cp release/vaulthalla-desktop.rb tap/Casks/vaulthalla-desktop.rb
           cd tap
           git config user.name "github-actions[bot]"
