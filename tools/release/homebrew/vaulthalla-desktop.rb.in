@@ -17,7 +17,7 @@ cask "vaulthalla-desktop" do
   # Sparkle updates the app in place; Homebrew leaves upgrades to it.
   auto_updates true
   depends_on arch: :arm64
-  depends_on macos: ">= :golden_gate"
+  depends_on macos: :golden_gate
 
   app "Vaulthalla.app"
 
