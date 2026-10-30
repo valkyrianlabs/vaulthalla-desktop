@@ -1,0 +1,131 @@
+name: Release
+# The Developer ID release (tools/release/build.sh): a signed app and DMG, both notarized and stapled. A tag vX.Y.Z
+# that matches VERSION publishes the DMG as a GitHub release; a pull request that touches the release tooling
+# rehearses the whole pipeline, notarization included, and publishes nothing.
+#
+# Organization secrets (valkyrianlabs, this repository selected):
+#   MACOS_SIGNING_P12, MACOS_SIGNING_P12_PASSWORD     the Developer ID Application identity (+ G2 intermediate)
+#   MACOS_PROFILE_APP, MACOS_PROFILE_FILEPROVIDER     the Developer ID profiles "Vaulthalla Desktop" and
+#                                                     "Vaulthalla Desktop Finder", base64
+#   MACOS_NOTARY_APPLE_ID, MACOS_NOTARY_TEAM_ID, MACOS_NOTARY_PASSWORD   notarytool credentials
+on:
+  push:
+    tags: ['v*']
+  pull_request:
+    paths:
+      - tools/release/**
+      - .github/workflows/release.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  dmg:
+    name: Signed and notarized DMG
+    # Secrets never reach pull requests from forks.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: xcode-27
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: bash -euo pipefail {0}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # The build number is the commit count.
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: Helpers/vaulthalla-1password/go.mod
+          cache-dependency-path: Helpers/vaulthalla-1password/go.sum
+
+      - name: The tag matches VERSION
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          version=$(tr -d '[:space:]' < VERSION)
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::tag $GITHUB_REF_NAME doesn't match VERSION ($version)"
+            exit 1
+          fi
+
+      - name: Signing keychain, profiles and notary credentials
+        env:
+          P12: ${{ secrets.MACOS_SIGNING_P12 }}
+          P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
+          PROFILE_APP: ${{ secrets.MACOS_PROFILE_APP }}
+          PROFILE_FILEPROVIDER: ${{ secrets.MACOS_PROFILE_FILEPROVIDER }}
+          NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
+          NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
+          NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
+        run: |
+          kc="$RUNNER_TEMP/signing.keychain-db"; kcpw=$(openssl rand -hex 16)
+          security create-keychain -p "$kcpw" "$kc"
+          security set-keychain-settings -lut 3600 "$kc"
+          security unlock-keychain -p "$kcpw" "$kc"
+          echo "$P12" | base64 --decode > "$RUNNER_TEMP/signing.p12"
+          security import "$RUNNER_TEMP/signing.p12" -k "$kc" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/signing.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$kcpw" "$kc" >/dev/null
+          # shellcheck disable=SC2046  # the existing search list, one keychain per word
+          security list-keychains -d user -s "$kc" $(security list-keychains -d user | tr -d '"')
+          echo "VH_SIGNING_KEYCHAIN=$kc" >> "$GITHUB_ENV"
+
+          # Xcode finds profiles by name in either directory, depending on its version.
+          for dir in "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles" "$HOME/Library/MobileDevice/Provisioning Profiles"; do
+            mkdir -p "$dir"
+          done
+          for profile in "$PROFILE_APP" "$PROFILE_FILEPROVIDER"; do
+            echo "$profile" | base64 --decode > "$RUNNER_TEMP/profile.provisionprofile"
+            uuid=$(security cms -D -i "$RUNNER_TEMP/profile.provisionprofile" | plutil -extract UUID raw -o - -)
+            cp "$RUNNER_TEMP/profile.provisionprofile" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/$uuid.provisionprofile"
+            mv "$RUNNER_TEMP/profile.provisionprofile" "$HOME/Library/MobileDevice/Provisioning Profiles/$uuid.provisionprofile"
+          done
+
+          xcrun notarytool store-credentials vaulthalla-notary --apple-id "$NOTARY_APPLE_ID" \
+            --team-id "$NOTARY_TEAM_ID" --password "$NOTARY_PASSWORD" --keychain "$kc"
+          echo "VH_NOTARY_PROFILE=vaulthalla-notary" >> "$GITHUB_ENV"
+
+      - name: Build, sign and notarize
+        run: tools/release/build.sh --out "$RUNNER_TEMP/release"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vaulthalla-desktop-dmg
+          path: |
+            ${{ runner.temp }}/release/*.dmg
+            ${{ runner.temp }}/release/*.dmg.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Remove the signing keychain
+        if: always()
+        run: |
+          if [ -n "${VH_SIGNING_KEYCHAIN:-}" ]; then security delete-keychain "$VH_SIGNING_KEYCHAIN" || true; fi
+
+  publish:
+    name: GitHub release
+    needs: dmg
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: vaulthalla-desktop-dmg
+          path: release
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          # 0.x releases are previews.
+          prerelease=()
+          if [ "${version%%.*}" = 0 ]; then prerelease=(--prerelease); fi
+          gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "Vaulthalla Desktop $version" --generate-notes "${prerelease[@]}"

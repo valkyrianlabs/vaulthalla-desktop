@@ -35,8 +35,9 @@ open App/Vaulthalla.xcodeproj                               # or:
 xcodebuild -project App/Vaulthalla.xcodeproj -scheme Vaulthalla -derivedDataPath build/DerivedData build
 ```
 
-Signing is per developer: copy `App/Config/Signing.local.xcconfig.example` to `App/Config/Signing.local.xcconfig`
-(gitignored) and set your team, or pass `DEVELOPMENT_TEAM=<team> -allowProvisioningUpdates` to `xcodebuild`. A team
+Signed builds use the Valkyrian Labs LLC team: copy `App/Config/Signing.local.xcconfig.example` to
+`App/Config/Signing.local.xcconfig` (gitignored), or pass `DEVELOPMENT_TEAM=ZG2G6V7GLC -allowProvisioningUpdates` to
+`xcodebuild`. Never sign with a personal team, which would claim the bundle ids for good. A team
 switches on the App Group (`<TEAM>.sh.vaulthalla.app`) and the shared keychain group, so the app and the File
 Provider extension share the node registry and device keys; the registry moves into the group container on first
 launch, keeping the old file as a backup. Without a team the app is signed to run locally and keeps its registry in
@@ -61,6 +62,21 @@ Refresh the contract after a server change:
 
 ```sh
 python3 tools/gen-contract.py --from ../vaulthalla      # copies the server's generated contract, regenerates Swift
+```
+
+## Release
+
+`.github/workflows/release.yml` builds the Developer ID release with `tools/release/build.sh`: a Release archive
+signed by `tools/release/DeveloperID.xcconfig` (each target picks its Developer ID profile by bundle id), the app
+notarized and stapled, then a signed DMG notarized and stapled too. Pushing a tag `v<VERSION>` publishes
+`Vaulthalla-<VERSION>.dmg` and its `.sha256` as a GitHub release (0.x as a prerelease); a pull request that touches
+the release tooling rehearses everything except publishing. The build number is the commit count.
+
+Locally, with the Developer ID identity in the keychain and both profiles installed for Xcode:
+
+```sh
+tools/release/build.sh                                      # signed DMG in build/release
+VH_NOTARY_PROFILE=<notarytool profile> tools/release/build.sh   # also notarized and stapled
 ```
 
 ## AI agents (MCP)
