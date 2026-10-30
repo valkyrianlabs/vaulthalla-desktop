@@ -13,7 +13,7 @@ enum TestKeychain {
     /// Node tags tests may use; cleanup deletes all of them.
     static let nodeTags = ["node-a", "node-r", "daemon", "daemon-next"]
 
-    static func namespace() -> String { "sh.vaulthalla.desktop.test.\(UUID().uuidString.lowercased())" }
+    static func namespace() -> String { "sh.vaulthalla.app.test.\(UUID().uuidString.lowercased())" }
 
     /// Runs `body` with a file-keychain store (the data protection keychain needs entitlements `swift test` lacks),
     /// holding the process-wide keychain lock, and deletes everything under the namespace afterwards.
@@ -107,7 +107,7 @@ actor KeychainLock {
     private var held = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private let file = open(
-        FileManager.default.temporaryDirectory.appending(path: "sh.vaulthalla.desktop.test.keychain.lock").path,
+        FileManager.default.temporaryDirectory.appending(path: "sh.vaulthalla.app.test.keychain.lock").path,
         O_CREAT | O_RDWR, 0o600)
 
     func acquire() async {

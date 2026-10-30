@@ -181,7 +181,7 @@ final class TrustDelegate: NSObject, URLSessionDelegate, Sendable {
     private let refused = Mutex<Data??>(nil)
     /// Whether a server asked for, and got, the device identity.
     private let presented = Mutex(false)
-    private let log = Logger(subsystem: "sh.vaulthalla.desktop", category: "device-http")
+    private let log = Logger(subsystem: "sh.vaulthalla.app", category: "device-http")
 
     init(identity: IdentityBox, pins: [Data]) {
         self.identity = identity

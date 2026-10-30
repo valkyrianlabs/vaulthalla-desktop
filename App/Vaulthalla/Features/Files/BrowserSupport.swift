@@ -35,7 +35,7 @@ struct BrowserActions {
 
 extension NSPasteboard.PasteboardType {
     /// One dragged vault entry: `{"vault": <id>, "path": "<path>"}`. Only this app reads it.
-    nonisolated static let vaulthallaEntry = NSPasteboard.PasteboardType("sh.vaulthalla.desktop.entry")
+    nonisolated static let vaulthallaEntry = NSPasteboard.PasteboardType("sh.vaulthalla.app.entry")
 }
 
 /// A dragged entry: a file promise for Finder (written on drop, through the Transfers panel) plus the entry itself
@@ -78,7 +78,7 @@ nonisolated final class PromiseWriter: NSObject, NSFilePromiseProviderDelegate, 
     private let download: @MainActor @Sendable (VaultPath, URL) async -> Bool
     private let queue: OperationQueue = {
         let queue = OperationQueue()
-        queue.name = "sh.vaulthalla.desktop.file-promises"
+        queue.name = "sh.vaulthalla.app.file-promises"
         queue.qualityOfService = .userInitiated
         queue.maxConcurrentOperationCount = 3
         return queue

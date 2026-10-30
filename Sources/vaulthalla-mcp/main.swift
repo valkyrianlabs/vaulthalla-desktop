@@ -8,7 +8,7 @@
 // Environment:
 //   VAULTHALLA_MCP_TIMEOUT   seconds a tool call may take (default 600, 0 = no limit)
 //   VAULTHALLA_MCP_REGISTRY  the node registry to read. Default: wherever the app keeps it (RegistryLocation): the
-//                            App Group container (~/Library/Group Containers/<TEAM>.sh.vaulthalla.desktop/nodes.json)
+//                            App Group container (~/Library/Group Containers/<TEAM>.sh.vaulthalla.app/nodes.json)
 //                            once the app migrated it there, else ~/Library/Application Support/Vaulthalla/nodes.json
 
 import Foundation

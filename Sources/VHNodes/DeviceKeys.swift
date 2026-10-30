@@ -28,7 +28,7 @@ public final class DeviceKeys: Sendable {
     /// The lease that makes this process the owner; nil for a consumer.
     public let lease: CredentialLease?
 
-    private let log = Logger(subsystem: "sh.vaulthalla.desktop", category: "device-keys")
+    private let log = Logger(subsystem: "sh.vaulthalla.app", category: "device-keys")
 
     public init(primary: DeviceIdentityStore, development: DeviceIdentityStore?,
                 preferredBackend: KeyBackend = .secureEnclave, lease: CredentialLease? = nil) {
@@ -44,7 +44,7 @@ public final class DeviceKeys: Sendable {
         DeviceKeys(
             primary: DeviceIdentityStore(),
             development: DeviceIdentityStore(configuration: .init(
-                namespace: "sh.vaulthalla.desktop.device.development", keychain: .fileBased)),
+                namespace: "sh.vaulthalla.app.device.development", keychain: .fileBased)),
             lease: lease)
     }
 

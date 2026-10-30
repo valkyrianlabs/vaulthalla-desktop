@@ -10,9 +10,9 @@ import Testing
 /// `errSecNotAvailable` to one by `kSecAttrPublicKeyHash` (valkyrianlabs/vaulthalla-desktop#11), which made every signed build fail
 /// to create or find a Secure Enclave identity.
 @Suite struct KeychainQueriesTests {
-    static let group = "QG2U5HNCG4.sh.vaulthalla.desktop"
+    static let group = "ZG2G6V7GLC.sh.vaulthalla.app"
     static let name = DeviceIdentityStore.KeyName(
-        tag: Data("sh.vaulthalla.desktop.device/node-a".utf8), label: "sh.vaulthalla.desktop.device/node-a")
+        tag: Data("sh.vaulthalla.app.device/node-a".utf8), label: "sh.vaulthalla.app.device/node-a")
     static let label = Data((0..<20).map { UInt8($0) })
 
     static func queries(_ keychain: DeviceIdentityStore.Keychain, group: String? = Self.group) -> KeychainQueries {
@@ -162,7 +162,7 @@ import Testing
     /// The store builds its queries from its configuration.
     @Test func storeConfigurationSelectsTheQueries() {
         let configuration = DeviceIdentityStore.Configuration(
-            namespace: "sh.vaulthalla.desktop.test", accessGroup: Self.group, keychain: .dataProtection)
+            namespace: "sh.vaulthalla.app.test", accessGroup: Self.group, keychain: .dataProtection)
         let queries = KeychainQueries(configuration)
         #expect(queries.keychain == .dataProtection)
         #expect(queries.accessGroup == Self.group)

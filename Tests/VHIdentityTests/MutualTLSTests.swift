@@ -55,7 +55,7 @@ import VHIdentity
 
 // MARK: - Harness
 
-private let queue = DispatchQueue(label: "sh.vaulthalla.desktop.test.mtls")
+private let queue = DispatchQueue(label: "sh.vaulthalla.app.test.mtls")
 
 /// TLS 1.3 only, with our identity and a verify block that accepts exactly one peer SPKI.
 private func tlsOptions(

@@ -3,7 +3,7 @@
 // Without a team the app is signed to run locally (ad hoc), or not at all (CI: CODE_SIGNING_ALLOWED=NO).
 MARKETING_VERSION = 0.1.0
 CURRENT_PROJECT_VERSION = 1
-PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.desktop
+PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.app
 MACOSX_DEPLOYMENT_TARGET = 27.0
 
 CODE_SIGN_STYLE = Automatic
@@ -22,8 +22,8 @@ VH_SIGNING = $(VH_SIGNING_$(DEVELOPMENT_TEAM):default=Team)
 VH_SIGN_IDENTITY_Team = Apple Development
 VH_SIGN_IDENTITY_Unsigned = -
 CODE_SIGN_IDENTITY = $(VH_SIGN_IDENTITY_$(VH_SIGNING))
-// The App Group, team-prefixed macOS style (no portal registration or profile entry): <TEAM>.sh.vaulthalla.desktop.
-// The entitlements spell it $(TeamIdentifierPrefix)sh.vaulthalla.desktop (set only while signing); the extension's
+// The App Group, team-prefixed macOS style (no portal registration or profile entry): <TEAM>.sh.vaulthalla.app.
+// The entitlements spell it $(TeamIdentifierPrefix)sh.vaulthalla.app (set only while signing); the extension's
 // Info.plist names it as its document group through this setting. Unsigned builds have no group, and the value is
 // inert there.
-VH_APP_GROUP = $(DEVELOPMENT_TEAM).sh.vaulthalla.desktop
+VH_APP_GROUP = $(DEVELOPMENT_TEAM).sh.vaulthalla.app

@@ -39,7 +39,7 @@ struct VaulthallaApp: App {
         // the group. If another process holds the lease, the app runs as a read-only consumer and takes the lease
         // over once that process exits.
         let registry = RegistryOwnership.open(in: .current(), holder: "app")
-        Logger(subsystem: "sh.vaulthalla.desktop", category: "registry").notice(
+        Logger(subsystem: "sh.vaulthalla.app", category: "registry").notice(
             "registry \(registry.location.description, privacy: .private): \(registry.migration.description, privacy: .public)")
         return AppModel(store: NodeStore(fileURL: registry.location.registryURL, lease: registry.lease),
                         keys: DeviceKeys.standard(lease: registry.lease), registry: registry)

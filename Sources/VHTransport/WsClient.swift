@@ -59,7 +59,7 @@ public actor WsClient {
     public nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
 
     private let url: URL
-    private let log = Logger(subsystem: "sh.vaulthalla.desktop", category: "transport")
+    private let log = Logger(subsystem: "sh.vaulthalla.app", category: "transport")
     private let pinMismatch = PinMismatch()
 
     private var state: ConnectionState = .idle

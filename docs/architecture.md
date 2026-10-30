@@ -186,8 +186,10 @@ docs/                   this plan, the pairing protocol, release notes
 - **Signing and the shared container** (desktop#4; evidence from the desktop#2 spike). The File Provider extension
   is sandboxed and must read the same registry and device keys as the app, so signed builds share an App Group and a
   keychain access group.
-  - **Signing variants.** The team stays per developer: `App/Config/Signing.local.xcconfig` (gitignored) or
-    `DEVELOPMENT_TEAM=<team> -allowProvisioningUpdates` on the command line. A team id is never committed.
+  - **Signing variants.** Signed builds use the Valkyrian Labs LLC team (`ZG2G6V7GLC`): `App/Config/Signing.local.xcconfig` (gitignored) or
+    `DEVELOPMENT_TEAM=ZG2G6V7GLC -allowProvisioningUpdates`. Never sign with a personal team: automatic signing
+    registers the bundle ids on whichever team builds first, and a free team then keeps them (that is how
+    `sh.vaulthalla.desktop` was lost). Builds without the LLC team are Unsigned.
     `Base.xcconfig` derives `VH_SIGNING` from `DEVELOPMENT_TEAM`: **Team** when it is set, **Unsigned** otherwise. The
     targets use `Vaulthalla.$(VH_SIGNING).entitlements` and `FileProvider.$(VH_SIGNING).entitlements`. Team signs with
     Apple Development; Unsigned signs ad hoc (or not at all in CI, `CODE_SIGNING_ALLOWED=NO`) and names no group,
@@ -195,11 +197,11 @@ docs/                   this plan, the pairing protocol, release notes
 
     | Bundle | Id | Team entitlements | Unsigned |
     |---|---|---|---|
-    | app | `sh.vaulthalla.desktop` | `application-groups` `$(TeamIdentifierPrefix)sh.vaulthalla.desktop`, `keychain-access-groups` `$(AppIdentifierPrefix)sh.vaulthalla.desktop`; **unsandboxed** (1Password IPC, D5), hardened runtime | none |
-    | File Provider extension | `sh.vaulthalla.desktop.fileprovider` | `app-sandbox`, `network.client`, the same App Group and keychain group | `app-sandbox`, `network.client` |
-    | `vaulthalla-mcp` (bare tool) | `sh.vaulthalla.desktop.mcp` | none (signed with the app's identity; it can't carry the restricted keychain entitlement, §5) | none |
+    | app | `sh.vaulthalla.app` | `application-groups` `$(TeamIdentifierPrefix)sh.vaulthalla.app`, `keychain-access-groups` `$(AppIdentifierPrefix)sh.vaulthalla.app`; **unsandboxed** (1Password IPC, D5), hardened runtime | none |
+    | File Provider extension | `sh.vaulthalla.app.fileprovider` | `app-sandbox`, `network.client`, the same App Group and keychain group | `app-sandbox`, `network.client` |
+    | `vaulthalla-mcp` (bare tool) | `sh.vaulthalla.app.mcp` | none (signed with the app's identity; it can't carry the restricted keychain entitlement, §5) | none |
 
-    Automatic signing registers two App IDs on the team, the app and the extension. Their profiles carry only
+    Both App IDs are registered on the LLC team, each with a Developer ID profile for release. Their profiles carry only
     `keychain-access-groups = <TEAM>.*`. The team-prefixed App Group (macOS style, not `group.`) needs no portal
     registration or profile entry, and File Provider needs no capability (desktop#2 E2, E3). The extension's
     `NSExtensionFileProviderDocumentGroup` is the same group (`VH_APP_GROUP`). At run time a process learns its group
@@ -208,7 +210,7 @@ docs/                   this plan, the pairing protocol, release notes
   - **Container layout.**
 
     ```
-    ~/Library/Group Containers/<TEAM>.sh.vaulthalla.desktop/   signed builds
+    ~/Library/Group Containers/<TEAM>.sh.vaulthalla.app/   signed builds
       nodes.json                  the registry (the owner writes, everyone else reads)
       credential-owner.lease      the owner's flock lease, next to the registry
       File Provider Storage/      fileproviderd's own (not Desktop's)
@@ -315,7 +317,7 @@ There is no device-scoped permission system.
     (`DeviceKeys`), pinning the server SPKI from the record, exactly like the app's HTTP lanes. It is a
     credential consumer (§3, "Credential ownership"): it never takes the lease, so it creates, rotates, deletes and
     writes nothing. A Secure Enclave key lives in the data protection keychain, so the helper must be
-    signed by the same team with the app's `keychain-access-groups` (`$(AppIdentifierPrefix)sh.vaulthalla.desktop`);
+    signed by the same team with the app's `keychain-access-groups` (`$(AppIdentifierPrefix)sh.vaulthalla.app`);
     that entitlement is restricted on macOS and a bare executable can't carry a provisioning profile, so the release
     build (D7) wraps the helper in a minimal bundle with an embedded profile if the plain binary is refused. Unsigned
     and development builds use the file-keychain software key, whose access list names the app: the Keychain may
@@ -431,7 +433,7 @@ There is no device-scoped permission system.
 
 Epic desktop#1 (Stages A to D). The MVP is desktop#4. Spike findings are on desktop#2.
 
-- **Shape.** One `NSFileProviderReplicatedExtension` (`App/Extensions/FileProvider`, `sh.vaulthalla.desktop.fileprovider`,
+- **Shape.** One `NSFileProviderReplicatedExtension` (`App/Extensions/FileProvider`, `sh.vaulthalla.app.fileprovider`,
   embedded in `Contents/PlugIns`). It serves one domain per vault the operator selects, with
   `supportsSyncingTrash = false` (deletes go to the server's trash and recovery). The extension holds the device
   identity itself, as a read-only consumer (§3), so Finder keeps working with the app quit (desktop#2 E7, E8).
@@ -512,9 +514,9 @@ Epic desktop#1 (Stages A to D). The MVP is desktop#4. Spike findings are on desk
     `VH_FILEPROVIDER_SELFCHECK=<domain> <appex>/Contents/MacOS/VaulthallaFileProvider` checks readiness in the
     extension's own sandbox.
   - Several builds of the extension on one Mac compete. pluginkit elects one copy of
-    `sh.vaulthalla.desktop.fileprovider`, and domain calls from a build whose own copy isn't the elected one fail with
+    `sh.vaulthalla.app.fileprovider`, and domain calls from a build whose own copy isn't the elected one fail with
     -2001 (underlying -2014). Unregister stale copies (`pluginkit -r <appex>`, `lsregister -u <app>`), or check
-    `pluginkit -m -v -D -i sh.vaulthalla.desktop.fileprovider`.
+    `pluginkit -m -v -D -i sh.vaulthalla.app.fileprovider`.
 - **Background agent: packaging decision** (desktop#2 E11; not built yet). The future per-user agent is **the app's
   own main executable in a headless mode** (`Contents/MacOS/Vaulthalla` with an argument), registered with
   `SMAppService.agent` (a LaunchAgent plist whose `BundleProgram` is the app's executable) or `SMAppService.mainApp`.

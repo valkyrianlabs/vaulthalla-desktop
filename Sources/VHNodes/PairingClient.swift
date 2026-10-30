@@ -124,7 +124,7 @@ public final class PairingClient: Sendable {
     public let configuration: Configuration
 
     private let task = Mutex<Task<Void, Never>?>(nil)
-    private let log = Logger(subsystem: "sh.vaulthalla.desktop", category: "pairing")
+    private let log = Logger(subsystem: "sh.vaulthalla.app", category: "pairing")
 
     public init(identity: DeviceIdentity, configuration: Configuration) {
         self.identity = identity

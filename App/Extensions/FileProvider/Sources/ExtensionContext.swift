@@ -8,7 +8,7 @@ import VHNodes
 /// What the extension shares with the app: the registry in the App Group container and the device keys in the
 /// shared keychain group, opened read-only (docs/architecture.md §3, "Credential ownership").
 struct ExtensionContext: Sendable {
-    static let log = Logger(subsystem: "sh.vaulthalla.desktop", category: "fileprovider")
+    static let log = Logger(subsystem: "sh.vaulthalla.app", category: "fileprovider")
 
     let environment: RegistryEnvironment
     /// The App Group's registry; nil in an unsigned build, which has no group.

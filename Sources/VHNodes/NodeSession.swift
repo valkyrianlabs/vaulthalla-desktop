@@ -76,7 +76,7 @@ public actor NodeSession {
     private let reader: CredentialReader
     private let configuration: Configuration
     private let eventSink: AsyncStream<Event>.Continuation
-    private let log = Logger(subsystem: "sh.vaulthalla.desktop", category: "session")
+    private let log = Logger(subsystem: "sh.vaulthalla.app", category: "session")
     private var runTask: Task<Void, Never>?
     /// Rotation failed for a reason a retry won't fix (an older daemon, a refusal): don't try again this run.
     private var rotationSuppressed = false

@@ -28,7 +28,7 @@ public actor VaultReplica {
     private let macName: String
     private let now: @Sendable () -> Date
     private var lastRefresh: ContinuousClock.Instant?
-    private let log = Logger(subsystem: "sh.vaulthalla.desktop", category: "fileprovider-replica")
+    private let log = Logger(subsystem: "sh.vaulthalla.app", category: "fileprovider-replica")
 
     /// How long a refresh of the listed folders counts as current for the next request for changes.
     public static let refreshInterval: Duration = .seconds(1)

@@ -1,7 +1,7 @@
 // Signed-build proof for DeviceIdentityStore in the data protection keychain (valkyrianlabs/vaulthalla-desktop#11). Run it with
 // tools/keychain-proof/run.sh, never from CI: it needs a team-signed app with keychain-access-groups.
 //
-// Every item it writes is under a namespace unique to the run (sh.vaulthalla.desktop.proof.<uuid>), and all of them
+// Every item it writes is under a namespace unique to the run (sh.vaulthalla.app.proof.<uuid>), and all of them
 // are deleted before it exits, also when a step fails. The exit code is 0 only if every check passed and nothing was
 // left behind.
 //
@@ -13,7 +13,7 @@ import Security
 import VHIdentity
 
 // Top-level code in main.swift runs on the main actor; everything below is main-actor isolated with it.
-let namespace = "sh.vaulthalla.desktop.proof.\(UUID().uuidString.lowercased())"
+let namespace = "sh.vaulthalla.app.proof.\(UUID().uuidString.lowercased())"
 let nodeTags = ["node-se", "node-sw"]
 var failures = 0
 /// Public-key hashes of every key the run created, to prove afterwards that no key or certificate is left.

@@ -51,7 +51,7 @@ public actor NodeLink: ReplicaLink {
     public nonisolated let nodeID: NodeID
     private let reader: CredentialReader
     private let configuration: Configuration
-    private let log = Logger(subsystem: "sh.vaulthalla.desktop", category: "fileprovider-link")
+    private let log = Logger(subsystem: "sh.vaulthalla.app", category: "fileprovider-link")
 
     private var session: NodeSession?
     private var events: Task<Void, Never>?
