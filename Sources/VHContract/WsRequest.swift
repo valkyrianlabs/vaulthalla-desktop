@@ -21,6 +21,8 @@ public enum WsAuth: String, Sendable, CaseIterable {
     case pairing
     /// A paired device's own session on the device listener (key rotation, server identity).
     case device
+    /// Every session, signed in or not, pairing-only included (`meta.hello`).
+    case any
 }
 
 /// The payload of a command whose handler reads nothing from it (contract input `none` or `token`). It is sent as

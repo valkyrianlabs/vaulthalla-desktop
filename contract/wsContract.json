@@ -1,6 +1,89 @@
 {
-  "contract_version": 2,
+  "capabilities": [
+    {
+      "description": "The device listener serves GET/HEAD /download/content (Range, conditional requests) as the device's user.",
+      "name": "device.lanes.download",
+      "since": "1.16.0"
+    },
+    {
+      "description": "The device listener serves /preview (thumbnails and rich previews) as the device's user.",
+      "name": "device.lanes.preview",
+      "since": "1.16.0"
+    },
+    {
+      "description": "The device listener serves the /upload session lane (create, PUT, finish) as the device's user.",
+      "name": "device.lanes.upload",
+      "since": "1.16.0"
+    },
+    {
+      "description": "The device listener serves remote MCP (JSON-RPC over POST /mcp) as the device's user.",
+      "name": "device.mcp",
+      "since": "1.16.0"
+    },
+    {
+      "description": "A paired device can read the server key's pin (SPKI SHA-256) over its own session (device.server.identity).",
+      "name": "device.server.identity",
+      "since": "1.16.0"
+    },
+    {
+      "description": "An unknown command on a web or device session answers ERROR with data.code \"unknown_command\" (the text stays \"Unknown command\").",
+      "name": "errors.unknown_command_code",
+      "since": "1.19.0"
+    },
+    {
+      "description": "fs.metadata and fs.dir.list entries carry content_version, equal to the /download/content ETag.",
+      "name": "fs.entry.content_version",
+      "since": "1.17.0"
+    },
+    {
+      "description": "fs.metadata and fs.dir.list entries carry metadata_version, which changes on rename and move.",
+      "name": "fs.entry.metadata_version",
+      "since": "1.17.0"
+    },
+    {
+      "description": "An entry keeps its id across rename and move (ws, FUSE), children of a moved folder included.",
+      "name": "fs.entry.stable_id",
+      "since": "1.17.0"
+    },
+    {
+      "description": "PUT /upload/content: a streaming conditional create (If-None-Match) or replace (If-Match) on the web and device listeners.",
+      "name": "http.upload.content",
+      "since": "1.17.0"
+    },
+    {
+      "description": "A request frame without `payload` reads as {} (daemons before 1.16 refused it).",
+      "name": "ws.envelope.optional_payload",
+      "since": "1.16.0"
+    }
+  ],
+  "contract_version": 3,
   "envelope": {
+    "error_codes": [
+      {
+        "code": "conflict",
+        "description": "The request collides with existing state."
+      },
+      {
+        "code": "denied",
+        "description": "RBAC or a business rule refused the actor."
+      },
+      {
+        "code": "device_unknown",
+        "description": "The device listener: this connection's key is not a paired device; it may only pair (device.pair.*) and say hello (meta.hello, meta.contract.get)."
+      },
+      {
+        "code": "invalid",
+        "description": "The request itself is malformed (a bad name, an out-of-range value)."
+      },
+      {
+        "code": "not_found",
+        "description": "What the request names doesn't exist (or isn't visible to the actor)."
+      },
+      {
+        "code": "unknown_command",
+        "description": "No command by that name on this daemon (web and device sessions; the text stays \"Unknown command\"). meta.hello's `commands` lists the ones it has."
+      }
+    ],
     "error_frame": [
       {
         "enum": [
@@ -129,7 +212,7 @@
         ]
       },
       {
-        "description": "OK: done, `data` holds the response. UNAUTHORIZED: the router refused before running it (no or expired token; refresh and retry once). ERROR: a refusal (data.code: denied, not_found, invalid, conflict, or a confirmation code from the command's `confirmations`) or a fault (no data.code; internal faults answer the request's own command too).",
+        "description": "OK: done, `data` holds the response. UNAUTHORIZED: the router refused before running it (no or expired token; refresh and retry once). ERROR: a refusal (data.code: one of `error_codes`, or a code from the command's `refusal_kinds` or `confirmations`) or a fault (no data.code; internal faults answer the request's own command too).",
         "enum": [
           "OK",
           "ERROR",
@@ -9998,6 +10081,22 @@
           "types": [
             "integer"
           ]
+        },
+        {
+          "minimum": 0,
+          "name": "rollup_5m_retention_days",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "rollup_1h_retention_days",
+          "required": true,
+          "types": [
+            "integer"
+          ]
         }
       ],
       "name": "StatsSnapshotsConfig"
@@ -17131,7 +17230,11 @@
       "name": "WebsocketServerConfig"
     }
   ],
-  "models_hash": "540aadf56707a312f350cc7510385baa09eacaed912950ff5da1afb9776ba0a5",
+  "models_hash": "00cc5309cf6f162bb2881d6ab73e6273170a560d30e0dc588694c81dfe1f57da",
+  "protocol": {
+    "min": 1,
+    "version": 1
+  },
   "ws": [
     {
       "auth": "session",
@@ -21793,6 +21896,200 @@
           "required": true,
           "types": [
             "string"
+          ]
+        }
+      ],
+      "response_model": null,
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "any",
+      "client_timeout_ms": 15000,
+      "command": "meta.hello",
+      "confirmations": [],
+      "description": "The protocol handshake; any session may send it (web signed in or not, share, device, pairing-only), first thing after connecting. The client says what it is and the protocol range it speaks; the daemon answers its own name and version, the protocol version this session now speaks (the newest both speak; kProtocolMin without a range, as for a session that never says hello), its own range, its capabilities, every command it registers and its contract identity. No overlap: ERROR protocol_unsupported with data {code, server_min, server_max, server_version}. A paired device's client.version refreshes its app_version.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Who is connecting (\"Vaulthalla Desktop\", \"0.4.0\"): kept on the session for the logs.",
+          "fields": [
+            {
+              "description": "At most 64 printable ASCII characters.",
+              "name": "name",
+              "required": false,
+              "types": [
+                "string"
+              ]
+            },
+            {
+              "description": "At most 64 printable ASCII characters.",
+              "name": "version",
+              "required": false,
+              "types": [
+                "string"
+              ]
+            }
+          ],
+          "name": "client",
+          "required": false,
+          "types": [
+            "object"
+          ]
+        },
+        {
+          "description": "The protocol versions the client speaks; a missing bound is the server's.",
+          "fields": [
+            {
+              "minimum": 0,
+              "name": "min",
+              "required": false,
+              "types": [
+                "integer"
+              ]
+            },
+            {
+              "minimum": 0,
+              "name": "max",
+              "required": false,
+              "types": [
+                "integer"
+              ]
+            }
+          ],
+          "name": "protocol",
+          "required": false,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "invalid",
+        "protocol_unsupported"
+      ],
+      "refusal_kinds": [
+        "invalid",
+        "protocol_unsupported"
+      ],
+      "response": [
+        {
+          "description": "The daemon's product version (VH_VERSION).",
+          "fields": [
+            {
+              "enum": [
+                "vaulthalla"
+              ],
+              "name": "name",
+              "required": true,
+              "types": [
+                "string"
+              ]
+            },
+            {
+              "name": "version",
+              "required": true,
+              "types": [
+                "string"
+              ]
+            }
+          ],
+          "name": "server",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        },
+        {
+          "description": "version: what this session speaks from now on; min/max: the daemon's range.",
+          "fields": [
+            {
+              "minimum": 0,
+              "name": "version",
+              "required": true,
+              "types": [
+                "integer"
+              ]
+            },
+            {
+              "minimum": 0,
+              "name": "min",
+              "required": true,
+              "types": [
+                "integer"
+              ]
+            },
+            {
+              "minimum": 0,
+              "name": "max",
+              "required": true,
+              "types": [
+                "integer"
+              ]
+            }
+          ],
+          "name": "protocol",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        },
+        {
+          "description": "Capability names, sorted (vh_usage --json `capabilities`).",
+          "items": "string",
+          "name": "capabilities",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "description": "Every ws command this daemon registers, sorted.",
+          "items": "string",
+          "name": "commands",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "description": "What meta.contract.get answers.",
+          "fields": [
+            {
+              "minimum": 0,
+              "name": "contract_version",
+              "required": true,
+              "types": [
+                "integer"
+              ]
+            },
+            {
+              "name": "contract_hash",
+              "required": true,
+              "types": [
+                "string"
+              ]
+            },
+            {
+              "name": "ws_hash",
+              "required": true,
+              "types": [
+                "string"
+              ]
+            },
+            {
+              "name": "models_hash",
+              "required": true,
+              "types": [
+                "string"
+              ]
+            }
+          ],
+          "name": "contract",
+          "required": true,
+          "types": [
+            "object"
           ]
         }
       ],
@@ -38120,5 +38417,5 @@
       "variants": []
     }
   ],
-  "ws_hash": "686e357625cb73a67b350e65eb9ed5e057a42c96013fa6e5215e5ca9d55af074"
+  "ws_hash": "c23c9f14f44deca8026366ff183d5e07534cc1a93cf055b30298ed8a1d530678"
 }

@@ -28,7 +28,7 @@ jobs:
         working-directory: Helpers/vaulthalla-1password
         run: go vet ./... && go vet -tags fake ./... && go test ./...
       - name: Contract is generated, not edited
-        run: python3 tools/gen-contract.py --check
+        run: python3 tools/gen-contract.py --check && python3 tools/test_gen_contract.py
       - name: Package tests
         run: swift test
       - name: App build (unsigned)
