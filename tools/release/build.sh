@@ -4,8 +4,9 @@
 #   tools/release/build.sh [--out DIR]     DIR defaults to build/release
 #
 # Needs, in the keychain search list: the "Developer ID Application: Valkyrian Labs LLC (ZG2G6V7GLC)" identity, and
-# the Developer ID profiles "Vaulthalla Desktop" (sh.vaulthalla.app) and "Vaulthalla Desktop Finder"
-# (sh.vaulthalla.app.fileprovider) installed for Xcode. Signing settings: DeveloperID.xcconfig.
+# the Developer ID profiles "Vaulthalla Desktop" (sh.vaulthalla.app), "Vaulthalla Desktop Finder"
+# (sh.vaulthalla.app.fileprovider) and "Vaulthalla Desktop MCP" (sh.vaulthalla.app.mcp) installed for Xcode. Signing
+# settings: DeveloperID.xcconfig.
 #
 #   VH_NOTARY_PROFILE   a `xcrun notarytool store-credentials` profile: notarize and staple (unset: signed only)
 #   VH_BUILD_NUMBER     CFBundleVersion (default: the commit count, which only grows on main)
@@ -46,6 +47,7 @@ codesign --verify --deep --strict --verbose=2 "$app"
 # A Release build must never ship the debugger entitlement (notarization rejects it anyway).
 # (Captured first: `grep -q` closing the pipe early would fail codesign under pipefail.)
 for code in "$app" "$app"/Contents/PlugIns/*.appex "$app"/Contents/Helpers/*; do
+    [ -L "$code" ] && continue  # Contents/Helpers/vaulthalla-mcp points into vaulthalla-mcp.app
     entitlements=$(codesign -d --entitlements - --xml "$code" 2>/dev/null)
     if [[ $entitlements == *get-task-allow* ]]; then
         echo "error: $code carries get-task-allow" >&2

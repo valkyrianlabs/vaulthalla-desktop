@@ -199,9 +199,9 @@ docs/                   this plan, the pairing protocol, release notes
     |---|---|---|---|
     | app | `sh.vaulthalla.app` | `application-groups` `$(TeamIdentifierPrefix)sh.vaulthalla.app`, `keychain-access-groups` `$(AppIdentifierPrefix)sh.vaulthalla.app`; **unsandboxed** (1Password IPC, D5), hardened runtime | none |
     | File Provider extension | `sh.vaulthalla.app.fileprovider` | `app-sandbox`, `network.client`, the same App Group and keychain group | `app-sandbox`, `network.client` |
-    | `vaulthalla-mcp` (bare tool) | `sh.vaulthalla.app.mcp` | none (signed with the app's identity; it can't carry the restricted keychain entitlement, §5) | none |
+    | `vaulthalla-mcp.app` (minimal bundle, §5) | `sh.vaulthalla.app.mcp` | the app's: the same App Group and keychain group | none |
 
-    Both App IDs are registered on the LLC team, each with a Developer ID profile for release. Their profiles carry only
+    All three App IDs are registered on the LLC team, each with a Developer ID profile for release. Their profiles carry only
     `keychain-access-groups = <TEAM>.*`. The team-prefixed App Group (macOS style, not `group.`) needs no portal
     registration or profile entry, and File Provider needs no capability (desktop#2 E2, E3). The extension's
     `NSExtensionFileProviderDocumentGroup` is the same group (`VH_APP_GROUP`). At run time a process learns its group
@@ -310,16 +310,18 @@ There is no device-scoped permission system.
   - Clients that support MCP elicitation may get the prompt directly later.
 - **External clients and future embedded agents.** Most MCP clients can't present a client certificate. Desktop
   therefore ships a `vaulthalla-mcp` stdio bridge at `Vaulthalla.app/Contents/Helpers/vaulthalla-mcp` (as built:
-  `Sources/VHMCP` + `Sources/vaulthalla-mcp`; the Xcode tool target of the same name is embedded by the app's
-  "Embed MCP Bridge" phase and signed on copy with the app's identity when signing is on).
+  `Sources/VHMCP` + `Sources/vaulthalla-mcp`). The Xcode target of the same name builds a minimal background-only
+  bundle, `Contents/Helpers/vaulthalla-mcp.app`, which the app's "Embed MCP Bridge" phase copies and signs; "Link MCP
+  Bridge" then points `Contents/Helpers/vaulthalla-mcp` at its executable, the path clients are given.
   - **Trust.** It reads the node registry (`nodes.json`, wherever the app keeps it: `RegistryLocation.resolve`, §3
     "Signing and the shared container") and presents the device identity the app created for each node
     (`DeviceKeys`), pinning the server SPKI from the record, exactly like the app's HTTP lanes. It is a
     credential consumer (§3, "Credential ownership"): it never takes the lease, so it creates, rotates, deletes and
     writes nothing. A Secure Enclave key lives in the data protection keychain, so the helper must be
-    signed by the same team with the app's `keychain-access-groups` (`$(AppIdentifierPrefix)sh.vaulthalla.app`);
-    that entitlement is restricted on macOS and a bare executable can't carry a provisioning profile, so the release
-    build (D7) wraps the helper in a minimal bundle with an embedded profile if the plain binary is refused. Unsigned
+    signed by the same team with the app's `keychain-access-groups` (`$(AppIdentifierPrefix)sh.vaulthalla.app`).
+    That entitlement is restricted on macOS and a bare executable can't carry a provisioning profile (AMFI kills it),
+    which is why the bridge is a bundle: it embeds its own profile (Developer ID "Vaulthalla Desktop MCP" in release)
+    and carries the app's App Group too, so it reads the same registry without a cross-app data prompt. Unsigned
     and development builds use the file-keychain software key, whose access list names the app: the Keychain may
     ask whether `vaulthalla-mcp` may use it (an ad hoc signature changes with every build).
   - **One server for every paired node.** `tools/list` returns `nodes_list` (id, name, host, port, pairing state,
