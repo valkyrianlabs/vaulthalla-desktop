@@ -26,7 +26,7 @@
 		7A10000000000000000000A3 /* VHTransport in Frameworks */ = {isa = PBXBuildFile; productRef = 7A10000000000000000000C3 /* VHTransport */; };
 		7A10000000000000000000A4 /* VHIdentity in Frameworks */ = {isa = PBXBuildFile; productRef = 7A10000000000000000000C4 /* VHIdentity */; };
 		7A10000000000000000000A5 /* VHNodes in Frameworks */ = {isa = PBXBuildFile; productRef = 7A10000000000000000000C5 /* VHNodes */; };
-		7A20000000000000000000A1 /* vaulthalla-mcp in Embed MCP Bridge */ = {isa = PBXBuildFile; fileRef = 7A2000000000000000000010 /* vaulthalla-mcp */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
+		7A20000000000000000000A1 /* vaulthalla-mcp.app in Embed MCP Bridge */ = {isa = PBXBuildFile; fileRef = 7A2000000000000000000010 /* vaulthalla-mcp.app */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		7A20000000000000000000A2 /* VHMCP in Frameworks */ = {isa = PBXBuildFile; productRef = 7A20000000000000000000C1 /* VHMCP */; };
 		7A30000000000000000000A1 /* VHOnePassword in Frameworks */ = {isa = PBXBuildFile; productRef = 7A30000000000000000000C1 /* VHOnePassword */; };
 		7A30000000000000000000A2 /* VHKeyBackup in Frameworks */ = {isa = PBXBuildFile; productRef = 7A30000000000000000000C2 /* VHKeyBackup */; };
@@ -70,7 +70,7 @@
 			dstPath = Contents/Helpers;
 			dstSubfolderSpec = 1;
 			files = (
-				7A20000000000000000000A1 /* vaulthalla-mcp in Embed MCP Bridge */,
+				7A20000000000000000000A1 /* vaulthalla-mcp.app in Embed MCP Bridge */,
 			);
 			name = "Embed MCP Bridge";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -105,7 +105,7 @@
 		7A1000000000000000000015 /* Vaulthalla.Unsigned.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Vaulthalla.Unsigned.entitlements; sourceTree = "<group>"; };
 		7A1000000000000000000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		7A1000000000000000000013 /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
-		7A2000000000000000000010 /* vaulthalla-mcp */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "vaulthalla-mcp"; sourceTree = BUILT_PRODUCTS_DIR; };
+		7A2000000000000000000010 /* vaulthalla-mcp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "vaulthalla-mcp.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		7A3000000000000000000010 /* vaulthalla-1password */ = {isa = PBXFileReference; explicitFileType = "compiled.mach-o.executable"; includeInIndex = 0; path = "vaulthalla-1password"; sourceTree = BUILT_PRODUCTS_DIR; };
 		7A4000000000000000000010 /* VaulthallaFileProvider.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = VaulthallaFileProvider.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		7A4000000000000000000011 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
@@ -175,7 +175,7 @@
 			isa = PBXGroup;
 			children = (
 				7A1000000000000000000010 /* Vaulthalla.app */,
-				7A2000000000000000000010 /* vaulthalla-mcp */,
+				7A2000000000000000000010 /* vaulthalla-mcp.app */,
 				7A3000000000000000000010 /* vaulthalla-1password */,
 				7A4000000000000000000010 /* VaulthallaFileProvider.appex */,
 			);
@@ -212,6 +212,7 @@
 				7A1000000000000000000030 /* Frameworks */,
 				7A1000000000000000000032 /* Resources */,
 				7A2000000000000000000033 /* Embed MCP Bridge */,
+				7A2000000000000000000034 /* Link MCP Bridge */,
 				7A3000000000000000000033 /* Embed 1Password Helper */,
 				7A4000000000000000000033 /* Embed Foundation Extensions */,
 			);
@@ -259,8 +260,8 @@
 				7A20000000000000000000C1 /* VHMCP */,
 			);
 			productName = "vaulthalla-mcp";
-			productReference = 7A2000000000000000000010 /* vaulthalla-mcp */;
-			productType = "com.apple.product-type.tool";
+			productReference = 7A2000000000000000000010 /* vaulthalla-mcp.app */;
+			productType = "com.apple.product-type.application";
 		};
 		7A4000000000000000000040 /* VaulthallaFileProvider */ = {
 			isa = PBXNativeTarget;
@@ -352,6 +353,27 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXShellScriptBuildPhase section */
+		7A2000000000000000000034 /* Link MCP Bridge */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/vaulthalla-mcp.app/Contents/MacOS/vaulthalla-mcp",
+			);
+			name = "Link MCP Bridge";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+				"$(TARGET_BUILD_DIR)/$(CONTENTS_FOLDER_PATH)/Helpers/vaulthalla-mcp",
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "set -eu\n# MCP clients run Contents/Helpers/vaulthalla-mcp. The bridge itself is a minimal bundle beside it, because only a\n# bundle can embed the provisioning profile that its keychain group needs (docs/architecture.md §5).\nln -sfn vaulthalla-mcp.app/Contents/MacOS/vaulthalla-mcp \"$TARGET_BUILD_DIR/$CONTENTS_FOLDER_PATH/Helpers/vaulthalla-mcp\"\n";
+			showEnvVarsInLog = 0;
+		};
 		7A3000000000000000000034 /* Build 1Password Helper */ = {
 			isa = PBXShellScriptBuildPhase;
 			alwaysOutOfDate = 1;
@@ -517,8 +539,10 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 7A1000000000000000000013 /* Base.xcconfig */;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "Vaulthalla.$(VH_SIGNING).entitlements";
 				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© Cooper Larson";
 				PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.app.mcp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -531,8 +555,10 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 7A1000000000000000000013 /* Base.xcconfig */;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = "Vaulthalla.$(VH_SIGNING).entitlements";
 				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_LSUIElement = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© Cooper Larson";
 				PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.app.mcp;
 				PRODUCT_NAME = "$(TARGET_NAME)";

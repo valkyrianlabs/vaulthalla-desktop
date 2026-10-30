@@ -5,8 +5,8 @@ name: Release
 #
 # Organization secrets (valkyrianlabs, this repository selected):
 #   MACOS_SIGNING_P12, MACOS_SIGNING_P12_PASSWORD     the Developer ID Application identity (+ G2 intermediate)
-#   MACOS_PROFILE_APP, MACOS_PROFILE_FILEPROVIDER     the Developer ID profiles "Vaulthalla Desktop" and
-#                                                     "Vaulthalla Desktop Finder", base64
+#   MACOS_PROFILE_APP, MACOS_PROFILE_FILEPROVIDER,    the Developer ID profiles "Vaulthalla Desktop",
+#   MACOS_PROFILE_MCP                                 "Vaulthalla Desktop Finder" and "Vaulthalla Desktop MCP", base64
 #   MACOS_NOTARY_APPLE_ID, MACOS_NOTARY_TEAM_ID, MACOS_NOTARY_PASSWORD   notarytool credentials
 on:
   push:
@@ -59,6 +59,7 @@ jobs:
           P12_PASSWORD: ${{ secrets.MACOS_SIGNING_P12_PASSWORD }}
           PROFILE_APP: ${{ secrets.MACOS_PROFILE_APP }}
           PROFILE_FILEPROVIDER: ${{ secrets.MACOS_PROFILE_FILEPROVIDER }}
+          PROFILE_MCP: ${{ secrets.MACOS_PROFILE_MCP }}
           NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
           NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
           NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
@@ -79,7 +80,7 @@ jobs:
           for dir in "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles" "$HOME/Library/MobileDevice/Provisioning Profiles"; do
             mkdir -p "$dir"
           done
-          for profile in "$PROFILE_APP" "$PROFILE_FILEPROVIDER"; do
+          for profile in "$PROFILE_APP" "$PROFILE_FILEPROVIDER" "$PROFILE_MCP"; do
             echo "$profile" | base64 --decode > "$RUNNER_TEMP/profile.provisionprofile"
             uuid=$(security cms -D -i "$RUNNER_TEMP/profile.provisionprofile" | plutil -extract UUID raw -o - -)
             cp "$RUNNER_TEMP/profile.provisionprofile" "$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles/$uuid.provisionprofile"

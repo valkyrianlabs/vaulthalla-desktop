@@ -1,6 +1,6 @@
 // Release signing (Developer ID, Valkyrian Labs LLC). Passed with `xcodebuild -xcconfig`, which outranks every target
-// and project setting, so one file signs every target: each picks its Developer ID profile by bundle id, and targets
-// without one (vaulthalla-mcp, the 1Password helper) sign with the identity alone.
+// and project setting, so one file signs every target: each picks its Developer ID profile by bundle id, and the
+// 1Password helper (no bundle, no restricted entitlements) signs with the identity alone.
 DEVELOPMENT_TEAM = ZG2G6V7GLC
 CODE_SIGN_STYLE = Manual
 CODE_SIGN_IDENTITY = Developer ID Application
@@ -8,4 +8,5 @@ OTHER_CODE_SIGN_FLAGS = --timestamp
 
 VH_PROFILE_sh_vaulthalla_app = Vaulthalla Desktop
 VH_PROFILE_sh_vaulthalla_app_fileprovider = Vaulthalla Desktop Finder
+VH_PROFILE_sh_vaulthalla_app_mcp = Vaulthalla Desktop MCP
 PROVISIONING_PROFILE_SPECIFIER = $(VH_PROFILE_$(PRODUCT_BUNDLE_IDENTIFIER:identifier))
