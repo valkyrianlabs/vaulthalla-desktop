@@ -1,5 +1,6 @@
-# Homebrew cask for Vaulthalla Desktop, rendered per release by tools/release/build.sh into the vaulthalla/homebrew-tap
-# repository as Casks/vaulthalla-desktop.rb: brew install --cask vaulthalla/tap/vaulthalla-desktop
+# Homebrew cask for Vaulthalla Desktop, rendered per release by tools/release/build.sh into the
+# valkyrianlabs/homebrew-tap repository as Casks/vaulthalla-desktop.rb:
+#   brew install --cask valkyrianlabs/tap/vaulthalla-desktop
 cask "vaulthalla-desktop" do
   version "@VERSION@"
   sha256 "@SHA256@"
