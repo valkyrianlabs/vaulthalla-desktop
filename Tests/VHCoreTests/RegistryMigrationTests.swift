@@ -14,8 +14,8 @@ import VHCore
             .appending(path: "RegistryMigrationTests-\(UUID().uuidString)", directoryHint: .isDirectory)
         environment = RegistryEnvironment(
             legacyDirectory: root.appending(path: "Application Support/Vaulthalla", directoryHint: .isDirectory),
-            appGroup: "ABCDE12345.sh.vaulthalla.desktop",
-            groupContainer: root.appending(path: "Group Containers/ABCDE12345.sh.vaulthalla.desktop",
+            appGroup: "ABCDE12345.sh.vaulthalla.app",
+            groupContainer: root.appending(path: "Group Containers/ABCDE12345.sh.vaulthalla.app",
                                            directoryHint: .isDirectory))
         noGroup = RegistryEnvironment(legacyDirectory: environment.legacyDirectory, appGroup: nil, groupContainer: nil)
     }
@@ -51,13 +51,13 @@ import VHCore
     // MARK: - The App Group
 
     @Test func recognizesTeamPrefixedGroupsOnly() {
-        #expect(AppGroup.isVaulthallaGroup("QG2U5HNCG4.sh.vaulthalla.desktop"))
-        #expect(!AppGroup.isVaulthallaGroup("group.sh.vaulthalla.desktop"))
-        #expect(!AppGroup.isVaulthallaGroup("QG2U5HNCG4.sh.vaulthalla.desktop.spike"))
-        #expect(!AppGroup.isVaulthallaGroup(".sh.vaulthalla.desktop"))
-        #expect(!AppGroup.isVaulthallaGroup("QG2U5HNCG.sh.vaulthalla.desktop"))
-        #expect(AppGroup.vaulthallaGroup(in: ["X.other", "QG2U5HNCG4.sh.vaulthalla.desktop"])
-            == "QG2U5HNCG4.sh.vaulthalla.desktop")
+        #expect(AppGroup.isVaulthallaGroup("ZG2G6V7GLC.sh.vaulthalla.app"))
+        #expect(!AppGroup.isVaulthallaGroup("group.sh.vaulthalla.app"))
+        #expect(!AppGroup.isVaulthallaGroup("ZG2G6V7GLC.sh.vaulthalla.app.spike"))
+        #expect(!AppGroup.isVaulthallaGroup(".sh.vaulthalla.app"))
+        #expect(!AppGroup.isVaulthallaGroup("QG2U5HNCG.sh.vaulthalla.app"))
+        #expect(AppGroup.vaulthallaGroup(in: ["X.other", "ZG2G6V7GLC.sh.vaulthalla.app"])
+            == "ZG2G6V7GLC.sh.vaulthalla.app")
         // `swift test` is unsigned: no group, so the registry stays in Application Support.
         #expect(AppGroup.entitledIdentifier() == nil)
     }
@@ -80,7 +80,7 @@ import VHCore
         #expect(!exists(environment.groupContainer!.appending(path: RegistryEnvironment.stagingName)))
         let pointer = try #require(environment.pointer())
         #expect(pointer.registryURL.path == groupURL.path)
-        #expect(pointer.appGroup == "ABCDE12345.sh.vaulthalla.desktop")
+        #expect(pointer.appGroup == "ABCDE12345.sh.vaulthalla.app")
         #expect(try NodeStore(fileURL: groupURL).load().map(\.displayName) == ["a", "b"])
 
         // The owner writes the migrated registry under the group's lease.
@@ -270,8 +270,8 @@ import VHCore
         try seed(legacyURL, ["a"])
         _ = open()
         let otherTeam = RegistryEnvironment(
-            legacyDirectory: environment.legacyDirectory, appGroup: "ZZZZZ99999.sh.vaulthalla.desktop",
-            groupContainer: root.appending(path: "Group Containers/ZZZZZ99999.sh.vaulthalla.desktop"))
+            legacyDirectory: environment.legacyDirectory, appGroup: "ZZZZZ99999.sh.vaulthalla.app",
+            groupContainer: root.appending(path: "Group Containers/ZZZZZ99999.sh.vaulthalla.app"))
         let opened = open(otherTeam)
         #expect(opened.migration == .pointsElsewhere(groupURL.path(percentEncoded: false)))
         #expect(opened.location.registryURL == otherTeam.groupRegistryURL)

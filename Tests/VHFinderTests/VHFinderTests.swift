@@ -157,7 +157,7 @@ import VHNodes
         CredentialReader(
             registry: NodeStore(fileURL: registryURL),
             keys: DeviceKeys(primary: DeviceIdentityStore(configuration: .init(
-                namespace: "sh.vaulthalla.desktop.test.readiness", keychain: .fileBased)), development: nil))
+                namespace: "sh.vaulthalla.app.test.readiness", keychain: .fileBased)), development: nil))
     }
 
     private func seed(_ nodes: [Node]) throws {

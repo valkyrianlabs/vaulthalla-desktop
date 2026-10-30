@@ -117,7 +117,7 @@ enum LiveKeychain {
     static func withKeys<R: Sendable>(_ body: (DeviceKeys) async throws -> R) async throws -> R {
         await KeychainLock.shared.acquire()
         let store = DeviceIdentityStore(configuration: .init(
-            namespace: "sh.vaulthalla.desktop.test.\(UUID().uuidString.lowercased())", keychain: .fileBased))
+            namespace: "sh.vaulthalla.app.test.\(UUID().uuidString.lowercased())", keychain: .fileBased))
         // The suite is the credential owner: it pairs, rotates and deletes (docs/architecture.md §3).
         let leaseDirectory = FileManager.default.temporaryDirectory
             .appending(path: "vh-live-lease-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -155,7 +155,7 @@ actor KeychainLock {
     private var held = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private let file = open(
-        FileManager.default.temporaryDirectory.appending(path: "sh.vaulthalla.desktop.test.keychain.lock").path,
+        FileManager.default.temporaryDirectory.appending(path: "sh.vaulthalla.app.test.keychain.lock").path,
         O_CREAT | O_RDWR, 0o600)
 
     func acquire() async {

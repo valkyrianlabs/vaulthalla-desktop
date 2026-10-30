@@ -5,13 +5,13 @@ import Testing
 import VHIdentity
 
 /// Keychain hygiene for tests. Every store gets a namespace unique to the run
-/// (`sh.vaulthalla.desktop.test.<uuid>`), so a test can only ever find, and delete, items it created. Nothing here
+/// (`sh.vaulthalla.app.test.<uuid>`), so a test can only ever find, and delete, items it created. Nothing here
 /// enumerates or prints other Keychain items.
 enum TestKeychain {
     /// Node tags tests may use; cleanup deletes all of them.
     static let nodeTags = ["node-a", "node-b", "server", "client", "stranger"]
 
-    static func namespace() -> String { "sh.vaulthalla.desktop.test.\(UUID().uuidString.lowercased())" }
+    static func namespace() -> String { "sh.vaulthalla.app.test.\(UUID().uuidString.lowercased())" }
 
     /// Runs `body` with a file-keychain store (the data protection keychain needs entitlements `swift test` lacks)
     /// and deletes everything under its namespace afterwards, also when `body` throws.
@@ -81,7 +81,7 @@ actor KeychainLock {
     private var held = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private let file = open(
-        FileManager.default.temporaryDirectory.appending(path: "sh.vaulthalla.desktop.test.keychain.lock").path,
+        FileManager.default.temporaryDirectory.appending(path: "sh.vaulthalla.app.test.keychain.lock").path,
         O_CREAT | O_RDWR, 0o600)
 
     func acquire() async {

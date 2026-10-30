@@ -2,7 +2,7 @@ public import Foundation
 import Security
 
 /// The App Group the app, the File Provider extension and every other Desktop process share
-/// (docs/architecture.md §3, "Signing and the shared container"): `<TEAM>.sh.vaulthalla.desktop`, the team-prefixed
+/// (docs/architecture.md §3, "Signing and the shared container"): `<TEAM>.sh.vaulthalla.app`, the team-prefixed
 /// macOS form, which needs no portal registration or profile entry.
 ///
 /// A process may use the group only when its signature carries the `com.apple.security.application-groups`
@@ -10,7 +10,7 @@ import Security
 /// keep the registry in Application Support.
 public enum AppGroup {
     /// What follows the team prefix.
-    public static let suffix = "sh.vaulthalla.desktop"
+    public static let suffix = "sh.vaulthalla.app"
     public static let entitlement = "com.apple.security.application-groups"
 
     /// Whether `identifier` is a team-prefixed Vaulthalla group: a 10-character alphanumeric team id, a dot, then

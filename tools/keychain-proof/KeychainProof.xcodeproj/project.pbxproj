@@ -177,7 +177,7 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				MARKETING_VERSION = 0.0.1;
 				CURRENT_PROJECT_VERSION = 1;
-				PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.desktop.keychain-proof;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.app.keychain-proof;
 				PRODUCT_NAME = KeychainProof;
 			};
 			name = Debug;
@@ -191,7 +191,7 @@
 				INFOPLIST_KEY_LSUIElement = YES;
 				MARKETING_VERSION = 0.0.1;
 				CURRENT_PROJECT_VERSION = 1;
-				PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.desktop.keychain-proof;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.app.keychain-proof;
 				PRODUCT_NAME = KeychainProof;
 			};
 			name = Release;

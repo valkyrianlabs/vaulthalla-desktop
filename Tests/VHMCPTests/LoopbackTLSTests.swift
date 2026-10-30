@@ -185,7 +185,7 @@ import VHNodes
     private func withKeychain(_ body: (DeviceIdentityStore) async throws -> Void) async throws {
         await KeychainLock.shared.acquire()
         let store = DeviceIdentityStore(configuration: .init(
-            namespace: "sh.vaulthalla.desktop.test.\(UUID().uuidString.lowercased())", keychain: .fileBased))
+            namespace: "sh.vaulthalla.app.test.\(UUID().uuidString.lowercased())", keychain: .fileBased))
         do {
             try await body(store)
         } catch {
@@ -209,7 +209,7 @@ actor KeychainLock {
     private var held = false
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private let file = open(
-        FileManager.default.temporaryDirectory.appending(path: "sh.vaulthalla.desktop.test.keychain.lock").path,
+        FileManager.default.temporaryDirectory.appending(path: "sh.vaulthalla.app.test.keychain.lock").path,
         O_CREAT | O_RDWR, 0o600)
 
     func acquire() async {

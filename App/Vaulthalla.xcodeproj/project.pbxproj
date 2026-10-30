@@ -520,7 +520,7 @@
 				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© Cooper Larson";
-				PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.desktop.mcp;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.app.mcp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 6.0;
@@ -534,7 +534,7 @@
 				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "© Cooper Larson";
-				PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.desktop.mcp;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.app.mcp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_VERSION = 6.0;
@@ -575,7 +575,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.desktop.fileprovider;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.app.fileprovider;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -599,7 +599,7 @@
 					"@executable_path/../Frameworks",
 					"@executable_path/../../../../Frameworks",
 				);
-				PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.desktop.fileprovider;
+				PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.app.fileprovider;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
 				SWIFT_EMIT_LOC_STRINGS = YES;

@@ -26,13 +26,13 @@ public actor DeviceIdentityStore {
         /// Prefix for every label and application tag the store writes. Tests use a unique namespace per run so they
         /// can only ever see and delete their own items.
         public var namespace: String
-        /// Keychain access group (`<TEAMID>.sh.vaulthalla.desktop`) shared with the app's helpers; `nil` uses the
+        /// Keychain access group (`<TEAMID>.sh.vaulthalla.app`) shared with the app's helpers; `nil` uses the
         /// app's default group.
         public var accessGroup: String?
         public var keychain: Keychain
 
         public init(
-            namespace: String = "sh.vaulthalla.desktop.device",
+            namespace: String = "sh.vaulthalla.app.device",
             accessGroup: String? = nil,
             keychain: Keychain = .dataProtection
         ) {
