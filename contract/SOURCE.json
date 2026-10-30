@@ -1,10 +1,9 @@
 {
   "server_version": "1.18.0",
-  "server_commit": "15c3e410",
+  "server_commit": "0026dde6",
   "server_branch": "feat/protocol-negotiation",
   "source": "web/src/util/generated/wsContract.json",
   "contract_version": 3,
-  "ws_hash": "c23c9f14f44deca8026366ff183d5e07534cc1a93cf055b30298ed8a1d530678",
-  "models_hash": "00cc5309cf6f162bb2881d6ab73e6273170a560d30e0dc588694c81dfe1f57da",
-  "note": "Vendored from feat/protocol-negotiation at 15c3e410 (meta.hello, capabilities, typed unknown_command; contract_version 3)."
+  "ws_hash": "b4a6c4e186b5ff132cb86abcbd04f974c005567d32fb20177b96c3cf27958416",
+  "models_hash": "00cc5309cf6f162bb2881d6ab73e6273170a560d30e0dc588694c81dfe1f57da"
 }
