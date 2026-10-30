@@ -1,7 +1,7 @@
 {
   "server_version": "1.18.0",
-  "server_commit": "0026dde6",
-  "server_branch": "feat/protocol-negotiation",
+  "server_commit": "5787f2d6",
+  "server_branch": "main",
   "source": "web/src/util/generated/wsContract.json",
   "contract_version": 3,
   "ws_hash": "b4a6c4e186b5ff132cb86abcbd04f974c005567d32fb20177b96c3cf27958416",
