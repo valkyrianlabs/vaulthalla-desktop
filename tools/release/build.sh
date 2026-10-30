@@ -8,10 +8,14 @@
 # (sh.vaulthalla.app.fileprovider) and "Vaulthalla Desktop MCP" (sh.vaulthalla.app.mcp) installed for Xcode. Signing
 # settings: DeveloperID.xcconfig.
 #
-#   VH_NOTARY_PROFILE   a `xcrun notarytool store-credentials` profile: notarize and staple (unset: signed only)
-#   VH_BUILD_NUMBER     CFBundleVersion (default: the commit count, which only grows on main)
+#   VH_NOTARY_PROFILE    a `xcrun notarytool store-credentials` profile: notarize and staple (unset: signed only)
+#   VH_SPARKLE_KEY_FILE  the Sparkle EdDSA private key: also write appcast.xml, the update feed for this release
+#   VH_BUILD_NUMBER      CFBundleVersion (default: the commit count, which only grows on main)
 #
-# The marketing version is VERSION. Writes Vaulthalla-<version>.dmg and its .sha256 to DIR.
+# The marketing version is VERSION. Writes Vaulthalla-<version>.dmg, its .sha256, the Homebrew cask
+# vaulthalla-desktop.rb and (with the key) appcast.xml to DIR.
+# The appcast lists this release alone: the app reads it from the latest GitHub release (SUFeedURL), and the DMG it
+# points to is that release's asset.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -42,11 +46,25 @@ xcodebuild -project "$repo/App/Vaulthalla.xcodeproj" -scheme Vaulthalla -configu
     MARKETING_VERSION="$version" CURRENT_PROJECT_VERSION="$build" -quiet archive
 app="$work/Vaulthalla.xcarchive/Products/Applications/Vaulthalla.app"
 
+# Xcode signs Sparkle.framework on copy but leaves its helpers with Sparkle's ad hoc signatures, which notarization
+# rejects. Sign them inside-out, then reseal the framework and the app (keeping each one's entitlements).
+log "Sign Sparkle's helpers"
+sparkle="$app/Contents/Frameworks/Sparkle.framework"
+sparkle_code=(
+    "$sparkle/Versions/B/XPCServices/Installer.xpc"
+    "$sparkle/Versions/B/XPCServices/Downloader.xpc"
+    "$sparkle/Versions/B/Autoupdate"
+    "$sparkle/Versions/B/Updater.app"
+)
+for code in "${sparkle_code[@]}" "$sparkle" "$app"; do
+    codesign --force --sign "$identity" --options runtime --timestamp --preserve-metadata=entitlements "$code"
+done
+
 log "Verify signatures"
 codesign --verify --deep --strict --verbose=2 "$app"
 # A Release build must never ship the debugger entitlement (notarization rejects it anyway).
 # (Captured first: `grep -q` closing the pipe early would fail codesign under pipefail.)
-for code in "$app" "$app"/Contents/PlugIns/*.appex "$app"/Contents/Helpers/*; do
+for code in "$app" "$app"/Contents/PlugIns/*.appex "$app"/Contents/Helpers/* "$sparkle" "${sparkle_code[@]}"; do
     [ -L "$code" ] && continue  # Contents/Helpers/vaulthalla-mcp points into vaulthalla-mcp.app
     entitlements=$(codesign -d --entitlements - --xml "$code" 2>/dev/null)
     if [[ $entitlements == *get-task-allow* ]]; then
@@ -99,4 +117,33 @@ if [ -n "${VH_NOTARY_PROFILE:-}" ]; then
 fi
 
 (cd "$out" && shasum -a 256 "$name" > "$name.sha256")
+sed -e "s/@VERSION@/$version/g" -e "s/@SHA256@/$(cut -d' ' -f1 "$out/$name.sha256")/g" \
+    "$here/homebrew/vaulthalla-desktop.rb.in" > "$out/vaulthalla-desktop.rb"
+
+if [ -n "${VH_SPARKLE_KEY_FILE:-}" ]; then
+    log "Appcast"
+    tools="$work/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin"
+    releases="https://github.com/valkyrianlabs/vaulthalla-desktop/releases"
+    mkdir -p "$work/appcast"
+    cp "$dmg" "$work/appcast/"
+    "$tools/generate_appcast" --ed-key-file "$VH_SPARKLE_KEY_FILE" \
+        --download-url-prefix "$releases/download/v$version/" \
+        --full-release-notes-url "$releases/tag/v$version" \
+        --link "https://vaulthalla.io" \
+        -o "$out/appcast.xml" "$work/appcast"
+    # The feed must offer exactly this DMG: its URL, length and EdDSA signature.
+    enclosure=$(python3 -I - "$out/appcast.xml" <<'PY'
+import sys, xml.etree.ElementTree as ET
+ns = "{http://www.andymatuschak.org/xml-namespaces/sparkle}"
+items = ET.parse(sys.argv[1]).getroot().findall("channel/item")
+assert len(items) == 1, f"{len(items)} items"
+e = items[0].find("enclosure")
+print(e.get("url"), e.get("length"), e.get(ns + "edSignature"))
+PY
+)
+    read -r url length signature <<<"$enclosure"
+    [ "$url" = "$releases/download/v$version/$name" ] || { echo "error: appcast offers $url" >&2; exit 1; }
+    [ "$length" = "$(stat -f %z "$dmg")" ] || { echo "error: appcast length $length isn't the DMG's" >&2; exit 1; }
+    "$tools/sign_update" --verify --ed-key-file "$VH_SPARKLE_KEY_FILE" "$dmg" "$signature"
+fi
 log "$dmg"

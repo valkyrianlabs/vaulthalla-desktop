@@ -4,6 +4,10 @@ struct AppCommands: Commands {
     let model: AppModel
 
     var body: some Commands {
+        CommandGroup(after: .appInfo) {
+            CheckForUpdatesButton()
+        }
+
         CommandGroup(replacing: .newItem) {
             Button("Add Node…") { model.presentAddNode() }
                 .keyboardShortcut("n")

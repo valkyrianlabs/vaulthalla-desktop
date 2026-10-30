@@ -37,6 +37,7 @@
 		7A40000000000000000000A4 /* VHFinder in Frameworks */ = {isa = PBXBuildFile; productRef = 7A40000000000000000000C4 /* VHFinder */; };
 		7A40000000000000000000A5 /* VaulthallaFileProvider.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7A4000000000000000000010 /* VaulthallaFileProvider.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		7A40000000000000000000A6 /* VHFinder in Frameworks */ = {isa = PBXBuildFile; productRef = 7A40000000000000000000C5 /* VHFinder */; };
+		7A50000000000000000000A1 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 7A50000000000000000000C1 /* Sparkle */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -132,6 +133,7 @@
 				7A30000000000000000000A1 /* VHOnePassword in Frameworks */,
 				7A30000000000000000000A2 /* VHKeyBackup in Frameworks */,
 				7A40000000000000000000A6 /* VHFinder in Frameworks */,
+				7A50000000000000000000A1 /* Sparkle in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -236,6 +238,7 @@
 				7A30000000000000000000C1 /* VHOnePassword */,
 				7A30000000000000000000C2 /* VHKeyBackup */,
 				7A40000000000000000000C5 /* VHFinder */,
+				7A50000000000000000000C1 /* Sparkle */,
 			);
 			productName = Vaulthalla;
 			productReference = 7A1000000000000000000010 /* Vaulthalla.app */;
@@ -321,6 +324,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				7A10000000000000000000D1 /* XCLocalSwiftPackageReference ".." */,
+				7A50000000000000000000D1 /* XCRemoteSwiftPackageReference "Sparkle" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 7A1000000000000000000002 /* Products */;
@@ -496,7 +500,7 @@
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Vaulthalla;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "© Cooper Larson";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Valkyrian Labs LLC. Licensed under AGPL-3.0-or-later.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -522,7 +526,7 @@
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Vaulthalla;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "© Cooper Larson";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Valkyrian Labs LLC. Licensed under AGPL-3.0-or-later.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -543,7 +547,7 @@
 				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "© Cooper Larson";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Valkyrian Labs LLC. Licensed under AGPL-3.0-or-later.";
 				PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.app.mcp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -559,7 +563,7 @@
 				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "© Cooper Larson";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Valkyrian Labs LLC. Licensed under AGPL-3.0-or-later.";
 				PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.app.mcp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -595,7 +599,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Extensions/FileProvider/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Vaulthalla;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "© Cooper Larson";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Valkyrian Labs LLC. Licensed under AGPL-3.0-or-later.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -619,7 +623,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Extensions/FileProvider/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Vaulthalla;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "© Cooper Larson";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Valkyrian Labs LLC. Licensed under AGPL-3.0-or-later.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -690,6 +694,17 @@
 		};
 /* End XCLocalSwiftPackageReference section */
 
+/* Begin XCRemoteSwiftPackageReference section */
+		7A50000000000000000000D1 /* XCRemoteSwiftPackageReference "Sparkle" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/sparkle-project/Sparkle";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.10.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
 /* Begin XCSwiftPackageProductDependency section */
 		7A10000000000000000000C1 /* VHCore */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -742,6 +757,11 @@
 		7A40000000000000000000C5 /* VHFinder */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = VHFinder;
+		};
+		7A50000000000000000000C1 /* Sparkle */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 7A50000000000000000000D1 /* XCRemoteSwiftPackageReference "Sparkle" */;
+			productName = Sparkle;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
