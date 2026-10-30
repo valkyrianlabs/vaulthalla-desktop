@@ -68,15 +68,18 @@ python3 tools/gen-contract.py --from ../vaulthalla      # copies the server's ge
 
 `.github/workflows/release.yml` builds the Developer ID release with `tools/release/build.sh`: a Release archive
 signed by `tools/release/DeveloperID.xcconfig` (each target picks its Developer ID profile by bundle id), the app
-notarized and stapled, then a signed DMG notarized and stapled too. Pushing a tag `v<VERSION>` publishes
-`Vaulthalla-<VERSION>.dmg` and its `.sha256` as a GitHub release (0.x as a prerelease); a pull request that touches
-the release tooling rehearses everything except publishing. The build number is the commit count.
+notarized and stapled, then a signed DMG notarized and stapled too, and the Sparkle `appcast.xml` offering it
+(signed with the EdDSA key in `SPARKLE_ED_PRIVATE_KEY`). Pushing a tag `v<VERSION>` publishes the DMG, its `.sha256`
+and the appcast as the latest GitHub release; the app's update feed is `releases/latest/download/appcast.xml`, so a
+release is never marked prerelease. A pull request that touches the release tooling rehearses everything except
+publishing. The build number is the commit count. Debug builds never check for updates.
 
 Locally, with the Developer ID identity in the keychain and both profiles installed for Xcode:
 
 ```sh
 tools/release/build.sh                                      # signed DMG in build/release
 VH_NOTARY_PROFILE=<notarytool profile> tools/release/build.sh   # also notarized and stapled
+VH_SPARKLE_KEY_FILE=<key file> tools/release/build.sh            # also appcast.xml (generate_keys -x exports the key)
 ```
 
 ## AI agents (MCP)

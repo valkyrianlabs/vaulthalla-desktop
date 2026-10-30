@@ -42,6 +42,7 @@ private struct GeneralSettingsView: View {
                 }
                 LabeledContent("Count", value: model.nodes.count.formatted())
             }
+            UpdateSettingsSection()
             Section {
                 Text("Connection, notification and backup settings arrive with pairing.")
                     .foregroundStyle(.secondary)

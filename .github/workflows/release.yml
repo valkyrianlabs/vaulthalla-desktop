@@ -1,13 +1,15 @@
 name: Release
-# The Developer ID release (tools/release/build.sh): a signed app and DMG, both notarized and stapled. A tag vX.Y.Z
-# that matches VERSION publishes the DMG as a GitHub release; a pull request that touches the release tooling
-# rehearses the whole pipeline, notarization included, and publishes nothing.
+# The Developer ID release (tools/release/build.sh): a signed app and DMG, both notarized and stapled, and the Sparkle
+# appcast that offers it. A tag vX.Y.Z that matches VERSION publishes them as the latest GitHub release, which is where
+# the app's feed points (SUFeedURL: releases/latest/download/appcast.xml); a pull request that touches the release
+# tooling rehearses the whole pipeline, notarization included, and publishes nothing.
 #
 # Organization secrets (valkyrianlabs, this repository selected):
 #   MACOS_SIGNING_P12, MACOS_SIGNING_P12_PASSWORD     the Developer ID Application identity (+ G2 intermediate)
 #   MACOS_PROFILE_APP, MACOS_PROFILE_FILEPROVIDER,    the Developer ID profiles "Vaulthalla Desktop",
 #   MACOS_PROFILE_MCP                                 "Vaulthalla Desktop Finder" and "Vaulthalla Desktop MCP", base64
 #   MACOS_NOTARY_APPLE_ID, MACOS_NOTARY_TEAM_ID, MACOS_NOTARY_PASSWORD   notarytool credentials
+#   SPARKLE_ED_PRIVATE_KEY                            the EdDSA key that signs updates (public half: SUPublicEDKey)
 on:
   push:
     tags: ['v*']
@@ -63,6 +65,7 @@ jobs:
           NOTARY_APPLE_ID: ${{ secrets.MACOS_NOTARY_APPLE_ID }}
           NOTARY_TEAM_ID: ${{ secrets.MACOS_NOTARY_TEAM_ID }}
           NOTARY_PASSWORD: ${{ secrets.MACOS_NOTARY_PASSWORD }}
+          SPARKLE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
         run: |
           kc="$RUNNER_TEMP/signing.keychain-db"; kcpw=$(openssl rand -hex 16)
           security create-keychain -p "$kcpw" "$kc"
@@ -91,6 +94,9 @@ jobs:
             --team-id "$NOTARY_TEAM_ID" --password "$NOTARY_PASSWORD" --keychain "$kc"
           echo "VH_NOTARY_PROFILE=vaulthalla-notary" >> "$GITHUB_ENV"
 
+          (umask 077 && printf '%s' "$SPARKLE_KEY" > "$RUNNER_TEMP/sparkle.key")
+          echo "VH_SPARKLE_KEY_FILE=$RUNNER_TEMP/sparkle.key" >> "$GITHUB_ENV"
+
       - name: Build, sign and notarize
         run: tools/release/build.sh --out "$RUNNER_TEMP/release"
 
@@ -100,13 +106,15 @@ jobs:
           path: |
             ${{ runner.temp }}/release/*.dmg
             ${{ runner.temp }}/release/*.dmg.sha256
+            ${{ runner.temp }}/release/appcast.xml
           if-no-files-found: error
           retention-days: 14
 
-      - name: Remove the signing keychain
+      - name: Remove the signing keychain and the Sparkle key
         if: always()
         run: |
           if [ -n "${VH_SIGNING_KEYCHAIN:-}" ]; then security delete-keychain "$VH_SIGNING_KEYCHAIN" || true; fi
+          rm -f "$RUNNER_TEMP/sparkle.key"
 
   publish:
     name: GitHub release
@@ -125,8 +133,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version=${GITHUB_REF_NAME#v}
-          # 0.x releases are previews.
-          prerelease=()
-          if [ "${version%%.*}" = 0 ]; then prerelease=(--prerelease); fi
-          gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --verify-tag \
-            --title "Vaulthalla Desktop $version" --generate-notes "${prerelease[@]}"
+          # Never a prerelease: releases/latest, the app's update feed, skips prereleases.
+          gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --verify-tag --latest \
+            --title "Vaulthalla Desktop $version" --generate-notes

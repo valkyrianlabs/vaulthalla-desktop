@@ -8,5 +8,11 @@
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Vaulthalla finds and connects to the Vaulthalla servers on your network.</string>
+	<key>SUFeedURL</key>
+	<string>https://github.com/valkyrianlabs/vaulthalla-desktop/releases/latest/download/appcast.xml</string>
+	<key>SUPublicEDKey</key>
+	<string>1IhFPeZb6pVthIsHuL+cRHhvZSinkIjauDrurua2SEg=</string>
+	<key>SUEnableAutomaticChecks</key>
+	<true/>
 </dict>
 </plist>
