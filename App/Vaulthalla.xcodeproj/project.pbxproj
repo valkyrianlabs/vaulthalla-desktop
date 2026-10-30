@@ -370,7 +370,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
-			shellScript = "set -eu\n# Builds the 1Password helper (Go, CGO, arm64, version-stamped) for the app to embed in Contents/Helpers.\nhelper=\"$SRCROOT/../Helpers/vaulthalla-1password\"\nout=\"$BUILT_PRODUCTS_DIR/vaulthalla-1password\"\n\"$helper/build.sh\" --output \"$out\"\n# Hardened runtime + disable-library-validation (1Password's IPC library is signed by another team). Ad hoc here;\n# the app's Embed phase re-signs it with the app's identity, keeping these. CODE_SIGNING_ALLOWED=NO (CI): embedded\n# with only the linker's ad-hoc signature.\nif [ \"${CODE_SIGNING_ALLOWED:-YES}\" != \"NO\" ]; then\n    /usr/bin/codesign --force --sign - --options runtime --timestamp=none \\\n        --entitlements \"$helper/helper.entitlements\" \"$out\"\nfi\n";
+			shellScript = "set -eu\n# Builds the 1Password helper (Go, CGO, arm64, version-stamped) for the app to embed in Contents/Helpers.\nhelper=\"$SRCROOT/../Helpers/vaulthalla-1password\"\nout=\"$BUILT_PRODUCTS_DIR/vaulthalla-1password\"\n\"$helper/build.sh\" --output \"$out\"\n# Hardened runtime + disable-library-validation (1Password's IPC library is signed by another team). Ad hoc here;\n# the app's Embed phase re-signs it with the app's identity, keeping these. CODE_SIGNING_ALLOWED=NO (CI): embedded\n# with only the linker's ad-hoc signature.\nif [ \"${CODE_SIGNING_ALLOWED:-YES}\" != \"NO\" ]; then\n    /usr/bin/codesign --force --sign - --identifier sh.vaulthalla.app.1password --options runtime --timestamp=none \\\n        --entitlements \"$helper/helper.entitlements\" \"$out\"\nfi\n";
 			showEnvVarsInLog = 0;
 		};
 /* End PBXShellScriptBuildPhase section */

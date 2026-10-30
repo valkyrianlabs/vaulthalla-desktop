@@ -1,0 +1,5 @@
+# Local lint config: `actionlint` from the repo root.
+self-hosted-runner:
+  labels:
+    # GitHub-hosted macOS 27 (public preview image; actionlint predates the label).
+    - xcode-27
