@@ -62,22 +62,42 @@ struct VaultChoice: Identifiable, Hashable {
 }
 
 /// The picker's source: `storage.vault.accessible.list` (every vault the account reaches, with what it may do there,
-/// decided by the daemon's own permission checks), or `storage.vault.list` when the daemon predates it and answers
-/// "Unknown command".
+/// decided by the daemon's own permission checks), or `storage.vault.list` when the daemon predates it: its
+/// `meta.hello` doesn't list the command, or (a legacy node, which lists nothing) it answers "Unknown command".
 @MainActor
 struct VaultChoices {
     let accessible: NodeQuery<Ws.Storage.Vault.Accessible.List>
     let legacy: NodeQuery<Ws.Storage.Vault.List>
+    private let support: ProtocolSupport
 
     init(queries: NodeQueries) {
         accessible = queries.query(Ws.Storage.Vault.Accessible.List.self)
         legacy = queries.query(Ws.Storage.Vault.List.self)
+        support = queries.supports(command: .storageVaultAccessibleList)
     }
 
     /// The daemon doesn't know the accessible list: read the older one instead.
     var usesLegacy: Bool {
-        if case .failed(let error) = accessible.state { return Self.isUnknownCommand(error) }
-        return false
+        switch support {
+        case .yes: return false
+        case .no: return true
+        case .unknown:
+            if case .failed(let error) = accessible.state { return error.isUnknownCommand }
+            return false
+        }
+    }
+
+    /// Keeps whichever list the node answers fresh while a view shows it (`.task(id: observation)`).
+    func observe() async {
+        if usesLegacy { await legacy.observe() } else { await accessible.observe() }
+    }
+
+    /// Changes when ``observe()`` should restart: another node's queries, or the other list.
+    var observation: Observation { Observation(query: ObjectIdentifier(accessible), legacy: usesLegacy) }
+
+    struct Observation: Hashable {
+        var query: ObjectIdentifier
+        var legacy: Bool
     }
 
     var state: QueryState<[VaultChoice]> {
@@ -112,8 +132,4 @@ struct VaultChoices {
         if usesLegacy { await legacy.refresh() } else { await accessible.refresh() }
     }
 
-    static func isUnknownCommand(_ error: WsError) -> Bool {
-        if case .error(let message) = error { return message.localizedCaseInsensitiveContains("unknown command") }
-        return false
-    }
 }

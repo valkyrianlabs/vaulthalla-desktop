@@ -138,10 +138,61 @@ extension KeychainSuite {
         }
     }
 
+    // MARK: Protocol negotiation before the request
+
+    @Test func legacyServerPairsAsBefore() async throws {
+        try await withDaemon { daemon, _, identity, _ in
+            // Unscripted, the mock refuses meta.hello on the pairing connection as a daemon ≤ 1.18.0 does.
+            let client = PairingClient(identity: identity, configuration: Fast.pairing(port: daemon.port))
+            let states = Recorder(client.start())
+            let request = try #require(await daemon.confirmedRequest())
+            daemon.decide(request.id, .approved)
+            #expect(await finalState(states)?.isApproved == true)
+            #expect(states.all.contains(.negotiated(.legacy)))
+            // The hello went first, then the request.
+            let order = daemon.commands.map(\.command)
+            #expect(order.firstIndex(of: "meta.hello")! < order.firstIndex(of: "device.pair.request")!)
+        }
+    }
+
+    @Test func negotiatedServerPairsAndReportsItsRelease() async throws {
+        try await withDaemon { daemon, _, identity, _ in
+            daemon.answer("meta.hello") { _ in .ok(NodeSessionTests.hello(release: "1.19.0")) }
+            let client = PairingClient(identity: identity, configuration: Fast.pairing(port: daemon.port))
+            let states = Recorder(client.start())
+            let request = try #require(await daemon.confirmedRequest())
+            daemon.decide(request.id, .approved)
+            #expect(await finalState(states)?.isApproved == true)
+            let settled = states.all.compactMap { if case .negotiated(let p) = $0 { p } else { nil } }.first
+            #expect(settled?.state == .negotiated && settled?.productLabel == "Vaulthalla 1.19.0 · protocol 1")
+            let sent = try #require(daemon.payloads(of: "meta.hello").first)
+            #expect(sent["client"]?["name"] == "vaulthalla-desktop" && sent["client"]?["version"] == "0.1.0-test")
+        }
+    }
+
+    @Test func incompatibleServerStopsBeforeTheRequest() async throws {
+        try await withDaemon { daemon, _, identity, _ in
+            daemon.answer("meta.hello") { _ in
+                .refuseWith("No common protocol version.", data: [
+                    "code": "protocol_unsupported", "server_min": 2, "server_max": 3, "server_version": "2.0.0",
+                ])
+            }
+            let client = PairingClient(identity: identity, configuration: Fast.pairing(port: daemon.port))
+            let states = Recorder(client.start())
+            let mismatch = ProtocolMismatch(serverMin: 2, serverMax: 3, serverVersion: "2.0.0")
+            let final = await finalState(states)
+            #expect(final == .failed(.incompatible(mismatch)))
+            #expect(PairingFailure.incompatible(mismatch).message.contains("needs a newer Vaulthalla Desktop"))
+            // Nothing was requested: no pairing request exists on the node.
+            #expect(!daemon.commands.contains { $0.command == "device.pair.request" })
+            #expect(daemon.state.withLock { $0.requests.isEmpty })
+        }
+    }
+
     @Test func refusalCodesMapToFailures() {
-        #expect(PairingFailure(WsError.needsConfirmation(code: "rate_limited", message: "x")) == .rateLimited)
-        #expect(PairingFailure(WsError.needsConfirmation(code: "no_pairing_window", message: "x")) == .noPairingWindow)
-        #expect(PairingFailure(WsError.needsConfirmation(code: "device_unknown", message: "x")) == .requestUnknown)
+        #expect(PairingFailure(WsError.refused(code: "rate_limited", message: "x")) == .rateLimited)
+        #expect(PairingFailure(WsError.refused(code: "no_pairing_window", message: "x")) == .noPairingWindow)
+        #expect(PairingFailure(WsError.refused(code: "device_unknown", message: "x")) == .requestUnknown)
         #expect(PairingFailure(WsError.conflict("x")) == .alreadyPaired)
         #expect(PairingFailure(WsError.invalid("x")) == .rejected)
         #expect(PairingFailure(WsError.error("boom")) == .server("boom"))

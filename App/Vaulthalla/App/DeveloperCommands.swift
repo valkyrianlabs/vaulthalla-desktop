@@ -144,6 +144,8 @@ enum DeveloperCommands {
             switch state {
             case .connecting:
                 print("connecting")
+            case .negotiated(let settled):
+                print("server: \(settled.productLabel)")
             case .awaitingApproval(let code):
                 print("approve on the node: \(code.formatted)")
             case .approved(let serverNodeID, let serverName, let deviceID, let serverSPKI):

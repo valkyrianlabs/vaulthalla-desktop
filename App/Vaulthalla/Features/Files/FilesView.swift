@@ -63,9 +63,8 @@ private struct FilesScreen: View {
                 chooseVault(vaults)
             }
         }
-        .observing(vaults.accessible)
         // A daemon without storage.vault.accessible.list: keep the older list fresh instead.
-        .task(id: vaults.usesLegacy) { if vaults.usesLegacy { await vaults.legacy.observe() } }
+        .task(id: vaults.observation) { await vaults.observe() }
         .toolbar { toolbar(vaults) }
         .searchable(text: $workspace.filter, placement: .toolbar, prompt: "Search This Folder")
         .task(id: vaults.openable.map(\.id)) { pickFirstVault(vaults) }

@@ -1,6 +1,8 @@
 #if DEBUG
 import Foundation
+import VHContract
 import VHCore
+import VHNodes
 
 /// PREVIEW-ONLY sample data for `#Preview`s. Never referenced by the running app: the shell only shows nodes the
 /// operator added. Each model gets its own throwaway registry in the temporary directory.
@@ -46,10 +48,17 @@ enum PreviewSamples {
 
     /// A model whose paired nodes answer from PREVIEW DATA (`PreviewTransport`): "Home lab" as an admin sees it,
     /// "Studio" as an account without stats access and no manageable vaults.
+    /// PREVIEW DATA: what "Home lab" answers to `meta.hello` (every command and capability this build knows).
+    static let negotiated = NodeProtocol(
+        state: .negotiated, version: 1, serverName: "vaulthalla", serverVersion: "1.19.0", serverRange: 1...1,
+        capabilities: Set(WsContract.capabilities.keys), commands: Set(WsCommand.allCases.map(\.rawValue)),
+        contract: .init(contractVersion: WsContract.contractVersion, contractHash: "preview", wsHash: WsContract.wsHash,
+                        modelsHash: WsContract.modelsHash))
+
     static func liveModel(selecting id: NodeID? = nil) -> AppModel {
         let model = model(selecting: id)
-        model.usePreviewData(for: nodes[1].id, transport: PreviewTransport(.full))
-        model.usePreviewData(for: nodes[3].id, transport: PreviewTransport(.restricted))
+        model.usePreviewData(for: nodes[1].id, transport: PreviewTransport(.full), negotiated: negotiated)
+        model.usePreviewData(for: nodes[3].id, transport: PreviewTransport(.restricted), negotiated: .legacy)
         RecoveryKeysPreviewData.install(on: model)
         return model
     }

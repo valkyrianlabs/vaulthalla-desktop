@@ -14,7 +14,7 @@ Desktop speaks the daemon's generated command contract.
 |---|---|---|
 | `ops::` operations: actor-authorized, typed refusals (`denied`, `not_found`, `invalid`, `conflict`, `NeedsConfirmation{code}`) | `core/{include,src}/ops/` | Every Desktop, MCP and pairing action ends in an op. No new RBAC. |
 | ws command surface: about 200 handlers, envelope `{command, payload, requestId, token}` / `{status, data, error}` | `core/src/protocols/ws/` | Desktop's transport. The same envelope rides the new device listener. |
-| Generated ws contract (`vh_usage --json` → `wsContract.json`: payload/response fields, auth level, timeouts, refusal codes, `ws_hash`) | `core/usage/src/contract/`, `tools/contracts/ws_contract.py` | Swift types and timeouts are generated from it. `meta.contract.get` detects server upgrades. |
+| Generated ws contract (`vh_usage --json` → `wsContract.json`: payload/response fields, auth level, timeouts, refusal codes, `ws_hash`) | `core/usage/src/contract/`, `tools/contracts/ws_contract.py` | Swift types and timeouts are generated from it. `meta.hello` reports the server's release, protocol and capabilities (§3, "Protocol negotiation"). |
 | CLI usage book (184 nodes, 148 leaves, 360 examples) + `OperationSpec` catalog (33 ops: typed fields, `requires_any`, `effect`, CLI/ws bindings) | `core/usage/` | Source of the MCP tool catalog and the agent skill. |
 | `shell::Router::executeLine(line, User, io, transfer)` → `CommandResult` | `core/src/protocols/shell/Router.cpp:138` | Runs any `vh` command for a given actor without a socket. Remote MCP executes through it. |
 | Machine-credential → `User` precedent (S3 gateway credentials map to a principal user) | `core/src/protocols/s3/Auth.cpp` | Model for "a paired device acts as its user". |
@@ -118,8 +118,9 @@ docs/                   this plan, the pairing protocol, release notes
 ```
 
 **App structure**
-- One `NavigationSplitView`. The sidebar lists the nodes (status dot, contract mismatch badge, pairing state); the
-  feature sections below it apply to the selected node.
+- One `NavigationSplitView`. The sidebar lists the nodes (status dot, an incompatibility badge when the node's
+  protocol range doesn't overlap this build's, pairing state); the feature sections below it apply to the selected
+  node.
   - Feature sections: Overview/Health, Files, Vaults, Shares, Access (users, groups, roles), Sync conflicts, Cost,
     S3 gateway, Recovery keys, Settings.
   - "All nodes" views cover what spans deployments: overview, key backup status, devices.
@@ -132,10 +133,10 @@ docs/                   this plan, the pairing protocol, release notes
   - Native materials (Liquid Glass sidebar and toolbars) over the `#05080d` canvas.
   - Status tones only as the backend reports them; unknown is never green.
 - **Contract:** a Swift `WsCommand` enum, generated `Codable` payload/response types and server models (`WsModel`),
-  the auth level, timeouts and confirmations per command, and the `ws_hash` and `models_hash`.
-  - Desktop compares the `ws_hash` with `meta.contract.get` and degrades per command ("needs Vaulthalla ≥ x"), never
-    the whole node.
-  - Desktop supports the current and the previous server minor.
+  the auth level, timeouts and confirmations per command, the `ws_hash` and `models_hash`, and (contract_version 3)
+  the daemon's protocol range and capabilities. Response members newer than the compatibility baseline are optional
+  (see "Protocol negotiation" below). Desktop degrades per command and per capability, never the whole node, except
+  when the protocols don't overlap at all.
 - **Files:** a virtualized `Table`/grid backed by `fs.*`. Downloads and uploads use the HTTP lanes on the device
   listener (URLSession with the same identity). Quick Look previews come from `/preview`, and drag-and-drop works
   with Finder.
@@ -144,6 +145,50 @@ docs/                   this plan, the pairing protocol, release notes
   Device keys live in the Keychain and Secure Enclave. Nothing secret goes in `UserDefaults` or in logs.
   - `Logger` uses `.private` for everything user-derived.
   - Key material is held in a `SecretBytes` type that zeroes on deinit and has no `description`.
+- **Protocol negotiation.** Server and Desktop release independently, so every connection settles what both speak
+  before any feature runs (`VHNodes.NodeProtocol`, the server's `docs/reference/ws-protocol.md`).
+  - **Versions.** The ws protocol is an integer the daemon bumps only for a breaking change; protocol 1 starts with
+    the first daemon that answers `meta.hello` (1.19). This build speaks `WsProtocol.minimum...maximum` (1...1), the
+    one place the range is kept. Compatible changes (new commands, new response members, new capabilities) never
+    bump it.
+  - **Handshake.** Right after connecting, before the session reports online, `NodeSession` sends `meta.hello`
+    `{client: {name: "vaulthalla-desktop", version: CFBundleShortVersionString}, protocol: {min, max}}`. The daemon
+    answers `{server: {name, version}, protocol: {version, min, max}, capabilities, commands, contract}`; the session
+    keeps it (`nodeProtocol`, reported as `Event.protocolNegotiated`), and every reconnect negotiates again, so an
+    upgraded node is picked up. Then `device.server.identity` runs as before (skipped only when the node announces it
+    lacks `device.server.identity`).
+  - **Pairing.** `PairingClient` sends `meta.hello` on the pairing-only connection before `device.pair.request`. An
+    incompatible server stops the attempt before anything is requested (`PairingFailure.incompatible`, the same
+    message, the sheet stays open with Try Again); a legacy server, which refuses it there with `device_unknown` like
+    every command but `device.pair.*`, pairs as before; a negotiated one pairs, and the sheet shows its release under
+    the code.
+  - **Outcomes.** *Negotiated*: a version in range; `supports(command:)` answers from `commands`,
+    `supports(capability:)` from `capabilities` (yes or no). *Legacy*: a daemon ≤ 1.18.0 refuses `meta.hello` with
+    "Unknown command" and no code; protocol 1 is assumed, release, capabilities and commands are unknown, and every
+    support check is *unknown*: feature code then tries the command and reads "Unknown command" as before
+    (`WsError.isUnknownCommand`, the only place those words are matched). *Incompatible*: `protocol_unsupported`
+    (`data {code, server_min, server_max, server_version}`), or a version outside the range. The session stays
+    connected so the node shows what it runs, but feature calls through it are refused here, unsent
+    (`WsError.protocolUnsupported`), as are the HTTP lanes. The message names the side to update: "This node runs
+    Vaulthalla X, which needs a newer Vaulthalla Desktop", or "…speaks an older protocol: update Vaulthalla on the
+    node".
+  - **Supported range.** The oldest daemon Desktop works with is the compatibility baseline,
+    `contract/compat-baseline.json` (server 1.17.0's contract, recorded in `compat-baseline.SOURCE.json`).
+    `tools/gen-contract.py` generates every response member the current contract requires but the baseline doesn't
+    guarantee as optional (`WsContract.relaxedMembers`), so a newer member never breaks decoding against an older
+    daemon; request types stay as the current contract says, and `--check` validates the baseline too. On a legacy
+    node a decode failure (`contractMismatch`) says Desktop needs Vaulthalla 1.17 or later.
+  - **Refusals.** Device sessions on a 1.19+ daemon answer an unknown command with `data.code` "unknown_command"
+    (`WsError.unknownCommand`, capability `errors.unknown_command_code`). Only codes the command declares in its
+    `confirmations` are `needsConfirmation`; any other code is `refused(code:message:)`, never a question.
+  - **Capabilities Desktop reads** (`WsCapability`, checked against the vendored contract's list):
+    `device.lanes.preview|download|upload` (a 404 on a lane the node doesn't announce is the missing lane, not a
+    missing item), `device.mcp` (the MCP bridge asks it over its own `meta.hello` when `/mcp` answers 404),
+    `device.server.identity`, `errors.unknown_command_code`, `fs.entry.metadata_version`. Command presence always
+    comes from `commands`.
+  - **UI.** The node overview shows "Vaulthalla 1.19.0 · protocol 1" (legacy: "Vaulthalla 1.18 or earlier") and the
+    contract identity from the hello; an incompatible node gets a sidebar badge, an "Incompatible" header badge and,
+    where its sections would be, the message saying which side to update.
 - **Credential ownership: one owner, every other process a consumer** (desktop#3). A rotation in one process would
   strand every other process presenting the old key, because the daemon clears `previous_spki_sha256` on the first
   handshake with the new key (`docs/pairing.md` §4). So exactly one process on the Mac, the *owner*, creates, rotates

@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import VHCore
+import VHTransport
 
 /// A sidebar row. Picking a node makes it the context for the section rows below; the highlight then sits on the
 /// section, and the node row marks itself as current.
@@ -28,7 +29,8 @@ struct Sidebar: View {
                     addNodeCallToAction
                 }
                 ForEach(model.nodes) { node in
-                    NodeRow(node: node, status: model.status(for: node), isCurrent: isCurrent(node))
+                    NodeRow(node: node, status: model.status(for: node), isCurrent: isCurrent(node),
+                            incompatibility: model.incompatibility(for: node))
                         .tag(SidebarItem.node(node.id))
                         .contextMenu { contextMenu(for: node) }
                 }
@@ -110,6 +112,8 @@ struct NodeRow: View {
     var node: Node
     var status: NodeConnectionStatus
     var isCurrent = false
+    /// Set when the node runs a Vaulthalla this build shares no protocol version with: a small badge says so.
+    var incompatibility: ProtocolMismatch?
 
     var body: some View {
         HStack(spacing: 10) {
@@ -126,6 +130,9 @@ struct NodeRow: View {
                     .truncationMode(.middle)
             }
             Spacer(minLength: 0)
+            if let incompatibility {
+                IncompatibleBadge(mismatch: incompatibility)
+            }
             if isCurrent {
                 Image(systemName: "chevron.forward")
                     .font(.caption2.weight(.semibold))
@@ -135,7 +142,25 @@ struct NodeRow: View {
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
-        .accessibilityValue(status.label)
+        .accessibilityValue(incompatibility == nil ? status.label : "\(status.label), incompatible")
+    }
+}
+
+/// The sidebar's mark for a node this build can't work with: which side to update, the full sentence on hover.
+private struct IncompatibleBadge: View {
+    var mismatch: ProtocolMismatch
+
+    var body: some View {
+        Image(systemName: "exclamationmark.arrow.triangle.2.circlepath")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(StatusTone.danger.color)
+            .padding(.horizontal, 5)
+            .frame(height: 18)
+            .background(StatusTone.danger.soft, in: Capsule())
+            .overlay { Capsule().strokeBorder(StatusTone.danger.line, lineWidth: 1) }
+            .help(mismatch.message)
+            .accessibilityLabel(mismatch.side == .desktopTooOld ? "Needs a newer Vaulthalla Desktop"
+                : "Needs a newer Vaulthalla on the node")
     }
 }
 

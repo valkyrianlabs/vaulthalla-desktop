@@ -375,8 +375,13 @@ public actor WsClient {
         }
         if let token = header.token, !token.isEmpty { tokens.token = token }
 
-        if let requestId = header.requestId, pending[requestId] != nil {
-            if let error = WsError.classify(status: header.status, error: header.error, code: header.data?.code) {
+        if let requestId = header.requestId, let entry = pending[requestId] {
+            let refusal = header.data.map {
+                WsError.Refusal(code: $0.code, serverMin: $0.serverMin, serverMax: $0.serverMax,
+                                serverVersion: $0.serverVersion)
+            }
+            if let error = WsError.classify(status: header.status, error: header.error, refusal: refusal,
+                                            command: entry.command) {
                 settle(requestId, .failure(error))
             } else {
                 settle(requestId, .success(frame))
@@ -574,15 +579,29 @@ private struct FrameHeader: Decodable {
     var data: RefusalData?
 }
 
-/// `data.code` when `data` is an object with a string code; nil for any other `data`.
+/// `data.code` when `data` is an object with a string code, and `protocol_unsupported`'s range and release; nil
+/// members for any other `data`.
 private struct RefusalData: Decodable {
     var code: String?
+    var serverMin: Int?
+    var serverMax: Int?
+    var serverVersion: String?
 
     init(from decoder: any Decoder) throws {
-        code = try? decoder.container(keyedBy: Keys.self).decodeIfPresent(String.self, forKey: .code)
+        let container = try? decoder.container(keyedBy: Keys.self)
+        code = try? container?.decodeIfPresent(String.self, forKey: .code)
+        guard code == "protocol_unsupported" else { return }
+        serverMin = try? container?.decodeIfPresent(Int.self, forKey: .serverMin)
+        serverMax = try? container?.decodeIfPresent(Int.self, forKey: .serverMax)
+        serverVersion = try? container?.decodeIfPresent(String.self, forKey: .serverVersion)
     }
 
-    private enum Keys: CodingKey { case code }
+    private enum Keys: String, CodingKey {
+        case code
+        case serverMin = "server_min"
+        case serverMax = "server_max"
+        case serverVersion = "server_version"
+    }
 }
 
 private struct DataEnvelope<T: Decodable>: Decodable {

@@ -137,6 +137,9 @@ public struct KeyRestore: Sendable {
         } catch {
             return .failed(KeyBackupWords.onePassword(error))
         }
+        if await node.transport.commandSupport(.vaultKeysImport) == .no {
+            return .failed(Self.importUnsupported(node: row.nodeName))
+        }
         do {
             let result = try await VaultKeyCommands(node.transport).importKeys(
                 set, mode: mode, confirmName: confirmName, exportedBy: exportedBy)
@@ -180,11 +183,15 @@ public struct KeyRestore: Sendable {
         case .denied: "This account may not import vault keys on \(node) (it needs the encryption-key Export permission)."
         case .invalid(let message): "\(node) refused the keys: \(message)"
         case .conflict(let message): "\(node) refused the keys: \(message)"
-        case .needsConfirmation(let code, let message) where code == "import_requires_device": message
-        default: KeyBackupWords.unsupported(error)
-            ? "\(node) runs a Vaulthalla without key import (vault.keys.import). Update it first."
-            : KeyBackupWords.node(error)
+        case .refused("import_requires_device", let message), .needsConfirmation("import_requires_device", let message):
+            message
+        default: KeyBackupWords.unsupported(error) ? importUnsupported(node: node) : KeyBackupWords.node(error)
         }
+    }
+
+    /// The node's Vaulthalla has no `vault.keys.import`.
+    static func importUnsupported(node: String) -> String {
+        "\(node) runs a Vaulthalla without key import (vault.keys.import). Update it first."
     }
 
     /// The revealed versions as a key set for the row's vault; refuses an item for another node or vault. A version

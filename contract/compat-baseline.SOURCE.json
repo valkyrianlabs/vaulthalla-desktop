@@ -1,0 +1,10 @@
+{
+  "server_version": "1.17.0",
+  "server_ref": "v1.17.0",
+  "server_commit": "ce510d39",
+  "source": "web/src/util/generated/wsContract.json",
+  "contract_version": 2,
+  "ws_hash": "686e357625cb73a67b350e65eb9ed5e057a42c96013fa6e5215e5ca9d55af074",
+  "models_hash": "540aadf56707a312f350cc7510385baa09eacaed912950ff5da1afb9776ba0a5",
+  "note": "Compatibility baseline: the oldest daemon release Desktop supports. Response members the current contract requires but this one doesn't guarantee are generated optional (tools/gen-contract.py). Vendored with: git -C <server repo> show v1.17.0:web/src/util/generated/wsContract.json"
+}

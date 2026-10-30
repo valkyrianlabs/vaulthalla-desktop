@@ -33,6 +33,12 @@ final class TestServer: Sendable {
             peer.send(.object(object))
         }
 
+        /// An ERROR answer with `data` as given.
+        func refuse(_ message: String, data: JSONValue) {
+            peer.send(["command": .string(command + ".response"), "status": "ERROR", "requestId": .string(requestId),
+                       "error": .string(message), "data": data])
+        }
+
         /// Answers like `respondWithCurrentError`: an ops refusal carries `data.code`.
         func refuse(_ message: String, code: String? = nil, status: String = "ERROR") {
             var object: JSONObject = ["command": .string(command + ".response"), "status": .string(status),

@@ -2,6 +2,7 @@ import SwiftUI
 import VHContract
 import VHCore
 import VHNodes
+import VHTransport
 
 /// Who holds a role on one vault (`roles.vault.list.assigned`), for the Vaults inspector: assign, change and remove
 /// vault roles, and each assignment's path overrides. The entry point the Vaults feature embeds.
@@ -381,6 +382,8 @@ private struct OverridesSheet: View {
     @State private var add: NodeMutation<Ws.Role.Vault.Overrides.Add>
     private let overrides: NodeQuery<Ws.Role.Vault.Overrides.List>
     private let catalog: NodeQuery<Ws.Permissions.List>
+    /// Whether the node has `role.vault.overrides.list` (its `meta.hello`); unknown on a legacy node, which is asked.
+    private let support: ProtocolSupport
     @Environment(\.dismiss) private var dismiss
 
     init(vaultID: Int64, vaultName: String, row: VaultAssignment, queries: NodeQueries) {
@@ -390,6 +393,7 @@ private struct OverridesSheet: View {
         overrides = queries.query(Ws.Role.Vault.Overrides.List.self,
                                   .init(vaultID: vaultID, subjectType: row.subject.overridesList, subjectID: row.subjectID))
         catalog = queries.query(Ws.Permissions.List.self)
+        support = queries.supports(command: .roleVaultOverridesList)
         let invalidating = ["role.vault.overrides"]
         _update = State(initialValue: NodeMutation(Ws.Role.Vault.Overrides.Update.self, on: queries, invalidating: invalidating))
         _remove = State(initialValue: NodeMutation(Ws.Role.Vault.Overrides.Remove.self, on: queries, invalidating: invalidating))
@@ -401,25 +405,35 @@ private struct OverridesSheet: View {
         !trimmedPattern.isEmpty && !trimmedPattern.hasPrefix("/") ? "Start with / (vault-relative), e.g. /docs/**" : nil
     }
 
+    /// The node's Vaulthalla has no remote overrides.
+    private var noRemoteOverrides: some View {
+        Callout(tone: .info, systemImage: "terminal") {
+            Text("This node can't manage overrides remotely yet. Use `vh vault role override` on the host, or upgrade Vaulthalla.")
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             SheetTitle(title: "Overrides for \(row.label)", systemImage: "slider.horizontal.3",
                        subtitle: "On top of the “\(AccessFormat.roleLabel(row.role.name))” role in \(vaultName). A matching override wins over the role.")
 
-            switch overrides.state {
-            case .idle, .loading:
-                ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: 80)
-            case .failed(let error):
-                if error.message.localizedCaseInsensitiveContains("unknown command") {
-                    Callout(tone: .info, systemImage: "terminal") {
-                        Text("This node can't manage overrides remotely yet. Use `vh vault role override` on the host, or upgrade Vaulthalla.")
+            if support == .no {
+                noRemoteOverrides
+            } else {
+                switch overrides.state {
+                case .idle, .loading:
+                    ProgressView().controlSize(.small).frame(maxWidth: .infinity, minHeight: 80)
+                case .failed(let error):
+                    // A legacy node lists no commands: its "Unknown command" says the same.
+                    if error.isUnknownCommand {
+                        noRemoteOverrides
+                    } else {
+                        InlineProblem(error: error, subject: "this assignment's overrides")
                     }
-                } else {
-                    InlineProblem(error: error, subject: "this assignment's overrides")
+                case .loaded(let response, _):
+                    list(response.overrides)
+                    addForm
                 }
-            case .loaded(let response, _):
-                list(response.overrides)
-                addForm
             }
 
             MutationError(error: update.error ?? remove.error)
@@ -432,7 +446,7 @@ private struct OverridesSheet: View {
         }
         .padding(22)
         .frame(width: 600)
-        .observing(overrides)
+        .task(id: ObjectIdentifier(overrides)) { if support != .no { await overrides.observe() } }
         .observing(catalog)
         .confirmationDialog("Remove this override?", isPresented: isRemoving, titleVisibility: .visible,
                             presenting: removing) { item in

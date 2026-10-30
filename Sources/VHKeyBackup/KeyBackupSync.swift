@@ -133,6 +133,10 @@ public struct KeyBackupSync: Sendable {
         do {
             // The export lives only in this scope: its SecretBytes are released (and zeroed) once the upsert returns.
             let exported: ExportedVaultKeys
+            // A node that negotiated without the command isn't asked; a legacy one is, and its refusal read as before.
+            if await node.transport.commandSupport(.vaultKeysExport) == .no {
+                return .failed(step: .export, message: KeyBackupWords.exportUnsupported(node: row.nodeName))
+            }
             do {
                 exported = try await keys.export(vaultID: row.vaultID)
             } catch {
@@ -192,12 +196,16 @@ public enum KeyBackupWords {
         switch error {
         case .denied:
             "This account may not export vault keys on \(node) (it needs the encryption-key Export permission)."
-        case .needsConfirmation(let code, let message) where code == "export_requires_device":
+        case .refused("export_requires_device", let message), .needsConfirmation("export_requires_device", let message):
             message
         default:
-            unsupported(error) ? "\(node) runs a Vaulthalla without key backup (vault.keys.export). Update it first."
-                : self.node(error)
+            unsupported(error) ? exportUnsupported(node: node) : self.node(error)
         }
+    }
+
+    /// The node's Vaulthalla has no `vault.keys.export`.
+    public static func exportUnsupported(node: String) -> String {
+        "\(node) runs a Vaulthalla without key backup (vault.keys.export). Update it first."
     }
 
     public static func node(_ error: WsError) -> String {
@@ -223,14 +231,10 @@ public enum KeyBackupWords {
         }
     }
 
-    /// A daemon that doesn't know the command at all.
+    /// A daemon that doesn't know the command at all: the typed `unknown_command`, or a legacy daemon's words for it
+    /// (`WsError.isUnknownCommand`). Callers that know the node ask `supports(command:)` before sending.
     public static func unsupported(_ error: WsError) -> Bool {
-        switch error {
-        case .error(let message), .notFound(let message), .invalid(let message):
-            message.localizedCaseInsensitiveContains("unknown command")
-                || message.localizedCaseInsensitiveContains("unknown action")
-        default: false
-        }
+        error.isUnknownCommand
     }
 }
 

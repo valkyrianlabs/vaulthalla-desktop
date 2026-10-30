@@ -4,6 +4,7 @@ import SwiftUI
 import VHCore
 import VHIdentity
 import VHNodes
+import VHTransport
 
 /// App-wide state for the shell: the node registry, what's selected, and each node's connection status.
 @Observable
@@ -40,6 +41,9 @@ final class AppModel {
     private(set) var keyBackends: [NodeID: KeyBackend] = [:]
     /// Paired nodes whose session gave up for good (key missing, unannounced server key): only pairing again helps.
     private(set) var nodesNeedingPairing: Set<NodeID> = []
+    /// What each node's session negotiated with `meta.hello` (docs/architecture.md §3, "Protocol negotiation").
+    /// Absent: not settled yet, support unknown.
+    private(set) var nodeProtocols: [NodeID: NodeProtocol] = [:]
     /// Whether this app manages the device keys and the node list (it holds the credential lease) or only reads
     /// what another process manages (docs/architecture.md §3, "Credential ownership").
     private(set) var credentialRole: CredentialRole
@@ -145,6 +149,7 @@ final class AppModel {
         liveStatus[id] = nil
         queryStores[id] = nil
         keyBackends[id] = nil
+        nodeProtocols[id] = nil
         nodesNeedingPairing.remove(id)
         // The key was filed under this node's local id; nothing else can use it.
         if let keys = deviceKeys, isCredentialOwner {
@@ -179,6 +184,7 @@ final class AppModel {
         liveStatus[id] = nil
         offlineReasons[id] = nil
         queryStores[id] = nil
+        nodeProtocols[id] = nil
         nodesNeedingPairing.remove(id)
     }
 
@@ -257,6 +263,9 @@ final class AppModel {
         for id in queryStores.keys where !live.contains(id) {
             queryStores[id] = nil
         }
+        for id in nodeProtocols.keys where !live.contains(id) {
+            nodeProtocols[id] = nil
+        }
     }
 
     private func handle(_ event: NodeSession.Event, from id: NodeID) {
@@ -287,7 +296,23 @@ final class AppModel {
             keyBackends[id] = backend
         case .pairingRequired:
             nodesNeedingPairing.insert(id)
+        case .protocolNegotiated(let settled):
+            nodeProtocols[id] = settled
+            queryStores[id]?.protocolChanged(settled)
         }
+    }
+
+    // MARK: - Protocol
+
+    /// What the node's session negotiated; nil while unknown (not connected yet, or no answer).
+    func nodeProtocol(for id: NodeID) -> NodeProtocol? {
+        nodeProtocols[id]
+    }
+
+    /// Why this build can't work with the node, when its protocol range doesn't overlap: the node stays listed and
+    /// connected, its sections say what to update, and feature calls are refused unsent.
+    func incompatibility(for node: Node) -> ProtocolMismatch? {
+        nodeProtocols[node.id]?.mismatch
     }
 
     /// Why a node's session is offline, when it said.
@@ -308,14 +333,16 @@ final class AppModel {
         let made = NodeQueries(transport: SessionTransport { [weak sessions] in sessions?.session(for: id) })
         made.isActive = isAppActive
         made.connectionChanged(online: liveStatus[id] == .online)
+        made.protocolChanged(nodeProtocols[id])
         queryStores[id] = made
         return made
     }
 
     /// The store a section shows server data from: while the node is online, and through a reconnect once it has
     /// answered (the views keep the last data with a "reconnecting" banner). nil means the section shows why the
-    /// node isn't available instead.
+    /// node isn't available instead, also for a node whose protocol this build doesn't speak.
     func liveQueries(for node: Node) -> NodeQueries? {
+        if incompatibility(for: node) != nil { return nil }
         switch status(for: node) {
         case .online:
             return queries(for: node.id)
@@ -356,10 +383,13 @@ final class AppModel {
     }
 
     #if DEBUG
-    /// PREVIEW DATA: serves `node` from canned answers and reports it online, without a session.
-    func usePreviewData(for id: NodeID, transport: any NodeTransport) {
+    /// PREVIEW DATA: serves `node` from canned answers and reports it online, without a session, as running what
+    /// `negotiated` says.
+    func usePreviewData(for id: NodeID, transport: any NodeTransport, negotiated: NodeProtocol? = nil) {
         let made = NodeQueries(transport: transport)
         made.isActive = isAppActive
+        nodeProtocols[id] = negotiated
+        made.protocolChanged(negotiated)
         queryStores[id] = made
         liveStatus[id] = .online
         previewTransports[id] = transport

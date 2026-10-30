@@ -7,8 +7,12 @@ import VHTransport
 enum NodeRequestFailure: Error, Sendable {
     case connect(NodeConnectFailure)
     case http(DeviceHTTPError)
-    /// The node answered with an HTTP status the exchange can't use (an older daemon without `/mcp`: 404).
+    /// The node answered with an HTTP status the exchange can't use.
     case status(Int)
+    /// `/mcp` answered 404. `support` is what the node announced for `device.mcp`: no, or unknown (a legacy node, as
+    /// before negotiation existed), means its Vaulthalla has no remote MCP; yes means the endpoint is there but
+    /// refused this path.
+    case noEndpoint(support: ProtocolSupport)
     /// The node's answer isn't the MCP the bridge speaks.
     case protocolMismatch(String)
     case deadline(Duration)
@@ -18,7 +22,11 @@ enum NodeRequestFailure: Error, Sendable {
         switch self {
         case .connect(let failure): failure.message
         case .http(let error): error.message
-        case .status(404): "The node has no MCP endpoint (it runs a Vaulthalla version without remote MCP)."
+        case .noEndpoint(.yes): "The node's MCP endpoint answered HTTP 404, although its Vaulthalla serves remote MCP."
+        case .noEndpoint(.no):
+            "The node runs a Vaulthalla version without remote MCP. Update Vaulthalla on the node to use its tools."
+        case .noEndpoint(.unknown), .status(404):
+            "The node has no MCP endpoint (it runs a Vaulthalla version without remote MCP)."
         case .status(let status): "The node's MCP endpoint answered HTTP \(status)."
         case .protocolMismatch(let detail): "The node's MCP endpoint answered unexpectedly (\(detail))."
         case .deadline(let limit): "No answer within \(limit.seconds) s."
@@ -60,6 +68,8 @@ actor RemoteNode {
     private var nextRequestID: Int64 = 1
     /// The node refused the last transport: the next one is made from reloaded credentials.
     private var reloadCredentials = false
+    /// What the node announced for `device.mcp`, once asked (after a 404); cleared with a new address or pairing.
+    private var mcpAnnounced: ProtocolSupport?
 
     /// The last catalog the node returned; empty while it is unreachable.
     private(set) var tools: [JSONValue] = []
@@ -83,6 +93,7 @@ actor RemoteNode {
             || record.nextServerSPKISHA256 != node.nextServerSPKISHA256
         node = record
         if reconnect {
+            mcpAnnounced = nil
             dropTransport()
             tools = []
             reachable = nil
@@ -166,8 +177,28 @@ actor RemoteNode {
         fetchedAt = .now
     }
 
-    /// One request and its JSON-RPC answer, with the retries described on the type.
+    /// One request and its JSON-RPC answer, with the retries described on the type. A 404 from `/mcp` is read
+    /// against what the node announced for `device.mcp` (``NodeRequestFailure/noEndpoint(support:)``).
     private func exchange(_ method: String, params: JSONValue, timeout: Duration?) async throws(NodeRequestFailure)
+        -> JSONValue
+    {
+        do throws(NodeRequestFailure) {
+            return try await attempt(method, params: params, timeout: timeout)
+        } catch .status(404) {
+            throw .noEndpoint(support: await mcpSupport())
+        }
+    }
+
+    /// `device.mcp` as the node announced it, asked once per record (a negotiation is a ws connection of its own).
+    private func mcpSupport() async -> ProtocolSupport {
+        if let mcpAnnounced { return mcpAnnounced }
+        let support = await connector.support(for: .deviceMCP, of: node)
+        // Unknown may be a node that couldn't be asked just now: ask again next time.
+        if support != .unknown { mcpAnnounced = support }
+        return support
+    }
+
+    private func attempt(_ method: String, params: JSONValue, timeout: Duration?) async throws(NodeRequestFailure)
         -> JSONValue
     {
         var retried = false

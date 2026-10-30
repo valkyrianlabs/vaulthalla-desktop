@@ -3,6 +3,7 @@ import SwiftUI
 import VHCore
 import VHIdentity
 import VHNodes
+import VHTransport
 
 /// Pairs this Mac with a node (docs/pairing.md §3): shows the six-digit code to approve on the server, waits for the
 /// owner's decision, and explains every way it can end.
@@ -65,7 +66,7 @@ struct PairingStepView: View {
             .panelSurface(radius: Theme.radiusCard)
 
         case .awaitingApproval(let code):
-            CodePanel(nodeName: node.displayName, code: code)
+            CodePanel(nodeName: node.displayName, code: code, serverRelease: flow.serverRelease)
 
         case .approved(let serverName):
             HStack(alignment: .top, spacing: 14) {
@@ -122,6 +123,17 @@ struct PairingStepView: View {
                     .foregroundStyle(.fgMuted)
                 CommandText("vh device remote enable")
                     .padding(.top, 4)
+            }
+
+        case .failed(.incompatible(let mismatch)):
+            Callout(tone: .danger, systemImage: "arrow.triangle.2.circlepath") {
+                Text(mismatch.side == .desktopTooOld ? "Update Vaulthalla Desktop to pair"
+                    : mismatch.side == .serverTooOld ? "Update Vaulthalla on \(node.displayName) to pair"
+                    : "\(node.displayName) runs an incompatible Vaulthalla")
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.fg)
+                Text("\(mismatch.message) Nothing was requested; pair again once both sides share a protocol version.")
+                    .foregroundStyle(.fgMuted)
             }
 
         case .failed(let failure):
@@ -186,6 +198,8 @@ struct PairingStepView: View {
 private struct CodePanel: View {
     var nodeName: String
     var code: PairingCode
+    /// What the server runs, when its `meta.hello` said.
+    var serverRelease: String?
 
     var body: some View {
         VStack(spacing: 10) {
@@ -203,6 +217,11 @@ private struct CodePanel: View {
                 ProgressView().controlSize(.mini)
                 Text("Waiting for approval…")
                     .font(.callout)
+                    .foregroundStyle(.fgSubtle)
+            }
+            if let serverRelease {
+                Text(serverRelease)
+                    .font(.caption)
                     .foregroundStyle(.fgSubtle)
             }
         }

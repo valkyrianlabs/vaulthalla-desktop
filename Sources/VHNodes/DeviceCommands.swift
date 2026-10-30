@@ -19,15 +19,11 @@ public enum DeviceRefusal: String, Sendable, Hashable {
     /// The connection isn't a Device session: the key is unknown or revoked (the daemon doesn't say which).
     case deviceUnknown = "device_unknown"
 
-    /// The code a ws error carries, if it is one of ours. `WsError` keeps codes it has no case for in
-    /// `.needsConfirmation(code:message:)`; conflict and invalid have their own cases.
+    /// The code a ws error carries, if it is one of ours: conflict and invalid have their own `WsError` cases, the
+    /// others arrive as `.refused(code:message:)` (no `device.*` command declares them as confirmations).
     public init?(_ error: WsError) {
-        switch error {
-        case .conflict: self = .conflict
-        case .invalid: self = .invalid
-        case .needsConfirmation(let code, _): self.init(rawValue: code)
-        default: return nil
-        }
+        guard let code = error.code else { return nil }
+        self.init(rawValue: code)
     }
 }
 

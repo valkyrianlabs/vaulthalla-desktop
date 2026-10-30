@@ -21,6 +21,8 @@ final class MockDaemon: Sendable {
     enum Reply: Sendable {
         case ok(JSONValue)
         case refuse(String, code: String)
+        /// An ERROR answer with `data` as given (nil: no `data` at all, as the router's "Unknown command").
+        case refuseWith(String, data: JSONValue?)
     }
 
     typealias Responder = @Sendable (JSONValue) -> Reply
@@ -179,7 +181,8 @@ final class MockDaemon: Sendable {
 
     var commands: [(epoch: Int, device: Bool, command: String)] { state.withLock { $0.log } }
 
-    /// Answers `command` on Device sessions with `respond(payload)`, after `delay` when given.
+    /// Answers `command` on Device sessions (and `meta.hello` on pairing-only ones too) with `respond(payload)`, after
+    /// `delay` when given.
     func answer(_ command: String, after delay: Duration? = nil, _ respond: @escaping Responder) {
         state.withLock { $0.responders[command] = (delay, respond) }
     }
@@ -279,25 +282,44 @@ final class MockDaemon: Sendable {
             if let next { data["next_spki_sha256"] = .string(next.hex); data["switch_after"] = 1_900_000_000 }
             inbound.ok(.object(data))
         case ("device.identity.rotate", .some(let device)): rotate(inbound, payload, device, session)
+        case ("meta.hello", nil):
+            // Pairing-only: a scripted hello answers as on a device session; unscripted, a daemon that predates
+            // meta.hello (≤ 1.18.0) refuses it like every other command there.
+            let responder = state.withLock { state in
+                state.payloads["meta.hello", default: []].append(payload)
+                return state.responders["meta.hello"]
+            }
+            guard let responder else { return inbound.refuse("Unknown device.", code: "device_unknown") }
+            reply(inbound, responder, payload)
         case (_, nil): inbound.refuse("Unknown device.", code: "device_unknown")
         case (let command, .some):
             let responder = state.withLock { state in
                 state.payloads[command, default: []].append(payload)
                 return state.responders[command]
             }
-            guard let responder else { return inbound.ok(.object([:])) }
-            let reply = { @Sendable in
-                switch responder.respond(payload) {
-                case .ok(let data): inbound.ok(data)
-                case .refuse(let message, let code): inbound.refuse(message, code: code)
-                }
+            guard let responder else {
+                // A daemon that predates meta.hello (≤ 1.18.0) unless a test scripts one: the router's answer.
+                if command == "meta.hello" { return inbound.refuse("Unknown command", data: nil) }
+                return inbound.ok(.object([:]))
             }
-            if let delay = responder.delay {
-                let (seconds, attoseconds) = delay.components
-                queue.asyncAfter(deadline: .now() + Double(seconds) + Double(attoseconds) / 1e18, execute: reply)
-            } else {
-                reply()
+            reply(inbound, responder, payload)
+        }
+    }
+
+    /// Answers with a test's scripted responder, after its delay if it has one.
+    private func reply(_ inbound: Inbound, _ responder: (delay: Duration?, respond: Responder), _ payload: JSONValue) {
+        let reply = { @Sendable in
+            switch responder.respond(payload) {
+            case .ok(let data): inbound.ok(data)
+            case .refuse(let message, let code): inbound.refuse(message, code: code)
+            case .refuseWith(let message, let data): inbound.refuse(message, data: data)
             }
+        }
+        if let delay = responder.delay {
+            let (seconds, attoseconds) = delay.components
+            queue.asyncAfter(deadline: .now() + Double(seconds) + Double(attoseconds) / 1e18, execute: reply)
+        } else {
+            reply()
         }
     }
 
@@ -485,8 +507,14 @@ struct Inbound: Sendable {
     }
 
     func refuse(_ message: String, code: String) {
-        peer.send(["command": .string(command + ".response"), "status": "ERROR", "requestId": .string(requestId),
-                   "error": .string(message), "data": ["code": .string(code)]])
+        refuse(message, data: ["code": .string(code)])
+    }
+
+    func refuse(_ message: String, data: JSONValue?) {
+        var frame: JSONObject = ["command": .string(command + ".response"), "status": "ERROR",
+                                 "requestId": .string(requestId), "error": .string(message)]
+        frame["data"] = data
+        peer.send(.object(frame))
     }
 }
 

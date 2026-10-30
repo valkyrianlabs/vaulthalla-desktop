@@ -22,6 +22,8 @@ final class FakeDaemon: Sendable {
         var headers: [String?] = []
         var cancelledCalls = 0
         var callsStarted = 0
+        /// Answer every POST with 404, as a daemon without `/mcp`.
+        var missingEndpoint = false
     }
 
     let name: String
@@ -44,8 +46,9 @@ final class FakeDaemon: Sendable {
         let versions = state.withLock { state in
             state.methods.append(message["method"]?.stringValue ?? "?")
             state.headers.append(protocolVersion)
-            return state.versions
+            return state.missingEndpoint ? [] : state.versions
         }
+        if versions.isEmpty { return (404, nil) }
         if let protocolVersion, !versions.contains(protocolVersion) {
             return (400, RPC.error(id: .null, code: -32600, message: "Unsupported MCP-Protocol-Version: \(protocolVersion)"))
         }
@@ -175,6 +178,12 @@ struct FakeTransport: NodeMCPTransport {
 
 struct FakeConnector: NodeMCPConnector {
     let daemons: [NodeID: FakeDaemon]
+    /// What every node announced for `device.mcp` (nil: the protocol default, unknown).
+    var mcp: ProtocolSupport? = nil
+
+    func support(for capability: WsCapability, of node: Node) async -> ProtocolSupport {
+        capability == .deviceMCP ? (mcp ?? .unknown) : .unknown
+    }
 
     func connect(_ node: Node, idleTimeout: Duration) async throws(NodeConnectFailure) -> any NodeMCPTransport {
         guard case .paired = node.pairing else { throw .notPaired }

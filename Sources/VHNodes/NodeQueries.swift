@@ -43,6 +43,9 @@ public final class NodeQueries {
     public private(set) var isConnected = true
     /// Set once any query has an answer: a view can keep showing (stale) data through a reconnect.
     public private(set) var hasAnswered = false
+    /// What the node's session negotiated, as the app last reported it (``protocolChanged(_:)``); nil before any
+    /// negotiation settled something.
+    public private(set) var nodeProtocol: NodeProtocol?
 
     @ObservationIgnored private var entries: [QueryKey: any QueryEntry] = [:]
 
@@ -92,6 +95,27 @@ public final class NodeQueries {
         guard online else { return }
         for entry in entries.values where entry.isObserved { entry.refetch() }
     }
+
+    /// The app reports what the session's `meta.hello` settled. Views read it through ``supports(command:)`` and
+    /// ``supports(capability:)`` (observed: a section switches paths, such as to a legacy list, when it changes).
+    public func protocolChanged(_ settled: NodeProtocol?) {
+        guard settled != nodeProtocol else { return }
+        nodeProtocol = settled
+    }
+
+    /// Whether the node has the ws command: yes or no once negotiated, unknown on a legacy node or before a
+    /// negotiation (try it, and read a refusal with `WsError.isUnknownCommand`).
+    public func supports(command: WsCommand) -> ProtocolSupport {
+        nodeProtocol?.supports(command: command) ?? .unknown
+    }
+
+    /// Whether the node announced the capability; unknown on a legacy node or before a negotiation.
+    public func supports(capability: WsCapability) -> ProtocolSupport {
+        nodeProtocol?.supports(capability: capability) ?? .unknown
+    }
+
+    /// Whether the node runs a Vaulthalla this build can't speak to: its feature calls are refused unsent.
+    public var incompatibility: ProtocolMismatch? { nodeProtocol?.mismatch }
 
     func answered() {
         if !hasAnswered { hasAnswered = true }

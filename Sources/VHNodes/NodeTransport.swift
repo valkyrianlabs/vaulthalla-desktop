@@ -9,9 +9,16 @@ public protocol NodeTransport: Sendable {
     /// A command whose payload or answer carries key material (`WsClient.sendSensitive`): the payload's JSON in, the
     /// answer's whole frame out, both zeroing. Only a live Device session carries it.
     func sendSensitive(_ command: WsCommand, payload: SecretBytes) async throws(WsError) -> SecretBytes
+
+    /// Whether the node has the command, as its session negotiated (`meta.hello`): ask before sending a command an
+    /// older node may lack, and fall back to `WsError.isUnknownCommand` while it is unknown (a legacy node).
+    func commandSupport(_ command: WsCommand) async -> ProtocolSupport
 }
 
 extension NodeTransport {
+    /// Transports without a negotiation (previews, test stubs) don't know.
+    public func commandSupport(_ command: WsCommand) async -> ProtocolSupport { .unknown }
+
     /// Transports that never carry key material (previews, test stubs) refuse.
     public func sendSensitive(_ command: WsCommand, payload: SecretBytes) async throws(WsError) -> SecretBytes {
         throw .error("This connection doesn't carry vault keys.")
@@ -20,16 +27,20 @@ extension NodeTransport {
 
 extension NodeSession: NodeTransport {
     /// Sends on the session's current connection, fetched per request because a key rotation replaces it.
-    /// `.disconnected` while there is none.
+    /// `.disconnected` while there is none; `.protocolUnsupported`, unsent, on a node this build can't speak to.
     public nonisolated func send<R: WsRequest>(_ request: R.Type, payload: R.Payload)
         async throws(WsError) -> R.Response
     {
-        guard let client = await client else { throw .disconnected }
+        let client = try await featureClient()
         return try await client.send(request, payload: payload)
     }
 
+    public nonisolated func commandSupport(_ command: WsCommand) async -> ProtocolSupport {
+        await supports(command: command)
+    }
+
     public nonisolated func sendSensitive(_ command: WsCommand, payload: SecretBytes) async throws(WsError) -> SecretBytes {
-        guard let client = await client else { throw .disconnected }
+        let client = try await featureClient()
         return try await client.sendSensitive(command: command.rawValue, payload: payload, timeout: command.clientTimeout)
     }
 }
@@ -51,5 +62,10 @@ public struct SessionTransport: NodeTransport {
     public func sendSensitive(_ command: WsCommand, payload: SecretBytes) async throws(WsError) -> SecretBytes {
         guard let session = await session() else { throw .disconnected }
         return try await session.sendSensitive(command, payload: payload)
+    }
+
+    public func commandSupport(_ command: WsCommand) async -> ProtocolSupport {
+        guard let session = await session() else { return .unknown }
+        return await session.supports(command: command)
     }
 }

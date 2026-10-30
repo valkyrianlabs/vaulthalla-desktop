@@ -1,10 +1,9 @@
 {
-  "server_version": "1.16.0",
-  "server_commit": "95b10f14",
+  "server_version": "1.18.0",
+  "server_commit": "5787f2d6",
   "server_branch": "main",
   "source": "web/src/util/generated/wsContract.json",
-  "contract_version": 2,
-  "ws_hash": "686e357625cb73a67b350e65eb9ed5e057a42c96013fa6e5215e5ca9d55af074",
-  "models_hash": "540aadf56707a312f350cc7510385baa09eacaed912950ff5da1afb9776ba0a5",
-  "note": "Vendored from main at 95b10f14 (FsEntry content_version and metadata_version, #257; listings Lookup-filtered, #255; move/rename destination authorization, #256)."
+  "contract_version": 3,
+  "ws_hash": "b4a6c4e186b5ff132cb86abcbd04f974c005567d32fb20177b96c3cf27958416",
+  "models_hash": "00cc5309cf6f162bb2881d6ab73e6273170a560d30e0dc588694c81dfe1f57da"
 }

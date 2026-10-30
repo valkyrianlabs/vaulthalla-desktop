@@ -16,6 +16,16 @@ vendored here from `web/src/util/generated/wsContract.json` in the server reposi
   gen-contract.py --from ../vaulthalla [--note TEXT]
                                       vendor the server's contract (recording its version, commit, branch and hashes in
                                       contract/SOURCE.json), then regenerate
+  gen-contract.py --baseline-from ../vaulthalla --baseline-ref v1.17.0
+                                      vendor the compatibility baseline (contract/compat-baseline.json, recorded in
+                                      contract/compat-baseline.SOURCE.json), then regenerate
+
+Compatibility baseline: contract/compat-baseline.json is the ws contract of the oldest daemon release Desktop still
+supports. A response member (of a model, a command's response or a share-mode variant's, nested inline objects
+included) that the current contract requires but the baseline doesn't guarantee (absent there, optional there, or
+nullable there and not here) is generated optional: an older daemon may leave it out, and decoding must not fail on
+that. Request payloads stay as the current contract says. Models and commands the baseline doesn't have at all keep
+their members as they are (an older daemon never sends them). `--check` validates the baseline too.
 
 Type mapping, kept faithful rather than clever (the web's generated TypeScript is the reference):
   string -> String; integer -> Int64; number -> Double; boolean -> Bool.
@@ -28,6 +38,7 @@ Type mapping, kept faithful rather than clever (the web's generated TypeScript i
   `one_of` -> a nested enum with associated values, decoded by trying the alternatives in the contract's order (the
   contract has no discriminator). Several types without `one_of` -> JSONValue.
   required -> T; required and nullable -> T? (the key is always sent); optional -> T? (the key is omitted when nil);
+  required in a response but not guaranteed by the baseline -> T? (decoded when absent);
   optional and nullable -> Nullable<T>? (nil omits the key, .null sends null: "clear" and "leave alone" differ).
   A command whose `response_model` names a model answers with that model as a whole: Response = WsModel.<Name>.
 Standard library only.
@@ -49,6 +60,8 @@ from typing import Any, Callable
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT_JSON = ROOT / "contract" / "wsContract.json"
 SOURCE_JSON = ROOT / "contract" / "SOURCE.json"
+BASELINE_JSON = ROOT / "contract" / "compat-baseline.json"
+BASELINE_SOURCE_JSON = ROOT / "contract" / "compat-baseline.SOURCE.json"
 SERVER_CONTRACT = "web/src/util/generated/wsContract.json"
 SWIFT_DIR = ROOT / "Sources" / "VHContract" / "Generated"
 SAMPLES_DIR = ROOT / "Tests" / "VHContractTests" / "Generated"
@@ -58,8 +71,11 @@ LINE_LIMIT = 120
 # parallel, one huge file doesn't.
 MODELS_FILE_LINES = 2500
 
-CONTRACT_VERSIONS = {2}
-AUTH_LEVELS = {"public", "session", "human", "share", "pairing", "device"}
+# 3 adds the `protocol` and `capabilities` sections (meta.hello); the generator reads neither yet.
+CONTRACT_VERSIONS = {2, 3}
+# The member a relaxed field carries in the (copied) contract while it is generated.
+RELAXED = "_relaxed_by_baseline"
+AUTH_LEVELS = {"public", "session", "human", "share", "pairing", "device", "any"}
 INPUTS = {"payload", "none", "token"}
 
 SWIFT_KEYWORDS = {
@@ -354,9 +370,13 @@ class Field:
         ref = resolve(raw, owner, type_name(self.json_name), payload, self.notes, f"{owner.path}.{self.json_name}")
         self.base = ref.swift
         self.patchable = ref.patchable
+        self.relaxed = bool(raw.get(RELAXED))
         if self.base == "JSONValue":
             # JSONValue carries null itself, so a nullable union needs no extra wrapper.
-            self.kind = "required" if self.required else "optional_json"
+            self.kind = "required" if self.required and not self.relaxed else "optional_json"
+        elif self.required and self.relaxed:
+            # Required here, but the baseline daemon may leave it out (or send null): nil when absent or null.
+            self.kind = "optional"
         elif self.required:
             self.kind = "required_nullable" if self.nullable else "required"
         else:
@@ -371,6 +391,8 @@ class Field:
         if "maximum" in self.raw:
             extra.append(f"Maximum {self.raw['maximum']}.")
         extra.extend(kind_note(self.kind))
+        if self.relaxed:
+            extra.append("Optional for older daemons: the compatibility baseline doesn't guarantee it.")
         return " ".join(([text] if text else []) + extra)
 
 
@@ -709,9 +731,12 @@ class Form:
 class Book:
     """The resolved contract: models, commands and which shapes need a Patch."""
 
-    def __init__(self, contract: dict[str, Any]):
+    def __init__(self, contract: dict[str, Any], baseline: dict[str, Any] | None = None,
+                 baseline_record: dict[str, Any] | None = None):
         PATCH_ROOTS.clear()
         self.contract = contract
+        self.baseline_record = baseline_record or {}
+        self.relaxed = relax(contract, baseline) if baseline is not None else []
         self.models: dict[str, Model] = {}
         for raw in contract["models"]:
             if raw["name"] in self.models:
@@ -757,6 +782,85 @@ class Book:
 
     def patched_models(self) -> list[Model]:
         return [m for m in self.models.values() if m.struct.needs_patch]
+
+
+# ---- compatibility baseline ------------------------------------------------------------------------------------
+
+def guaranteed(field: dict[str, Any], base: dict[str, Any] | None) -> bool:
+    """Whether the baseline daemon always sends `field` in a shape the current type decodes: present there,
+    required there, and not null there unless null is allowed here too."""
+    if base is None or not base.get("required", False):
+        return False
+    return "null" not in base.get("types", []) or "null" in field.get("types", [])
+
+
+def relax_fields(fields: list[dict[str, Any]], base_fields: list[dict[str, Any]] | None, where: str,
+                 relaxed: list[str]) -> None:
+    """Marks the required members of one response shape the baseline doesn't guarantee, then the inline objects
+    nested in the members it has. No baseline shape (a model or command the baseline lacks): nothing changes."""
+    if base_fields is None:
+        return
+    by_name = {f["name"]: f for f in base_fields}
+    for f in fields:
+        base = by_name.get(f["name"])
+        if f.get("required") and not guaranteed(f, base):
+            f[RELAXED] = True
+            relaxed.append(f"{where}.{f['name']}")
+        if base is not None:
+            relax_nested(f, base, f"{where}.{f['name']}", relaxed)
+
+
+def relax_nested(spec: dict[str, Any], base: dict[str, Any], where: str, relaxed: list[str]) -> None:
+    # Inline objects only: a member naming a model is relaxed with that model. Union alternatives are left alone:
+    # loosening one could let an earlier alternative match what a later one should.
+    if spec.get("fields") and not spec.get("model") and not spec.get("one_of"):
+        same_shape = base.get("fields") and not base.get("model")
+        relax_fields(spec["fields"], base["fields"] if same_shape else None, where, relaxed)
+    for key, suffix in (("element", "[]"), ("values", "{}")):
+        if spec.get(key) and base.get(key):
+            relax_nested(spec[key], base[key], where + suffix, relaxed)
+
+
+def relax(contract: dict[str, Any], baseline: dict[str, Any]) -> list[str]:
+    """Marks (in place) the response members `baseline` doesn't guarantee; returns them as `Model.member` and
+    `command.member` paths. Payloads are never touched."""
+    base_models = {m["name"]: m for m in baseline["models"]}
+    base_commands = {c["command"]: c for c in baseline["ws"]}
+    relaxed: list[str] = []
+    for m in contract["models"]:
+        base = base_models.get(m["name"])
+        relax_fields(m["fields"], base["fields"] if base else None, m["name"], relaxed)
+    for c in contract["ws"]:
+        base = base_commands.get(c["command"])
+        if c.get("response_model"):
+            # The response is the model's member list: marked like the model (and listed there).
+            model = base_models.get(c["response_model"])
+            relax_fields(c["response"], model["fields"] if model else None, c["command"], [])
+        else:
+            relax_fields(c["response"], base["response"] if base else None, c["command"], relaxed)
+        for v in c["variants"]:
+            matches = [b for b in (base["variants"] if base else []) if b.get("mode") == v.get("mode")]
+            relax_fields(v["response"], matches[0]["response"] if matches else None,
+                         f"{c['command']} ({v.get('mode')})", relaxed)
+    return relaxed
+
+
+def load_baseline() -> tuple[dict[str, Any], dict[str, Any]]:
+    """The vendored baseline and its source record, validated."""
+    if not BASELINE_JSON.is_file():
+        raise ContractError(f"{BASELINE_JSON.relative_to(ROOT)} is missing (vendor it with --baseline-from)")
+    baseline = json.loads(BASELINE_JSON.read_text(encoding="utf-8"))
+    validate(baseline, BASELINE_JSON.relative_to(ROOT))
+    if not BASELINE_SOURCE_JSON.is_file():
+        raise ContractError(f"{BASELINE_SOURCE_JSON.relative_to(ROOT)} is missing (vendor with --baseline-from)")
+    record = json.loads(BASELINE_SOURCE_JSON.read_text(encoding="utf-8"))
+    for key in ("ws_hash", "models_hash"):
+        if record.get(key) != baseline[key]:
+            raise ContractError(f"{BASELINE_SOURCE_JSON.relative_to(ROOT)} records {key} {str(record.get(key))[:12]}, "
+                                f"the baseline has {baseline[key][:12]} (vendor with --baseline-from)")
+    if not record.get("server_version"):
+        raise ContractError(f"{BASELINE_SOURCE_JSON.relative_to(ROOT)} records no server_version")
+    return baseline, record
 
 
 # ---- Swift output ----------------------------------------------------------------------------------------------
@@ -847,6 +951,37 @@ def confirmations_expr(value: list[dict[str, Any]], indent: int) -> list[str]:
     return out
 
 
+def protocol_lines(contract: dict[str, Any]) -> list[str]:
+    """The daemon's protocol range and capabilities (contract_version 3's `protocol` and `capabilities`): what the
+    daemon this contract came from speaks and announces in `meta.hello`. Absent (nil, empty) before version 3."""
+    proto = contract.get("protocol") or {}
+    low, high = proto.get("min"), proto.get("max", proto.get("version"))
+    if (low is None) != (high is None) or (low is not None and not (isinstance(low, int) and isinstance(high, int))):
+        raise ContractError("`protocol` needs integer min and version (or max)")
+    rng = f"{low}...{high}" if low is not None else "nil"
+    out = [
+        "",
+        "    /// The protocol versions the daemon this contract came from speaks (contract `protocol`; nil before",
+        "    /// contract_version 3). This build's own range is `WsProtocol.supported`.",
+        f"    public static let serverProtocol: ClosedRange<Int>? = {rng}",
+        "    /// The capabilities that daemon announces in `meta.hello` (contract `capabilities`), each with the release",
+        "    /// that introduced it; empty before contract_version 3.",
+    ]
+    caps = contract.get("capabilities") or []
+    for c in caps:
+        if not c.get("name") or not isinstance(c.get("name"), str):
+            raise ContractError("a capability without a name")
+    entries = [f"{swift_string(c['name'])}: {swift_string(str(c.get('since', '')))}" for c in caps]
+    if entries:
+        out.append("    public static let capabilities: [String: String] = [")
+        for e in entries:
+            out.append(f"        {e},")
+        out.append("    ]")
+    else:
+        out.append("    public static let capabilities: [String: String] = [:]")
+    return out
+
+
 def generate_contract_swift(book: Book, text: str) -> str:
     contract = book.contract
     commands = book.commands
@@ -860,6 +995,17 @@ def generate_contract_swift(book: Book, text: str) -> str:
         f"    public static let contractVersion = {contract['contract_version']}",
         f"    public static let wsHash = {swift_string(contract['ws_hash'])}",
         f"    public static let modelsHash = {swift_string(contract['models_hash'])}",
+        "",
+        "    /// The compatibility baseline (contract/compat-baseline.json): the oldest daemon release this build supports.",
+        "    /// Response members the current contract requires but the baseline doesn't guarantee are optional in the",
+        f"    /// generated types ({len(book.relaxed)}, `relaxedMembers`).",
+        f"    public static let baselineServerVersion = {swift_string(str(book.baseline_record.get('server_version', '')))}",
+        f"    public static let baselineWsHash = {swift_string(str(book.baseline_record.get('ws_hash', '')))}",
+        "    /// `Model.member` and `command.member` paths (nested inline objects dotted further).",
+    ]
+    out += wrap_list("public static let relaxedMembers: [String] = [", [swift_string(r) for r in book.relaxed], "]", 4)
+    out += protocol_lines(contract)
+    out += [
         "}",
         "",
         "/// The server models the book names (`User`, `FsEntry`, ...), as the daemon's serializers write them",
@@ -1031,7 +1177,9 @@ def sample_shape(spec: dict[str, Any], full: bool, models: dict[str, Model]) -> 
 
 
 def sample_object(fields: list[dict[str, Any]], full: bool, models: dict[str, Model]) -> dict[str, Any]:
-    return {f["name"]: sample_field(f, full, models) for f in fields if full or f["required"]}
+    # The minimal sample leaves out what an older daemon may leave out: it must decode without them.
+    return {f["name"]: sample_field(f, full, models) for f in fields
+            if full or (f["required"] and not f.get(RELAXED))}
 
 
 def sample_literal(value: Any, indent: int) -> list[str]:
@@ -1107,23 +1255,24 @@ def generate_model_samples(book: Book, text: str) -> str:
 
 # ---- CLI -------------------------------------------------------------------------------------------------------
 
-def validate(contract: dict[str, Any]) -> None:
+def validate(contract: dict[str, Any], label: Any = "contract/wsContract.json") -> None:
     for key in ("contract_version", "ws_hash", "ws", "models_hash", "models"):
         if key not in contract:
-            raise ContractError(f"contract/wsContract.json has no {key!r} (contract_version 2 or newer is needed)")
+            raise ContractError(f"{label} has no {key!r} (contract_version 2 or newer is needed)")
     if contract["contract_version"] not in CONTRACT_VERSIONS:
-        raise ContractError(f"contract_version {contract['contract_version']} is not one this generator knows "
-                            f"({sorted(CONTRACT_VERSIONS)})")
+        raise ContractError(f"{label}: contract_version {contract['contract_version']} is not one this generator "
+                            f"knows ({sorted(CONTRACT_VERSIONS)})")
     # Catches a hand-edited vendored copy.
     for section in ("ws", "models"):
         if canonical_hash(contract[section]) != contract[f"{section}_hash"]:
-            raise ContractError(f"contract/wsContract.json does not match its {section}_hash (edited by hand?)")
+            raise ContractError(f"{label} does not match its {section}_hash (edited by hand?)")
 
 
 def outputs(text: str) -> dict[Path, str]:
     contract = json.loads(text)
     validate(contract)
-    book = Book(contract)
+    baseline, record = load_baseline()
+    book = Book(contract, baseline, record)
     files: dict[Path, str] = {SWIFT_DIR / "WsContract.swift": generate_contract_swift(book, text)}
     for label, entries in model_files(book):
         files[SWIFT_DIR / f"WsModel+{label}.swift"] = generate_models_swift(book, label, entries, text)
@@ -1135,6 +1284,11 @@ def outputs(text: str) -> dict[Path, str]:
     files[SAMPLES_DIR / "ContractSamples.swift"] = generate_samples(book, text)
     files[SAMPLES_DIR / "ModelSamples.swift"] = generate_model_samples(book, text)
     return files
+
+
+def relaxed_count(text: str) -> int:
+    baseline, _ = load_baseline()
+    return len(relax(json.loads(text), baseline))
 
 
 def stale_files(generated: dict[Path, str]) -> list[Path]:
@@ -1183,6 +1337,30 @@ def vendor(server: Path, note: str | None) -> None:
     print(f"vendored {SERVER_CONTRACT} from {server} (server {version}, {branch} {commit})")
 
 
+def vendor_baseline(server: Path, ref: str) -> None:
+    """Writes the server's ws contract at `ref` (a release tag) as the compatibility baseline."""
+    text = subprocess.run(["git", "-C", str(server), "show", f"{ref}:{SERVER_CONTRACT}"], check=True,
+                          capture_output=True, text=True).stdout
+    contract = json.loads(text)
+    validate(contract, f"{ref}:{SERVER_CONTRACT}")
+    BASELINE_JSON.write_text(text, encoding="utf-8")
+    try:
+        version = git(server, "show", f"{ref}:VERSION")
+    except subprocess.CalledProcessError:
+        version = ref.removeprefix("v")
+    record: dict[str, Any] = {
+        "server_version": version, "server_ref": ref, "server_commit": git(server, "rev-parse", "--short",
+                                                                            f"{ref}^{{commit}}"),
+        "source": SERVER_CONTRACT, "contract_version": contract["contract_version"], "ws_hash": contract["ws_hash"],
+        "models_hash": contract["models_hash"],
+        "note": "Compatibility baseline: the oldest daemon release Desktop supports. Response members the current "
+                "contract requires but this one doesn't guarantee are generated optional (tools/gen-contract.py). "
+                f"Vendored with: git -C <server repo> show {ref}:{SERVER_CONTRACT}",
+    }
+    BASELINE_SOURCE_JSON.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
+    print(f"vendored the compatibility baseline from {server} at {ref} (server {version})")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     mode = parser.add_mutually_exclusive_group()
@@ -1191,11 +1369,20 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--from", dest="server", metavar="SERVER_REPO",
                       help="copy the server's generated contract into contract/, then regenerate")
     parser.add_argument("--note", help="with --from: a note recorded in contract/SOURCE.json")
+    parser.add_argument("--baseline-from", metavar="SERVER_REPO",
+                        help="vendor the compatibility baseline from the server repository (with --baseline-ref)")
+    parser.add_argument("--baseline-ref", metavar="TAG", help="with --baseline-from: the release tag (v1.17.0)")
     args = parser.parse_args(argv)
     if args.note and not args.server:
         parser.error("--note goes with --from")
+    if bool(args.baseline_from) != bool(args.baseline_ref):
+        parser.error("--baseline-from and --baseline-ref go together")
+    if args.baseline_from and args.check:
+        parser.error("--baseline-from doesn't go with --check")
 
     try:
+        if args.baseline_from:
+            vendor_baseline(Path(args.baseline_from).expanduser().resolve(), args.baseline_ref)
         if args.server:
             vendor(Path(args.server).expanduser().resolve(), args.note)
         text = CONTRACT_JSON.read_text(encoding="utf-8")
@@ -1225,8 +1412,8 @@ def main(argv: list[str] | None = None) -> int:
                 print(d, file=sys.stderr)
             print("fix: python3 tools/gen-contract.py", file=sys.stderr)
             return 1
-        print(f"contract: ws_hash and models_hash match contract/wsContract.json; the {len(generated)} generated "
-              "files match it")
+        print(f"contract: ws_hash and models_hash match contract/wsContract.json and the compatibility baseline "
+              f"(contract/compat-baseline.json); the {len(generated)} generated files match them")
         return 0
 
     for path in stale:
@@ -1236,7 +1423,8 @@ def main(argv: list[str] | None = None) -> int:
         path.write_text(content, encoding="utf-8")
     print(f"wrote {len(generated)} files under {SWIFT_DIR.relative_to(ROOT)} and {SAMPLES_DIR.relative_to(ROOT)} "
           f"({len(contract['ws'])} commands, {len(contract['models'])} models, ws_hash {contract['ws_hash'][:12]}, "
-          f"models_hash {contract['models_hash'][:12]})" + (f"; removed {len(stale)} stale" if stale else ""))
+          f"models_hash {contract['models_hash'][:12]}; {relaxed_count(text)} response members optional against the "
+          f"baseline)" + (f"; removed {len(stale)} stale" if stale else ""))
     return 0
 
 
