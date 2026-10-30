@@ -10,6 +10,7 @@ name: Release
 #   MACOS_PROFILE_MCP                                 "Vaulthalla Desktop Finder" and "Vaulthalla Desktop MCP", base64
 #   MACOS_NOTARY_APPLE_ID, MACOS_NOTARY_TEAM_ID, MACOS_NOTARY_PASSWORD   notarytool credentials
 #   SPARKLE_ED_PRIVATE_KEY                            the EdDSA key that signs updates (public half: SUPublicEDKey)
+#   HOMEBREW_TAP_TOKEN                                contents:write on vaulthalla/homebrew-tap (the cask)
 on:
   push:
     tags: ['v*']
@@ -100,6 +101,19 @@ jobs:
       - name: Build, sign and notarize
         run: tools/release/build.sh --out "$RUNNER_TEMP/release"
 
+      # Homebrew checks casks only inside a tap: a throwaway one on this runner.
+      - name: Homebrew cask style and audit
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+        run: |
+          brew tap-new --no-git vh-ci/local >/dev/null
+          tap=$(brew --repository vh-ci/local)
+          mkdir -p "$tap/Casks"
+          cp "$RUNNER_TEMP/release/vaulthalla-desktop.rb" "$tap/Casks/"
+          if brew commands --quiet | grep -qx trust; then brew trust --tap vh-ci/local; fi
+          brew style --cask vh-ci/local/vaulthalla-desktop
+          brew audit --cask --strict vh-ci/local/vaulthalla-desktop
+
       - uses: actions/upload-artifact@v4
         with:
           name: vaulthalla-desktop-dmg
@@ -107,6 +121,7 @@ jobs:
             ${{ runner.temp }}/release/*.dmg
             ${{ runner.temp }}/release/*.dmg.sha256
             ${{ runner.temp }}/release/appcast.xml
+            ${{ runner.temp }}/release/vaulthalla-desktop.rb
           if-no-files-found: error
           retention-days: 14
 
@@ -133,6 +148,25 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           version=${GITHUB_REF_NAME#v}
+          (cd release && sha256sum -c "Vaulthalla-$version.dmg.sha256")
           # Never a prerelease: releases/latest, the app's update feed, skips prereleases.
-          gh release create "$GITHUB_REF_NAME" release/* --repo "$GITHUB_REPOSITORY" --verify-tag --latest \
-            --title "Vaulthalla Desktop $version" --generate-notes
+          gh release create "$GITHUB_REF_NAME" release/*.dmg release/*.sha256 release/appcast.xml \
+            --repo "$GITHUB_REPOSITORY" --verify-tag --latest --title "Vaulthalla Desktop $version" --generate-notes
+
+      # After the release, so the cask never points at a DMG that isn't published yet.
+      - name: Update the Homebrew cask
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          version=${GITHUB_REF_NAME#v}
+          if [ -z "$TAP_TOKEN" ]; then echo "::warning::no HOMEBREW_TAP_TOKEN: cask not updated"; exit 0; fi
+          git clone -q "https://x-access-token:${TAP_TOKEN}@github.com/vaulthalla/homebrew-tap.git" tap
+          cp release/vaulthalla-desktop.rb tap/Casks/vaulthalla-desktop.rb
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Casks/vaulthalla-desktop.rb
+          if git diff --cached --quiet; then echo "cask already at $version"; exit 0; fi
+          git commit -q -m "vaulthalla-desktop $version"
+          git push -q origin HEAD:main

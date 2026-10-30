@@ -71,7 +71,9 @@ signed by `tools/release/DeveloperID.xcconfig` (each target picks its Developer 
 notarized and stapled, then a signed DMG notarized and stapled too, and the Sparkle `appcast.xml` offering it
 (signed with the EdDSA key in `SPARKLE_ED_PRIVATE_KEY`). Pushing a tag `v<VERSION>` publishes the DMG, its `.sha256`
 and the appcast as the latest GitHub release; the app's update feed is `releases/latest/download/appcast.xml`, so a
-release is never marked prerelease. A pull request that touches the release tooling rehearses everything except
+release is never marked prerelease. It then commits the rendered cask to `vaulthalla/homebrew-tap`
+(`brew install --cask vaulthalla/tap/vaulthalla-desktop`; template `tools/release/homebrew/vaulthalla-desktop.rb.in`,
+checked with `brew style` and `brew audit` in every run). A pull request that touches the release tooling rehearses everything except
 publishing. The build number is the commit count. Debug builds never check for updates.
 
 Locally, with the Developer ID identity in the keychain and both profiles installed for Xcode:

@@ -12,7 +12,8 @@
 #   VH_SPARKLE_KEY_FILE  the Sparkle EdDSA private key: also write appcast.xml, the update feed for this release
 #   VH_BUILD_NUMBER      CFBundleVersion (default: the commit count, which only grows on main)
 #
-# The marketing version is VERSION. Writes Vaulthalla-<version>.dmg, its .sha256 and (with the key) appcast.xml to DIR.
+# The marketing version is VERSION. Writes Vaulthalla-<version>.dmg, its .sha256, the Homebrew cask
+# vaulthalla-desktop.rb and (with the key) appcast.xml to DIR.
 # The appcast lists this release alone: the app reads it from the latest GitHub release (SUFeedURL), and the DMG it
 # points to is that release's asset.
 set -euo pipefail
@@ -116,6 +117,8 @@ if [ -n "${VH_NOTARY_PROFILE:-}" ]; then
 fi
 
 (cd "$out" && shasum -a 256 "$name" > "$name.sha256")
+sed -e "s/@VERSION@/$version/g" -e "s/@SHA256@/$(cut -d' ' -f1 "$out/$name.sha256")/g" \
+    "$here/homebrew/vaulthalla-desktop.rb.in" > "$out/vaulthalla-desktop.rb"
 
 if [ -n "${VH_SPARKLE_KEY_FILE:-}" ]; then
     log "Appcast"
