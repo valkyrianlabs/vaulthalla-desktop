@@ -4,6 +4,7 @@ import Observation
 import VHCore
 import VHIdentity
 import VHNodes
+import VHTransport
 
 /// One pairing sheet's attempt(s): finds or creates this Mac's key for the node, runs `PairingClient`, and records
 /// the outcome in the model. Try Again starts a new attempt with fresh nonces and the same key.
@@ -29,6 +30,9 @@ final class PairingFlow {
     private(set) var phase: Phase = .preparing
     /// Where the key used for this attempt lives (shown when it's a development software key).
     private(set) var backend: KeyBackend?
+    /// What the server runs, once `meta.hello` said ("Vaulthalla 1.19.0 · protocol 1"); nil until then and for a
+    /// server that predates it.
+    private(set) var serverRelease: String?
 
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var client: PairingClient?
@@ -54,6 +58,7 @@ final class PairingFlow {
         }
         #endif
         phase = .preparing
+        serverRelease = nil
         guard let keys = model.deviceKeys else {
             phase = .failed(.local("Pairing isn't available in this window."))
             return
@@ -91,6 +96,8 @@ final class PairingFlow {
                 switch state {
                 case .connecting:
                     phase = .connecting
+                case .negotiated(let settled):
+                    serverRelease = settled.isLegacy ? nil : settled.productLabel
                 case .awaitingApproval(let code):
                     phase = .awaitingApproval(code)
                 case .approved(let nodeID, let nodeName, let deviceID, let serverSPKI):
@@ -118,8 +125,8 @@ final class PairingFlow {
 }
 
 #if DEBUG
-/// `-VHDebugPairing awaiting|connecting|approved|denied|expired|noWindow|unreachable|changed` shows a pairing sheet in
-/// that phase without contacting anything (for `DebugSnapshot`).
+/// `-VHDebugPairing awaiting|connecting|approved|denied|expired|noWindow|unreachable|changed|incompatible` shows a
+/// pairing sheet in that phase without contacting anything (for `DebugSnapshot`).
 enum DebugPairing {
     static func phase() -> PairingFlow.Phase? {
         guard let name = UserDefaults.standard.string(forKey: "VHDebugPairing") else { return nil }
@@ -131,6 +138,8 @@ enum DebugPairing {
         case "noWindow": return .failed(.noPairingWindow)
         case "unreachable": return .failed(.unreachable(endpoint: "vh-storage.local:36972"))
         case "changed": return .failed(.serverIdentityChanged)
+        case "incompatible":
+            return .failed(.incompatible(ProtocolMismatch(serverMin: 2, serverMax: 3, serverVersion: "2.0.0")))
         default:
             // The docs/pairing.md §8 test vector: 680 179.
             let code = try? PairingCode(

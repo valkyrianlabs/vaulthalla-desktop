@@ -181,7 +181,8 @@ final class MockDaemon: Sendable {
 
     var commands: [(epoch: Int, device: Bool, command: String)] { state.withLock { $0.log } }
 
-    /// Answers `command` on Device sessions with `respond(payload)`, after `delay` when given.
+    /// Answers `command` on Device sessions (and `meta.hello` on pairing-only ones too) with `respond(payload)`, after
+    /// `delay` when given.
     func answer(_ command: String, after delay: Duration? = nil, _ respond: @escaping Responder) {
         state.withLock { $0.responders[command] = (delay, respond) }
     }
@@ -281,6 +282,15 @@ final class MockDaemon: Sendable {
             if let next { data["next_spki_sha256"] = .string(next.hex); data["switch_after"] = 1_900_000_000 }
             inbound.ok(.object(data))
         case ("device.identity.rotate", .some(let device)): rotate(inbound, payload, device, session)
+        case ("meta.hello", nil):
+            // Pairing-only: a scripted hello answers as on a device session; unscripted, a daemon that predates
+            // meta.hello (≤ 1.18.0) refuses it like every other command there.
+            let responder = state.withLock { state in
+                state.payloads["meta.hello", default: []].append(payload)
+                return state.responders["meta.hello"]
+            }
+            guard let responder else { return inbound.refuse("Unknown device.", code: "device_unknown") }
+            reply(inbound, responder, payload)
         case (_, nil): inbound.refuse("Unknown device.", code: "device_unknown")
         case (let command, .some):
             let responder = state.withLock { state in
@@ -292,19 +302,24 @@ final class MockDaemon: Sendable {
                 if command == "meta.hello" { return inbound.refuse("Unknown command", data: nil) }
                 return inbound.ok(.object([:]))
             }
-            let reply = { @Sendable in
-                switch responder.respond(payload) {
-                case .ok(let data): inbound.ok(data)
-                case .refuse(let message, let code): inbound.refuse(message, code: code)
-                case .refuseWith(let message, let data): inbound.refuse(message, data: data)
-                }
+            reply(inbound, responder, payload)
+        }
+    }
+
+    /// Answers with a test's scripted responder, after its delay if it has one.
+    private func reply(_ inbound: Inbound, _ responder: (delay: Duration?, respond: Responder), _ payload: JSONValue) {
+        let reply = { @Sendable in
+            switch responder.respond(payload) {
+            case .ok(let data): inbound.ok(data)
+            case .refuse(let message, let code): inbound.refuse(message, code: code)
+            case .refuseWith(let message, let data): inbound.refuse(message, data: data)
             }
-            if let delay = responder.delay {
-                let (seconds, attoseconds) = delay.components
-                queue.asyncAfter(deadline: .now() + Double(seconds) + Double(attoseconds) / 1e18, execute: reply)
-            } else {
-                reply()
-            }
+        }
+        if let delay = responder.delay {
+            let (seconds, attoseconds) = delay.components
+            queue.asyncAfter(deadline: .now() + Double(seconds) + Double(attoseconds) / 1e18, execute: reply)
+        } else {
+            reply()
         }
     }
 

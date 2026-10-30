@@ -1,7 +1,7 @@
 public import Foundation
 public import VHCore
 public import VHIdentity
-import VHTransport
+public import VHTransport
 import VHContract
 import Synchronization
 import os
@@ -28,6 +28,9 @@ public enum PairingFailure: Error, Hashable, Sendable {
     case connectionLost
     /// A request got no answer in time.
     case noAnswer
+    /// The server and this build share no ws protocol version (`meta.hello` answered `protocol_unsupported`):
+    /// nothing was requested. The mismatch says which side to update.
+    case incompatible(ProtocolMismatch)
     /// The server answered something docs/pairing.md doesn't allow.
     case protocolViolation(String)
     /// Any other refusal, with the server's text.
@@ -56,6 +59,8 @@ public enum PairingFailure: Error, Hashable, Sendable {
             "The connection to the server kept dropping."
         case .noAnswer:
             "The server didn't answer in time."
+        case .incompatible(let mismatch):
+            mismatch.message
         case .protocolViolation(let detail):
             "The server answered in a way this version of Vaulthalla doesn't understand (\(detail))."
         case .server(let text):
@@ -68,6 +73,12 @@ public enum PairingFailure: Error, Hashable, Sendable {
 
 /// Pairs this Mac with one node (docs/pairing.md §3) on a pairing-only TLS connection.
 ///
+/// Before asking to pair it negotiates the protocol (`meta.hello`, docs/architecture.md §3, "Protocol negotiation"):
+/// a server whose range doesn't overlap this build's stops the attempt with ``PairingFailure/incompatible(_:)``
+/// before anything is requested, so a Mac is never paired with a node it can't work with. A legacy server (≤ 1.18.0,
+/// which refuses `meta.hello` on a pairing-only connection with `device_unknown`, like every command but
+/// `device.pair.*`) pairs as before. What was settled is reported as ``State/negotiated(_:)``.
+///
 /// The server's key is trusted on first use and recorded; if the connection drops, the client reconnects pinned to
 /// that key, so a different server makes the handshake fail and the attempt stops (`.serverIdentityChanged`).
 /// Nothing is ever sent to a second key. The device commits to its nonce (`device.pair.request`), learns the
@@ -79,6 +90,9 @@ public enum PairingFailure: Error, Hashable, Sendable {
 public final class PairingClient: Sendable {
     public enum State: Hashable, Sendable {
         case connecting
+        /// What `meta.hello` settled on the pairing connection: the server's release and protocol, or legacy.
+        /// Reported once per connection, before the request; not final.
+        case negotiated(NodeProtocol)
         /// Show `code` ("Approve on <node>: 482 913") until the owner decides.
         case awaitingApproval(code: PairingCode)
         /// Pin `serverSPKI`, record the node as paired, and reconnect as a Device session.
@@ -89,7 +103,7 @@ public final class PairingClient: Sendable {
 
         public var isFinal: Bool {
             switch self {
-            case .connecting, .awaitingApproval: false
+            case .connecting, .negotiated, .awaitingApproval: false
             case .approved, .denied, .expired, .failed: true
             }
         }
@@ -219,6 +233,11 @@ private struct Attempt {
             let request: Ws.Device.Pair.Request.Response
             let confirm: Ws.Device.Pair.Confirm.Response
             do {
+                // What the server speaks, before it is asked for anything (each new connection asks again).
+                if let settled = try await negotiate(link) {
+                    if let mismatch = settled.mismatch { throw PairingFailure.incompatible(mismatch) }
+                    emit(.negotiated(settled))
+                }
                 request = try await link.call { client in
                     try await client.send(
                         Ws.Device.Pair.Request.self,
@@ -252,6 +271,33 @@ private struct Attempt {
                 continue
             }
         }
+    }
+
+    /// `meta.hello` on the pairing connection. nil when it decided nothing (no answer in time, another refusal): the
+    /// attempt goes on as with a legacy server. A drop is the link's business (it reconnects and restarts).
+    private func negotiate(_ link: Link) async throws -> NodeProtocol? {
+        let clientVersion = configuration.appVersion
+        let timeout = configuration.requestTimeout
+        let outcome: Result<HelloResponse, WsError>
+        do {
+            outcome = try await link.call { client in
+                do throws(WsError) {
+                    return .success(try await client.send(Ws.Meta.Hello.self, payload: .init(thisBuild: clientVersion),
+                                                          timeout: timeout))
+                } catch {
+                    switch error {
+                    case .disconnected, .timeout, .cancelled: throw error
+                    default: return .failure(error)
+                    }
+                }
+            }
+        } catch PairingFailure.noAnswer {
+            log.info("meta.hello unanswered on the pairing connection; pairing as with a legacy server")
+            return nil
+        }
+        // A legacy server refuses every command but `device.pair.*` on a pairing-only connection with device_unknown.
+        if case .failure(let error) = outcome, DeviceRefusal(error) == .deviceUnknown { return .legacy }
+        return NodeProtocol.outcome(of: outcome)
     }
 
     private func awaitDecision(_ link: Link, requestID: String, serverSPKI: Data) async throws -> PairingClient.State {

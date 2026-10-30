@@ -38,8 +38,10 @@ long validity (≥ 10 years; the pin, not the dates, carries trust).
    `prime256v1`. Compute its SPKI hash.
 3. Authorize **per connection, at handshake time**: a hash equal to a live `devices.spki_sha256` (or to
    `previous_spki_sha256`, §4) gives a Device session as that row's user; anything else (unknown, revoked) gets a
-   *pairing-only* connection that accepts only `device.pair.*` and `meta.contract.get`. Every other command there
-   fails with error code `device_unknown` (the same code for unknown and revoked: no oracle).
+   *pairing-only* connection that accepts only `device.pair.*`, `meta.contract.get` and (1.19+) `meta.hello`. Every
+   other command there fails with error code `device_unknown` (the same code for unknown and revoked: no oracle).
+   Desktop sends `meta.hello` first and stops before `device.pair.request` when the protocols don't overlap
+   (docs/architecture.md §3, "Protocol negotiation"); an older daemon's `device_unknown` for it means "legacy".
 
 **Desktop verify block** (Network.framework `sec_protocol_options_set_verify_block`): TLS 1.3 only, present the
 device `SecIdentity`, and accept the server iff its leaf's SPKI hash equals the node's pin (or the announced next

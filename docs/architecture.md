@@ -157,6 +157,11 @@ docs/                   this plan, the pairing protocol, release notes
     keeps it (`nodeProtocol`, reported as `Event.protocolNegotiated`), and every reconnect negotiates again, so an
     upgraded node is picked up. Then `device.server.identity` runs as before (skipped only when the node announces it
     lacks `device.server.identity`).
+  - **Pairing.** `PairingClient` sends `meta.hello` on the pairing-only connection before `device.pair.request`. An
+    incompatible server stops the attempt before anything is requested (`PairingFailure.incompatible`, the same
+    message, the sheet stays open with Try Again); a legacy server, which refuses it there with `device_unknown` like
+    every command but `device.pair.*`, pairs as before; a negotiated one pairs, and the sheet shows its release under
+    the code.
   - **Outcomes.** *Negotiated*: a version in range; `supports(command:)` answers from `commands`,
     `supports(capability:)` from `capabilities` (yes or no). *Legacy*: a daemon ≤ 1.18.0 refuses `meta.hello` with
     "Unknown command" and no code; protocol 1 is assumed, release, capabilities and commands are unknown, and every
