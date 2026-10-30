@@ -500,7 +500,7 @@
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Vaulthalla;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "© Cooper Larson";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Valkyrian Labs LLC. Licensed under AGPL-3.0-or-later.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -526,7 +526,7 @@
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Vaulthalla;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.utilities";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "© Cooper Larson";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Valkyrian Labs LLC. Licensed under AGPL-3.0-or-later.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -547,7 +547,7 @@
 				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "© Cooper Larson";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Valkyrian Labs LLC. Licensed under AGPL-3.0-or-later.";
 				PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.app.mcp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -563,7 +563,7 @@
 				CREATE_INFOPLIST_SECTION_IN_BINARY = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_LSUIElement = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "© Cooper Larson";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Valkyrian Labs LLC. Licensed under AGPL-3.0-or-later.";
 				PRODUCT_BUNDLE_IDENTIFIER = sh.vaulthalla.app.mcp;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -599,7 +599,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Extensions/FileProvider/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Vaulthalla;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "© Cooper Larson";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Valkyrian Labs LLC. Licensed under AGPL-3.0-or-later.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -623,7 +623,7 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Extensions/FileProvider/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Vaulthalla;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "© Cooper Larson";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "© 2026 Valkyrian Labs LLC. Licensed under AGPL-3.0-or-later.";
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
