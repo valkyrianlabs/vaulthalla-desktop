@@ -78,8 +78,10 @@ notarized and stapled, then a signed DMG notarized and stapled too, and the Spar
 and the appcast as the latest GitHub release; the app's update feed is `releases/latest/download/appcast.xml`, so a
 release is never marked prerelease. It then commits the rendered cask to `valkyrianlabs/homebrew-tap`
 (`brew install --cask valkyrianlabs/tap/vaulthalla-desktop`; template `tools/release/homebrew/vaulthalla-desktop.rb.in`,
-checked with `brew style` and `brew audit` in every run). A pull request that touches the release tooling rehearses everything except
-publishing. The build number is the commit count. Debug builds never check for updates.
+checked with `brew style` and `brew audit` in every run). That cask is the app alone; `valkyrianlabs/tap/vaulthalla`
+installs it with a local server from the server package (version-checked, so it never replaces a newer app), and the
+two conflict. A pull request that touches the release tooling rehearses everything except publishing. The build
+number is the commit count. Debug builds never check for updates.
 
 Locally, with the Developer ID identity in the keychain and both profiles installed for Xcode:
 
