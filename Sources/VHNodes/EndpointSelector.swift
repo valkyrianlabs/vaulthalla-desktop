@@ -158,9 +158,12 @@ public struct EndpointSelection: Hashable, Sendable {
         public var interfaceName: String?
         /// The pin the server presented (`ok` only): the current one or the announced next one.
         public var matchedPin: Data?
+        /// When the selector launched this probe, from the start of the selection (nil: never started).
+        public var launchedAfter: Duration?
 
         public init(candidate: EndpointCandidate, outcome: Outcome, transportClass: EndpointClass, rtt: Duration? = nil,
-                    remoteAddress: String? = nil, interfaceName: String? = nil, matchedPin: Data? = nil) {
+                    remoteAddress: String? = nil, interfaceName: String? = nil, matchedPin: Data? = nil,
+                    launchedAfter: Duration? = nil) {
             self.candidate = candidate
             self.outcome = outcome
             self.transportClass = transportClass
@@ -168,6 +171,7 @@ public struct EndpointSelection: Hashable, Sendable {
             self.remoteAddress = remoteAddress
             self.interfaceName = interfaceName
             self.matchedPin = matchedPin
+            self.launchedAfter = launchedAfter
         }
 
         /// (class, last good first, server order): lower is better.
@@ -293,6 +297,7 @@ public struct EndpointSelector: Sendable {
         var pending = candidates.indices.sorted { estimated[$0] < estimated[$1] }
         var inFlight: Set<Int> = []
         var results: [Int: EndpointSelection.Report] = [:]
+        var launched: [Int: Duration] = [:]
         var nextLaunch = start
         var firstSuccess: ContinuousClock.Instant?
 
@@ -309,6 +314,7 @@ public struct EndpointSelector: Sendable {
                       bestSoFar.map({ estimated[next] < $0 }) ?? true, now < deadline {
                     pending.removeFirst()
                     inFlight.insert(next)
+                    launched[next] = now - start
                     let candidate = candidates[next]
                     let timeout = min(configuration.probeTimeout, deadline - now)
                     group.addTask { .result(next, await prober.probe(candidate.endpoint, timeout: timeout)) }
@@ -346,7 +352,7 @@ public struct EndpointSelector: Sendable {
                     candidate: candidate, outcome: outcome, transportClass: reached,
                     rtt: outcome == .ok ? result.rtt : nil,
                     remoteAddress: result.remoteAddress, interfaceName: result.interfaceName,
-                    matchedPin: outcome == .ok ? result.matchedPin : nil)
+                    matchedPin: outcome == .ok ? result.matchedPin : nil, launchedAfter: launched[index])
                 if outcome == .ok {
                     if firstSuccess == nil { firstSuccess = clock.now }
                 } else {
@@ -362,7 +368,8 @@ public struct EndpointSelector: Sendable {
             // Still in flight at the end: it ran out of time. Never started: not tried.
             let outcome: EndpointSelection.Outcome = inFlight.contains(index) ? .timeout : .notTried
             return EndpointSelection.Report(candidate: candidates[index], outcome: outcome,
-                                            transportClass: candidates[index].estimatedClass)
+                                            transportClass: candidates[index].estimatedClass,
+                                            launchedAfter: launched[index])
         }
     }
 }

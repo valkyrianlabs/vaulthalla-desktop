@@ -27,8 +27,15 @@ import VHCore
             return url
         }
 
+        /// Byte i is (31 i + 7 seed) mod 251, so the bytes repeat every 251: the file is one period copied over and
+        /// over. (Mapping a closure over every byte cost seconds of CPU per file in debug builds, run synchronously on
+        /// the cooperative pool, which starved every other test in the process on small CI runners.)
         static func pattern(_ count: Int, seed: Int) -> Data {
-            Data((0..<count).map { UInt8(truncatingIfNeeded: ($0 &* 31 &+ seed &* 7) % 251) })
+            let period = Data((0..<251).map { UInt8(truncatingIfNeeded: ($0 &* 31 &+ seed &* 7) % 251) })
+            var data = Data(capacity: count)
+            while data.count + period.count <= count { data.append(period) }
+            data.append(period.prefix(count - data.count))
+            return data
         }
 
         func requests(_ method: String, prefix: String) -> [HTTPTestServer.Request] {

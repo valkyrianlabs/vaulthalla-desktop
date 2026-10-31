@@ -357,8 +357,7 @@ import VHCore
         }
         task.cancel()
         await #expect(throws: TransferError.cancelled) { try await task.value }
-        // The DELETE queues behind the 1 s PUTs on the test server: allow a loaded CI runner up to 30 s.
-        for _ in 0..<300 where !server.requests.contains(where: { $0.method == "DELETE" }) {
+        for _ in 0..<50 where !server.requests.contains(where: { $0.method == "DELETE" }) {
             try await Task.sleep(for: .milliseconds(100))
         }
         #expect(server.requests.contains { $0.method == "DELETE" && $0.target == "/upload/u7" })

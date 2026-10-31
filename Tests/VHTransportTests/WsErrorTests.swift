@@ -67,9 +67,8 @@ import VHCore
 
 @Suite struct WsErrorWireTests {
     private func client(for server: TestServer) throws -> WsClient {
-        // Generous: a loaded CI runner (the TLS transfer suites run alongside) can take seconds to connect.
         try WsClient(configuration: .init(endpoint: NodeEndpoint(host: "127.0.0.1", port: server.port),
-                                          security: .plaintext, connectTimeout: .seconds(15)))
+                                          security: .plaintext, connectTimeout: .seconds(2)))
     }
 
     @Test func protocolUnsupportedOverTheWire() async throws {
