@@ -223,7 +223,22 @@ final class FakeProber: EndpointProbing {
         #expect(selection.chosen?.matchedPin == Data([2]))
         #expect(selection.report(for: NodeEndpoint(host: "127.0.0.1"))?.outcome == .identityMismatch)
         #expect(!selection.configuredEndpointMismatched)
-        #expect(selection.betterRoutesNotUsed.map(\.candidate.endpoint.host) == ["127.0.0.1", "::1"])
+        // Loopback is tried for every node: its failures aren't "a better route wasn't used".
+        #expect(selection.betterRoutesNotUsed.isEmpty)
+    }
+
+    @Test func explainsAdvertisedBetterRoutesThatFailed() async {
+        let node = node("vh.example.com", advertised: [
+            AdvertisedEndpoint(host: "10.0.0.11", port: 36972, kind: .lan),
+            AdvertisedEndpoint(host: "127.0.0.1", port: 36972, kind: .loopback),
+        ])
+        let prober = FakeProber([
+            "10.0.0.11": FakeProber.fail(.timeout, after: .milliseconds(20)),
+            "vh.example.com": FakeProber.ok(address: "203.0.113.7"),
+        ])
+        let selection = await fast().select(EndpointCandidate.candidates(for: node), prober: prober)
+        #expect(selection.chosen?.transportClass == .wan)
+        #expect(selection.betterRoutesNotUsed.map(\.candidate.endpoint.host) == ["127.0.0.1", "10.0.0.11"])
     }
 
     @Test func aMismatchOnTheConfiguredEndpointWithNoSuccessIsTheOldPinFailure() async {

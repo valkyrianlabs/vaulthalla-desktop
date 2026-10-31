@@ -58,6 +58,22 @@ final class AppModel {
     private(set) var nodeProtocols: [NodeID: NodeProtocol] = [:]
     /// The route each node's session takes (endpoint, class, RTT, the selection behind it), as it last reported.
     private(set) var routes: [NodeID: NodeRoute] = [:]
+    /// What each node's transfers report (throughput, part size and concurrency, tuning); absent: nothing reported.
+    private(set) var transferStats: [NodeID: TransferStats] = [:]
+    /// "Test connection" per node: running, or what it found last.
+    private(set) var connectionTests: [NodeID: ConnectionTestState] = [:]
+
+    enum ConnectionTestState: Hashable {
+        case running
+        case finished(ConnectionTestResult)
+    }
+
+    /// What "Test connection" runs. The default re-runs the endpoint selection; the transfer work replaces it with a
+    /// calibration over `/transfer/*` when the node announces `device.lanes.transfer`.
+    @ObservationIgnored var connectionTest: ConnectionTest = ConnectionTests.route
+    /// Where transfer code reports `TransferStats`.
+    @ObservationIgnored let transferStatsBoard: TransferStatsBoard
+    @ObservationIgnored private var statsWatch: Task<Void, Never>?
     /// Whether this app manages the device keys and the node list (it holds the credential lease) or only reads
     /// what another process manages (docs/architecture.md §3, "Credential ownership").
     private(set) var credentialRole: CredentialRole
@@ -85,10 +101,11 @@ final class AppModel {
     /// `store` and `keys` carry the credential lease when this app owns the credentials; without it (or while
     /// another process holds it) the model is a consumer: it shows the registry read-only and edits are refused.
     init(store: NodeStore, keys: DeviceKeys? = nil, recoveryKeys: RecoveryKeysModel = RecoveryKeysModel(),
-         registry: RegistryOwnership? = nil) {
+         registry: RegistryOwnership? = nil, transferStats: TransferStatsBoard = .shared) {
         self.store = store
         self.registry = registry
         self.recoveryKeys = recoveryKeys
+        self.transferStatsBoard = transferStats
         credentialRole = store.role
         loadNodes()
         recoveryKeys.app = self
@@ -97,7 +114,36 @@ final class AppModel {
             syncSessions()
             recoveryKeys.start()
             if credentialRole == .consumer { watchOwner() }
+            watchTransferStats()
         }
+    }
+
+    /// Follows what transfer code reports, for the status view.
+    private func watchTransferStats() {
+        guard statsWatch == nil else { return }
+        let updates = transferStatsBoard.updates()
+        statsWatch = Task { [weak self] in
+            for await (id, stats) in updates {
+                guard let self else { return }
+                self.transferStats[id] = stats
+            }
+        }
+    }
+
+    /// Runs "Test connection" on the node's session (no-op without one).
+    func testConnection(for id: NodeID) {
+        guard connectionTests[id] != .running, let session = sessions?.session(for: id) else { return }
+        connectionTests[id] = .running
+        let test = connectionTest
+        Task { [weak self] in
+            let result = await test(session)
+            self?.connectionTests[id] = .finished(result)
+        }
+    }
+
+    /// Whether the node has a session "Test connection" can run on.
+    func canTestConnection(for id: NodeID) -> Bool {
+        sessions?.session(for: id) != nil && connectionTests[id] != .running
     }
 
     var isCredentialOwner: Bool { credentialRole == .owner }
@@ -178,6 +224,8 @@ final class AppModel {
         nodeProtocols[id] = nil
         routes[id] = nil
         pairingHints[id] = nil
+        connectionTests[id] = nil
+        transferStats[id] = nil
         nodesNeedingPairing.remove(id)
         // The key was filed under this node's local id; nothing else can use it.
         if let keys = deviceKeys, isCredentialOwner {
@@ -432,6 +480,12 @@ final class AppModel {
     }
 
     #if DEBUG
+    /// PREVIEW DATA: shows `route` and `stats` for a node without a session.
+    func usePreviewRoute(_ route: NodeRoute, stats: TransferStats?, for id: NodeID) {
+        routes[id] = route
+        transferStats[id] = stats
+    }
+
     /// PREVIEW DATA: serves `node` from canned answers and reports it online, without a session, as running what
     /// `negotiated` says.
     func usePreviewData(for id: NodeID, transport: any NodeTransport, negotiated: NodeProtocol? = nil) {

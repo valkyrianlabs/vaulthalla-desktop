@@ -201,11 +201,15 @@ public struct EndpointSelection: Hashable, Sendable {
         return reports.first { $0.candidate.key == key }
     }
 
-    /// Candidates of a better class than the chosen one (or every candidate, with none chosen) that didn't work: why
-    /// a better route wasn't used.
+    /// Candidates of a better class than the chosen one (or every candidate, with none chosen) that were tried and
+    /// didn't work: why a better route wasn't used. The speculative loopback probes every node gets are left out
+    /// (most nodes don't run on this Mac) unless the node itself advertised that address.
     public var betterRoutesNotUsed: [Report] {
         let limit = chosen?.transportClass.rank ?? Int.max
-        return reports.filter { $0.outcome != .ok && $0.transportClass.rank < limit && $0.outcome != .notTried }
+        return reports.filter {
+            $0.outcome != .ok && $0.outcome != .notTried && $0.transportClass.rank < limit
+                && $0.candidate.sources != [.loopback]
+        }
     }
 }
 

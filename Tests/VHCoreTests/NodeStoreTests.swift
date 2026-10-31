@@ -220,3 +220,20 @@ import VHCore
         #expect(EndpointClass.wan.displayName == "Direct WAN")
     }
 }
+
+@Suite struct TransferStatsBoardTests {
+    @Test func reportsLatestAndStreamsChanges() async {
+        let board = TransferStatsBoard()
+        let node = NodeID(rawValue: "n")
+        #expect(board.stats(for: node) == nil)
+        let updates = board.updates()
+        board.report(TransferStats(throughputUp: 1e6, partBytes: 64 << 20, partsInFlight: 4, tuning: true), for: node)
+        board.report(nil, for: node)
+        var iterator = updates.makeAsyncIterator()
+        let first = await iterator.next()
+        #expect(first?.0 == node && first?.1?.partsInFlight == 4 && first?.1?.throughputDown == nil)
+        let second = await iterator.next()
+        #expect(second?.0 == node && second?.1 == nil)
+        #expect(board.stats(for: node) == nil)
+    }
+}

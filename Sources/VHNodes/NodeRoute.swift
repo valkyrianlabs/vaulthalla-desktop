@@ -153,3 +153,42 @@ public actor RouteCache {
         entries[id] = nil
     }
 }
+
+/// What "Test connection" in the status view found. The default (``ConnectionTests/route``) re-runs the endpoint
+/// selection; a calibration over the device listener's `/transfer/*` lanes (`device.lanes.transfer`) adds measured
+/// throughput.
+public struct ConnectionTestResult: Hashable, Sendable {
+    /// The fresh selection (every candidate's outcome).
+    public var selection: EndpointSelection?
+    /// The route afterwards.
+    public var route: NodeRoute?
+    /// Measured bytes per second, when the test calibrated.
+    public var uploadBytesPerSecond: Double?
+    public var downloadBytesPerSecond: Double?
+    /// One plain sentence about the outcome, when the test has one to add.
+    public var note: String?
+    public var finishedAt: Date
+
+    public init(selection: EndpointSelection? = nil, route: NodeRoute? = nil, uploadBytesPerSecond: Double? = nil,
+                downloadBytesPerSecond: Double? = nil, note: String? = nil, finishedAt: Date = .now) {
+        self.selection = selection
+        self.route = route
+        self.uploadBytesPerSecond = uploadBytesPerSecond
+        self.downloadBytesPerSecond = downloadBytesPerSecond
+        self.note = note
+        self.finishedAt = finishedAt
+    }
+}
+
+/// Runs "Test connection" against a node's session.
+public typealias ConnectionTest = @Sendable (NodeSession) async -> ConnectionTestResult
+
+public enum ConnectionTests {
+    /// Selects the route again (``NodeSession/testRoute()``: every candidate probed, the connection moved if a better
+    /// route answers) and reports it. Safe on any node: it sends nothing but TLS handshakes.
+    public static let route: ConnectionTest = { session in
+        let selection = await session.testRoute()
+        return ConnectionTestResult(selection: selection, route: await session.route,
+                                    note: selection == nil ? "The node's session isn't connected yet." : nil)
+    }
+}
