@@ -1,6 +1,7 @@
 import Foundation
 import Synchronization
 import Testing
+import VHCore
 @testable import VHTransport
 
 /// ``TransferTuner`` driven through simulated links: rounds of parallel parts whose durations follow a link model
@@ -293,5 +294,24 @@ import Testing
         #expect(TransferEndpointClass(host: "203.0.113.7") == .wan)
         #expect(TransferEndpointClass(host: "2001:db8::1") == .wan)
         #expect(TransferEndpointClass(host: "device.example.com") == .unknown)
+        // The selection's class (what a name resolved to) maps one to one.
+        for routeClass in EndpointClass.allCases {
+            #expect(TransferEndpointClass(routeClass).rawValue == routeClass.rawValue)
+        }
+    }
+
+    @Test func theFirstRouteClassKeepsAnEstimateSavedForIt() {
+        let cache = TransferEstimateCache()
+        cache.save(.init(throughput: 9e7, rtt: 0.002, concurrency: 3, partBytes: 256 << 20, source: .measured),
+                   node: "n1", endpointClass: .lan)
+        // A monitor starts unclassified; learning its route's class (the selection) must not drop the estimate.
+        let monitor = TransferMonitor(node: "n1", cache: cache)
+        monitor.setEndpointClass(.lan)
+        #expect(monitor.seedFromCache())
+        #expect(monitor.snapshot.source == .cached && monitor.snapshot.estimatedThroughput != nil)
+        // A later move to another class does drop it.
+        monitor.setEndpointClass(.wan)
+        #expect(cache.estimate(node: "n1", endpointClass: .lan) == nil)
+        #expect(monitor.snapshot.source == .defaults)
     }
 }

@@ -252,6 +252,7 @@ public actor NodeLink: ReplicaLink {
         guard let deviceID = await session.laneIdentityID,
               let configuration = await session.laneConfiguration(timeout: self.configuration.laneTimeout)
         else { throw .serverUnreachable("The node's session has no identity yet.") }
+        monitor.setEndpointClass(TransferEndpointClass(endpoint: configuration.endpoint, route: await session.route))
         if let lanes, lanes.deviceID == deviceID, lanes.endpoint == configuration.endpoint {
             return (lanes.client, deviceID)
         }

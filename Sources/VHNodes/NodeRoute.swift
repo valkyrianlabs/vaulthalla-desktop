@@ -51,6 +51,19 @@ public struct NodeRoute: Hashable, Sendable {
     public var isFallback: Bool { verifiedKey == .unverified }
 }
 
+extension TransferEndpointClass {
+    /// The class transfers to `endpoint` are tuned for: the selected route's (what its host resolved to and the
+    /// interface it leaves by) when the route is that endpoint, else the literal-address heuristic of
+    /// ``init(host:)`` (a host name without a route stays `unknown`).
+    public init(endpoint: NodeEndpoint, route: NodeRoute?) {
+        if let route, route.endpoint == endpoint {
+            self.init(route.transportClass)
+        } else {
+            self.init(host: endpoint.host)
+        }
+    }
+}
+
 /// The endpoint-selection knobs a session or a consumer uses: the selector's timing, the schedule, how a probe is
 /// made, Bonjour (the last source) and the network path changes that trigger a new selection. Tests replace the
 /// prober, Bonjour and the path changes.

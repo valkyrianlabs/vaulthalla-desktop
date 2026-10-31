@@ -1,4 +1,5 @@
 public import Foundation
+public import VHCore
 import Synchronization
 
 /// The class of the address a lane connects to (the server's transfer-protocol.md §2): estimates are kept per node and
@@ -37,6 +38,18 @@ public enum TransferEndpointClass: String, Sendable, Hashable, Codable, CaseIter
             return
         }
         self = .unknown
+    }
+
+    /// The class the endpoint selection measured for the route in use (``EndpointClass``: what a host name resolved
+    /// to, the interface it leaves by). Preferred over ``init(host:)``, which is only the fallback without a route.
+    public init(_ endpointClass: EndpointClass) {
+        switch endpointClass {
+        case .loopback: self = .loopback
+        case .lan: self = .lan
+        case .vpn: self = .vpn
+        case .wan: self = .wan
+        case .passthrough: self = .passthrough
+        }
     }
 }
 
@@ -206,17 +219,22 @@ public final class TransferMonitor: Sendable {
 
     public var isTuningEnabled: Bool { state.withLock { $0.tuner.configuration.enabled } }
 
-    /// The route's class changed (endpoint re-selection): what was learned no longer applies.
+    /// The route's class changed (endpoint re-selection): what was learned no longer applies, and the cached estimate
+    /// (for the old class) is dropped. Leaving `.unknown` (the class a monitor starts with, before any route is known)
+    /// keeps the cache: an estimate saved for the new class on an earlier run still seeds the next upload.
     public func setEndpointClass(_ endpointClass: TransferEndpointClass) {
-        let reset = state.withLock { state -> Bool in
-            guard state.endpointClass != endpointClass else { return false }
+        let reset = state.withLock { state -> TransferEndpointClass? in
+            guard state.endpointClass != endpointClass else { return nil }
+            let previous = state.endpointClass
             let configuration = state.tuner.configuration
             state.tuner = TransferTuner(configuration: configuration, limits: state.tuner.limits)
             state.endpointClass = endpointClass
             state.seeded = false
-            return true
+            return previous
         }
-        if reset { cache?.remove(node: node); publish(force: true) }
+        guard let previous = reset else { return }
+        if previous != .unknown { cache?.remove(node: node) }
+        publish(force: true)
     }
 
     // MARK: - For the engine

@@ -375,4 +375,15 @@ final class FakeProber: EndpointProbing {
         let many = JSONValue.array((0..<100).map { ["host": .string("10.0.0.\($0)"), "port": 36972] })
         #expect(EndpointAdvertisement(json: ["candidates": many]).candidates.count == EndpointAdvertisement.maxCandidates)
     }
+
+    @Test func transfersAreTunedForTheSelectedRoutesClass() {
+        // A name the heuristic can't place: the route's class (what it resolved to) wins.
+        let named = NodeEndpoint(host: "vault.example.net", port: 36972)
+        let route = NodeRoute(endpoint: named, transportClass: .lan, verifiedKey: .current, isConnected: true)
+        #expect(TransferEndpointClass(endpoint: named, route: route) == .lan)
+        #expect(TransferEndpointClass(endpoint: named, route: nil) == .unknown)
+        // A route for another endpoint says nothing about this one: the literal-address fallback.
+        let other = NodeEndpoint(host: "203.0.113.9", port: 36972)
+        #expect(TransferEndpointClass(endpoint: other, route: route) == .wan)
+    }
 }

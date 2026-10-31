@@ -81,7 +81,9 @@ actor NodeFileLanes: FileLaneService {
         let features = VaultLanes.Features(
             resumableUploads: await session.supports(capability: .resumableUpload) == .yes,
             transferLanes: await session.supports(capability: .transferLane) == .yes)
-        transferMonitor?.setEndpointClass(TransferEndpointClass(host: configuration.endpoint.host))
+        // The selected route's class (the host heuristic only without a route for this endpoint).
+        transferMonitor?.setEndpointClass(TransferEndpointClass(endpoint: configuration.endpoint,
+                                                                route: await session.route))
         if let cached, cached.identity == identity, cached.endpoint == configuration.endpoint {
             return (equipped(cached.lanes, features), support)
         }
