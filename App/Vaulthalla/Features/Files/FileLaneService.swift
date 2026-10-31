@@ -37,8 +37,10 @@ extension FileLaneService {
 
 /// The node's lanes as its current session reaches them: the endpoint the session selected, this Mac's identity for
 /// the node and the pinned server key. The client is made on first use and again after a key rotation (the old
-/// identity stops being accepted) or when a new selection moved the endpoint. A connection failure on a lane asks the
-/// session to select again.
+/// identity stops being accepted) or when a new selection moved the endpoint (the old client is then left to finish
+/// what it carries, not cancelled). A connection failure on a lane asks the session to select again; once the lanes
+/// moved, the request runs again there (the server's transfer-protocol.md §2), and a resumable upload resumes its
+/// session on the new endpoint by itself (``VaultLanes/reroute``).
 ///
 /// Each lane is checked against what the node announced in `meta.hello` (`device.lanes.*`): a node known not to
 /// serve it isn't asked (``TransferError/laneUnavailable(_:)``), and a 404 there means the lane, not the item. On a
@@ -85,49 +87,79 @@ actor NodeFileLanes: FileLaneService {
         transferMonitor?.setEndpointClass(TransferEndpointClass(endpoint: configuration.endpoint,
                                                                 route: await session.route))
         if let cached, cached.identity == identity, cached.endpoint == configuration.endpoint {
-            return (equipped(cached.lanes, features), support)
+            return (equipped(cached.lanes, features, lane: lane), support)
         }
-        cached?.lanes.invalidate()
+        // A rotated key is refused anyway: cancel what the old client carries. A moved endpoint isn't: transfers in
+        // flight there finish (or fail over themselves), and the client goes with its last user.
+        if cached?.identity != identity { cached?.lanes.invalidate() }
         do {
             let made = try VaultLanes(configuration: configuration)
             cached = (identity, configuration.endpoint, made)
-            return (equipped(made, features), support)
+            return (equipped(made, features, lane: lane), support)
         } catch {
             throw .connection("the node's address can't be used")
         }
     }
 
-    private func equipped(_ lanes: VaultLanes, _ features: VaultLanes.Features) -> VaultLanes {
+    private func equipped(_ lanes: VaultLanes, _ features: VaultLanes.Features, lane: TransferError.Lane)
+        -> VaultLanes
+    {
         var lanes = lanes
         lanes.features = features
         lanes.monitor = transferMonitor
         lanes.store = store
+        let endpoint = lanes.endpoint
+        lanes.reroute = { [weak self] in await self?.rerouted(from: endpoint, lane: lane)?.transfers }
         return lanes
     }
 
-    /// Runs `body` on the lane, reading its failure against what the node announced.
-    private func on<T: Sendable>(_ lane: TransferError.Lane, _ body: (VaultLanes) async throws(TransferError) -> T)
+    /// A connection-class failure on `endpoint`: the session selects again; once its lanes moved elsewhere, the
+    /// lanes there (nil when they stayed).
+    private func rerouted(from endpoint: NodeEndpoint, lane: TransferError.Lane) async -> VaultLanes? {
+        guard let session = await session(), await session.rerouteLanes(awayFrom: endpoint) != nil,
+              let moved = try? await lanes(for: lane), moved.0.endpoint != endpoint
+        else { return nil }
+        return moved.0
+    }
+
+    /// Runs `body` on the lane, reading its failure against what the node announced. A connection failure asks the
+    /// session to select again; with `retryOnNewRoute`, `body` runs once more on the new endpoint when the lanes
+    /// moved (previews don't wait for that, and resumable uploads move by themselves).
+    private func on<T: Sendable>(_ lane: TransferError.Lane, retryOnNewRoute: Bool = true,
+                                 _ body: (VaultLanes) async throws(TransferError) -> T)
         async throws(TransferError) -> T
     {
         let (lanes, support) = try await lanes(for: lane)
         do throws(TransferError) {
             return try await body(lanes)
         } catch {
-            if case .connection = error { await session()?.laneConnectionFailed() }
-            throw error.interpreted(for: lane, support: support)
+            guard case .connection = error else { throw error.interpreted(for: lane, support: support) }
+            guard retryOnNewRoute else {
+                await session()?.laneConnectionFailed()
+                throw error.interpreted(for: lane, support: support)
+            }
+            guard let moved = await rerouted(from: lanes.endpoint, lane: lane) else {
+                throw error.interpreted(for: lane, support: support)
+            }
+            do throws(TransferError) {
+                return try await body(moved)
+            } catch {
+                if case .connection = error { await session()?.laneConnectionFailed() }
+                throw error.interpreted(for: lane, support: support)
+            }
         }
     }
 
     func thumbnailStatus(vaultID: Int64, items: [VaultLanes.ThumbnailItem], size: Int)
         async throws(TransferError) -> [String: VaultLanes.ThumbnailStatus]
     {
-        try await on(.preview) { lanes throws(TransferError) in
+        try await on(.preview, retryOnNewRoute: false) { lanes throws(TransferError) in
             try await lanes.thumbnailStatus(vaultID: vaultID, items: items, size: size)
         }
     }
 
     func thumbnail(vaultID: Int64, path: String, size: Int) async throws(TransferError) -> Data {
-        try await on(.preview) { lanes throws(TransferError) in
+        try await on(.preview, retryOnNewRoute: false) { lanes throws(TransferError) in
             try await lanes.thumbnail(vaultID: vaultID, path: path, size: size)
         }
     }
@@ -145,7 +177,9 @@ actor NodeFileLanes: FileLaneService {
         async throws(TransferError) -> Set<String>
     {
         let store = store
-        return try await on(.upload) { lanes throws(TransferError) in
+        // Resumable uploads follow a new route themselves (VaultLanes.reroute); the session flow runs again on it.
+        let resumable = try await lanes(for: .upload).0.features.resumableUploads
+        return try await on(.upload, retryOnNewRoute: !resumable) { lanes throws(TransferError) in
             guard lanes.features.resumableUploads else {
                 // The session flow, exactly as before.
                 return try await lanes.uploadSessions(files, vaultID: vaultID, into: directory, progress: progress)
@@ -170,6 +204,8 @@ actor NodeFileLanes: FileLaneService {
     }
 
     func testConnection() async throws(TransferError) -> TransferCalibrator.Result {
-        try await on(.transfer) { lanes throws(TransferError) in try await lanes.testConnection() }
+        try await on(.transfer, retryOnNewRoute: false) { lanes throws(TransferError) in
+            try await lanes.testConnection()
+        }
     }
 }

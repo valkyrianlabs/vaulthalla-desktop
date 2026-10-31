@@ -100,9 +100,10 @@ extension VaultLanes {
         uploader.policy.fileRestarts = 1
         let outcome: ResumableUploader.Outcome
         do throws(TransferError) {
-            outcome = try await ResumableUploader(transfers: uploader.transfers, monitor: uploader.monitor, store: nil,
-                                                  policy: uploader.policy)
-                .upload(record, progress: { progress($0.bytes, size) })
+            var single = ResumableUploader(transfers: uploader.transfers, monitor: uploader.monitor, store: nil,
+                                           policy: uploader.policy)
+            single.reroute = uploader.reroute
+            outcome = try await single.upload(record, progress: { progress($0.bytes, size) })
         } catch .preconditionFailed(let version) {
             return .conflict(currentVersion: version)
         }

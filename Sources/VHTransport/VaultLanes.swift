@@ -1,4 +1,5 @@
 public import Foundation
+public import VHCore
 import Synchronization
 
 /// A vault's files over the device listener's HTTP lanes, as the device's user (docs/architecture.md §2): thumbnail
@@ -15,6 +16,8 @@ public struct VaultLanes: Sendable {
     public var monitor: TransferMonitor?
     /// Where resumable uploads persist their progress (nil: in memory only, nothing survives a relaunch).
     public var store: ResumableStore?
+    /// Lanes on a new route after a dropped connection (``LaneReroute``): resumable uploads move there and resume.
+    public var reroute: LaneReroute?
 
     /// Optional lanes the node serves, each gated on its `meta.hello` capability.
     public struct Features: Sendable, Hashable {
@@ -60,6 +63,9 @@ public struct VaultLanes: Sendable {
     }
 
     private var http: DeviceHTTPClient { transfers.http }
+
+    /// The endpoint these lanes reach.
+    public var endpoint: NodeEndpoint { transfers.http.configuration.endpoint }
 
     public func invalidate() {
         transfers.invalidate()
@@ -440,8 +446,10 @@ public struct VaultLanes: Sendable {
 
     /// The resumable uploader on these lanes (its tuning is ``monitor``, or a private one).
     public var resumableUploader: ResumableUploader {
-        ResumableUploader(transfers: transfers, monitor: monitor ?? TransferMonitor(node: "unshared"), store: store,
-                          policy: policy.resumable)
+        var uploader = ResumableUploader(transfers: transfers, monitor: monitor ?? TransferMonitor(node: "unshared"),
+                                         store: store, policy: policy.resumable)
+        uploader.reroute = reroute
+        return uploader
     }
 
     /// Runs or resumes a resumable upload (``ResumableUploader``). Throws the first file's failure when any failed,

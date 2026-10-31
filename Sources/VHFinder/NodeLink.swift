@@ -206,7 +206,7 @@ public actor NodeLink: ReplicaLink {
         }
         let features = await laneFeatures()
         do throws(TransferError) {
-            return try await body(equipped(first.client, features))
+            return try await body(equipped(first.client, features, endpoint: first.endpoint))
         } catch .forbidden {
             // The owner may have rotated the key since the lanes were made: reload, and try once more.
         } catch {
@@ -215,7 +215,7 @@ public actor NodeLink: ReplicaLink {
         }
         let fresh = try await reloadedLanes(refusing: first.deviceID)
         do throws(TransferError) {
-            return try await body(equipped(fresh.lanes, features))
+            return try await body(equipped(fresh.lanes, features, endpoint: fresh.endpoint))
         } catch .forbidden {
             switch await reader.check(fresh.credentials) {
             case .refused:
@@ -238,33 +238,47 @@ public actor NodeLink: ReplicaLink {
             transferLanes: await session.supports(capability: .transferLane) == .yes)
     }
 
-    /// `lanes` with the node's features and this link's transfer tuning.
-    private func equipped(_ lanes: VaultLanes, _ features: VaultLanes.Features) -> VaultLanes {
+    /// `lanes` with the node's features, this link's transfer tuning, and a move to a new route for a resumable
+    /// write whose connection dropped on `endpoint` (the session's endpoint the lanes were made for).
+    private func equipped(_ lanes: VaultLanes, _ features: VaultLanes.Features, endpoint: NodeEndpoint) -> VaultLanes {
         var lanes = lanes
         lanes.features = features
         lanes.monitor = monitor
+        lanes.reroute = { [weak self] in await self?.rerouted(from: endpoint) }
         return lanes
     }
 
-    /// The lanes for the identity the session presents now.
-    private func currentLanes() async throws(FinderError) -> (client: VaultLanes, deviceID: String) {
+    /// After a dropped connection on `endpoint`: the session selects again (read-only: nothing is saved from here);
+    /// once its lanes moved, the transfer client there.
+    private func rerouted(from endpoint: NodeEndpoint) async -> DeviceTransferClient? {
+        guard let session, await session.rerouteLanes(awayFrom: endpoint, timeout: configuration.laneTimeout) != nil,
+              let moved = try? await currentLanes(), moved.endpoint != endpoint
+        else { return nil }
+        return moved.client.transfers
+    }
+
+    /// The lanes for the identity the session presents now, and the session endpoint they were made for.
+    private func currentLanes() async throws(FinderError)
+        -> (client: VaultLanes, deviceID: String, endpoint: NodeEndpoint)
+    {
         let session = try await online()
         guard let deviceID = await session.laneIdentityID,
               let configuration = await session.laneConfiguration(timeout: self.configuration.laneTimeout)
         else { throw .serverUnreachable("The node's session has no identity yet.") }
         monitor.setEndpointClass(TransferEndpointClass(endpoint: configuration.endpoint, route: await session.route))
         if let lanes, lanes.deviceID == deviceID, lanes.endpoint == configuration.endpoint {
-            return (lanes.client, deviceID)
+            return (lanes.client, deviceID, configuration.endpoint)
         }
         let made = try makeLanes(configuration)
-        lanes?.client.invalidate()
+        // A moved endpoint leaves the old client to finish what it carries; a new identity cancels it.
+        if lanes?.deviceID != deviceID { lanes?.client.invalidate() }
         lanes = (made, deviceID, configuration.endpoint)
-        return (made, deviceID)
+        return (made, deviceID, configuration.endpoint)
     }
 
     /// Lanes made from the credentials as saved now, past the key the node refused.
     private func reloadedLanes(refusing deviceID: String) async throws(FinderError)
-        -> (lanes: VaultLanes, credentials: NodeCredentials)
+        -> (lanes: VaultLanes, credentials: NodeCredentials, endpoint: NodeEndpoint)
     {
         let record: Node
         do throws(CredentialFailure) {
@@ -285,7 +299,7 @@ public actor NodeLink: ReplicaLink {
         let made = try makeLanes(lane)
         lanes?.client.invalidate()
         lanes = (made, credentials.identity.deviceID, lane.endpoint)
-        return (made, credentials)
+        return (made, credentials, lane.endpoint)
     }
 
     private func makeLanes(_ lane: DeviceHTTPClient.Configuration) throws(FinderError) -> VaultLanes {

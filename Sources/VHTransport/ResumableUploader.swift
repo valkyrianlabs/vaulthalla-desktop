@@ -18,6 +18,11 @@ public final class UploadControl: Sendable {
     public var isSuspended: Bool { suspended.withLock { $0 } }
 }
 
+/// Lanes on a new route after a connection-class failure (the server's transfer-protocol.md §2: "requests in flight
+/// are retried on the new endpoint"): the owner asks its session to select again and answers the transfer client for
+/// the endpoint the lanes moved to, or nil when they stayed where they were.
+public typealias LaneReroute = @Sendable () async -> DeviceTransferClient?
+
 /// Resumable uploads in parts over the device listener (the server's docs/reference/transfer-protocol.md §3,
 /// capability `http.upload.resumable`; docs/architecture.md §3 "Resumable uploads and tuning").
 ///
@@ -31,6 +36,9 @@ public final class UploadControl: Sendable {
 /// - After a dropped connection the session's status (`GET`) says what the node holds durably, and only the gaps go.
 ///   Progress is persisted in a ``ResumableStore``, so an upload survives an app restart: the source must be
 ///   unchanged (path, size, mtime, inode), else that file starts over in a new session.
+/// - With a ``reroute`` hook, a dropped connection asks for another route at once instead of backing off: once the
+///   lanes moved to a new endpoint, the same session resumes there from its status (session ids are the node's, not
+///   the endpoint's). Without another route the usual retries and backoff apply.
 /// - `POST …/finish` is polled while it answers 202. Files commit on their own; a file that failed (a precondition, a
 ///   rotated key) is reported per file and the others stand. Cancelling deletes the session (`DELETE`), unless the
 ///   ``UploadControl`` was suspended first.
@@ -52,6 +60,8 @@ public struct ResumableUploader: Sendable {
         public var fileRestarts = 2
         /// Persist progress at most this often (and on every state change).
         public var persistInterval: Duration = .seconds(1)
+        /// Moves to a new endpoint (``ResumableUploader/reroute``) one upload may make.
+        public var reroutes = 3
 
         public init() {}
     }
@@ -66,10 +76,13 @@ public struct ResumableUploader: Sendable {
         public var folders: Set<String>
     }
 
-    public let transfers: DeviceTransferClient
+    /// The lanes' transfer client; replaced when ``reroute`` moved the upload to another endpoint.
+    public private(set) var transfers: DeviceTransferClient
     public let monitor: TransferMonitor
     public let store: ResumableStore?
     public var policy: Policy
+    /// Asked after a connection-class failure for lanes on a new route; nil: retry on the same endpoint.
+    public var reroute: LaneReroute?
     private let log = Logger(subsystem: "sh.vaulthalla.app", category: "resumable-upload")
 
     public init(transfers: DeviceTransferClient, monitor: TransferMonitor, store: ResumableStore? = nil,
@@ -100,7 +113,17 @@ public struct ResumableUploader: Sendable {
                        progress: @escaping @Sendable (VaultLanes.UploadProgress) -> Void = { _ in })
         async throws(TransferError) -> Outcome
     {
+        var running = self
+        return try await running.run(record, control: control, progress: progress)
+    }
+
+    private mutating func run(_ record: ResumableUploadRecord, control: UploadControl?,
+                              progress: @escaping @Sendable (VaultLanes.UploadProgress) -> Void)
+        async throws(TransferError) -> Outcome
+    {
         var job = Job(record: record, store: store, persistInterval: policy.persistInterval)
+        job.escalatesDrops = reroute != nil
+        var reroutes = 0
         job.persist(force: true)
         monitor.seedFromCache()
         monitor.beginTransfer()
@@ -124,7 +147,10 @@ public struct ResumableUploader: Sendable {
                     try await runSession(batch, job: &job, tally: tally, progress: progress)
                     failures = 0
                 } catch {
-                    if error == .cancelled || Task.isCancelled { throw .cancelled }
+                    if Task.isCancelled { throw .cancelled }
+                    // Not this task's cancellation: the lanes' session was invalidated under the upload (its route
+                    // was replaced). The node still holds what it acknowledged.
+                    let error = error == .cancelled ? TransferError.connection("the connection was closed") : error
                     if error == .uploadExpired {
                         // The node forgot the session: its files start over in a new one.
                         for index in batch where job.record.files[index].state == .pending {
@@ -134,6 +160,18 @@ public struct ResumableUploader: Sendable {
                         }
                         job.persist(force: true)
                         tally.reset(job.record)
+                    }
+                    if Self.reroutable(error), reroutes < policy.reroutes, let reroute {
+                        if let moved = await reroute() {
+                            // Another endpoint: the same session resumes there from its status, at once.
+                            reroutes += 1
+                            transfers = moved
+                            job.escalatesDrops = true
+                            log.notice("upload \(record.id, privacy: .public) resumes on a new route")
+                            continue
+                        }
+                        // No other route: drops take the usual part retries from here on.
+                        job.escalatesDrops = false
                     }
                     guard Self.resumable(error) else { throw error }
                     if job.record.storedBytes > before { failures = 0 }
@@ -171,6 +209,14 @@ public struct ResumableUploader: Sendable {
             }
         }
         return outcome
+    }
+
+    /// A failure that may mean the route is gone (worth asking ``reroute``).
+    static func reroutable(_ error: TransferError) -> Bool {
+        switch error {
+        case .connection, .timeout: true
+        default: false
+        }
     }
 
     /// A session-level failure worth resuming from the node's status.
@@ -497,11 +543,16 @@ public struct ResumableUploader: Sendable {
                 run.files[position].abandoned = error
             case .connection, .timeout:
                 monitor.record(error == .timeout ? .timeout : .connection)
+                // A dropped connection with another route possible: stop here and move (``reroute``); the session's
+                // status says afterwards what the node kept.
+                if job.escalatesDrops, error != .timeout { throw error }
                 // The node may hold the part already: the resend carries the bytes' digest.
                 if let digest = result.digest { run.files[position].digests[part.range.lowerBound] = digest }
                 try retry(part, in: &run.files[position], after: nil, error: error)
             case .cancelled:
-                throw .cancelled
+                // A part this task didn't cancel: the lanes' session was invalidated (a replaced route).
+                if Task.isCancelled { throw .cancelled }
+                throw .connection("the connection was closed")
             default:
                 throw error
             }
@@ -846,6 +897,8 @@ private struct Job {
     var lastSaved: ContinuousClock.Instant?
     var entries: [String: WsModel.FsEntryBase?] = [:]
     var errors: [String: TransferError] = [:]
+    /// A part's dropped connection ends the session run at once (to try another route) instead of being retried.
+    var escalatesDrops = false
 
     init(record: ResumableUploadRecord, store: ResumableStore?, persistInterval: Duration) {
         self.record = record

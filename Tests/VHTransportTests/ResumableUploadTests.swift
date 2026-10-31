@@ -439,6 +439,72 @@ import VHCore
         #expect(fixture.fake.partRequests.filter { $0.offset == 0 && $0.status == 200 }.count == 1)
     }
 
+    /// The transfer protocol §2: the route dies mid-upload (its listener goes away with parts on the way); the
+    /// uploader asks for another route at once and resumes the same session on the second endpoint from its status.
+    @Test func aRouteThatDiesMidUploadResumesTheSessionOnTheNewEndpoint() async throws {
+        let fake = FakeUploadServer()
+        let folder = FileManager.default.temporaryDirectory.appending(path: "vh-reroute-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let handler: HTTPTestServer.Handler = { request in
+            FakeUploadServer.serves(request) ? fake.handle(request) : .init(status: 404)
+        }
+        // Endpoint A stops listening (and drops its connections) as its third part arrives.
+        let first = Mutex<HTTPTestServer?>(nil)
+        let partsOnFirst = Mutex(0)
+        let dying = try await HTTPTestServer.start(
+            tls: try WsClientTLSTests.serverTLS(clientSPKI: Recorded()),
+            router: { request in
+                guard FakeUploadServer.serves(request) else { return .buffer }
+                if request.method == "PUT", request.path.hasPrefix("/upload/sessions/") {
+                    let count = partsOnFirst.withLock { count in
+                        count += 1
+                        return count
+                    }
+                    if count == 3 { DispatchQueue.global().async { first.withLock { $0 }?.stop() } }
+                }
+                return fake.route(request)
+            }, handler: handler)
+        first.withLock { $0 = dying }
+        defer { dying.stop() }
+        let healthy = try await HTTPTestServer.start(
+            tls: try WsClientTLSTests.serverTLS(clientSPKI: Recorded()),
+            router: { request in FakeUploadServer.serves(request) ? fake.route(request) : .buffer }, handler: handler)
+        defer { healthy.stop() }
+
+        let size = 8 * Self.mib
+        let source = folder.appending(path: "big.bin")
+        try Fixture.pattern(size, seed: 5).write(to: source)
+        var lanes = try Self.lanes(port: dying.port) { policy in
+            // Long backoffs: a fallback to retrying endpoint A would show as a slow test, not pass quietly.
+            policy.resumable.backoff = .seconds(5)
+        }
+        defer { lanes.invalidate() }
+        let moved = try Self.lanes(port: healthy.port).transfers
+        defer { moved.invalidate() }
+        let reroutes = Mutex(0)
+        lanes.reroute = {
+            reroutes.withLock { $0 += 1 }
+            return moved
+        }
+
+        let started = ContinuousClock.now
+        let touched = try await lanes.upload([.init(source: source, relativePath: "big.bin", size: Int64(size))],
+                                             vaultID: 1, into: "/") { _ in }
+        #expect(touched == ["/"])
+        #expect(fake.data("/big.bin") == (try Data(contentsOf: source)))
+        #expect(reroutes.withLock { $0 } == 1)
+        #expect(ContinuousClock.now - started < .seconds(5))
+        // One session, opened on A; B was asked its status and took the rest of its parts.
+        let creates = (dying.requests + healthy.requests).filter { $0.method == "POST" && $0.path == "/upload/sessions" }
+        #expect(creates.count == 1 && dying.requests.contains { $0.path == "/upload/sessions" })
+        #expect(healthy.requests.contains { $0.method == "GET" && $0.path == "/upload/sessions/up1" })
+        #expect(healthy.requests.contains { $0.method == "PUT" && $0.path.hasPrefix("/upload/sessions/up1/files/") })
+        #expect(partsOnFirst.withLock { $0 } >= 3)
+        // Every byte the node holds was acknowledged once per range: nothing stored twice.
+        #expect(fake.state.withLock { $0.sessions.count } == 1)
+    }
+
     // MARK: File Provider writes
 
     @Test func aConditionalWriteGoesAsASingleFileSession() async throws {

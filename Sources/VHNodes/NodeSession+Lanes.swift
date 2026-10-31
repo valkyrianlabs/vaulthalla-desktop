@@ -20,4 +20,23 @@ extension NodeSession {
 
     /// The identity's device id, to tell whether a lanes client made earlier still presents the current key.
     public var laneIdentityID: String? { identity?.deviceID }
+
+    /// A lane failed with a connection-class error on `endpoint`: selects again (``laneConnectionFailed()``) and waits
+    /// up to `within` for the lanes to move to another endpoint (the server's transfer-protocol.md §2, "requests in
+    /// flight are retried on the new endpoint"). Returns the lane configuration there, or nil when the route stayed
+    /// (nothing else proves the key, the 5 s floor held the selection, or the wait ran out).
+    public func rerouteLanes(awayFrom endpoint: NodeEndpoint, within: Duration = .seconds(15),
+                             timeout: Duration = .seconds(30)) async -> DeviceHTTPClient.Configuration? {
+        laneConnectionFailed()
+        let deadline = ContinuousClock.now + within
+        while activeEndpoint == endpoint {
+            guard ContinuousClock.now < deadline else { return nil }
+            do {
+                try await Task.sleep(for: .milliseconds(100))
+            } catch {
+                return nil
+            }
+        }
+        return laneConfiguration(timeout: timeout)
+    }
 }
