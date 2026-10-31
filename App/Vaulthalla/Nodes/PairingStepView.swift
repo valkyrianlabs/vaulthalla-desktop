@@ -137,8 +137,9 @@ struct PairingStepView: View {
             }
 
         case .failed(let failure):
-            Callout(tone: failure == .serverIdentityChanged ? .danger : .warn, systemImage: "exclamationmark.triangle") {
-                Text(failure == .serverIdentityChanged ? "Pairing stopped" : "Pairing didn't finish")
+            let stopped = failure == .serverIdentityChanged || failure == .unexpectedServerIdentity
+            Callout(tone: stopped ? .danger : .warn, systemImage: "exclamationmark.triangle") {
+                Text(stopped ? "Pairing stopped" : "Pairing didn't finish")
                     .fontWeight(.semibold)
                     .foregroundStyle(.fg)
                 Text(failure.message)

@@ -11,6 +11,8 @@ import VHTransport
 final class AppModel {
     enum Sheet: Identifiable, Hashable {
         case addNode
+        /// Add Node prefilled from a `vaulthalla://pair` link.
+        case addNodeFromLink(PairLink)
         case pairing(NodeID)
 
         var id: Self { self }
@@ -32,6 +34,16 @@ final class AppModel {
     var nodePendingRemoval: Node?
     /// A failed edit, shown as an alert.
     var errorMessage: String?
+    /// Why a `vaulthalla://pair` link couldn't be used, shown as an alert.
+    var pairLinkProblem: String?
+    /// What a pairing link said about a node added from it: the server key to insist on while pairing (the code
+    /// still decides) and the server id it named. Kept in memory only, until that node pairs or is removed.
+    @ObservationIgnored private var pairingHints: [NodeID: PairingHint] = [:]
+
+    struct PairingHint: Hashable {
+        var serverSPKISHA256: Data?
+        var serverNodeID: String?
+    }
 
     /// Statuses reported by live connections. Absent means nothing is connected (see `status(for:)`).
     private var liveStatus: [NodeID: NodeConnectionStatus] = [:]
@@ -123,11 +135,13 @@ final class AppModel {
     /// Saves a new, unpaired node and selects it. `namedByUser`: the operator typed the name, so pairing keeps it
     /// instead of taking the server's.
     @discardableResult
-    func addNode(displayName: String, endpoint: NodeEndpoint, namedByUser: Bool = false) -> Node? {
+    func addNode(displayName: String, endpoint: NodeEndpoint, namedByUser: Bool = false,
+                 endpoints: [AdvertisedEndpoint] = [], hint: PairingHint? = nil) -> Node? {
         let name = displayName.trimmingCharacters(in: .whitespacesAndNewlines)
         let node = Node(id: .local(), displayName: name.isEmpty ? endpoint.host : name, endpoint: endpoint,
-                        isNamedByUser: namedByUser && !name.isEmpty)
+                        isNamedByUser: namedByUser && !name.isEmpty, endpoints: endpoints)
         guard edit({ try store.add(node) }) else { return nil }
+        pairingHints[node.id] = hint
         selectNode(node.id, section: .overview)
         return node
     }
@@ -163,6 +177,7 @@ final class AppModel {
         keyBackends[id] = nil
         nodeProtocols[id] = nil
         routes[id] = nil
+        pairingHints[id] = nil
         nodesNeedingPairing.remove(id)
         // The key was filed under this node's local id; nothing else can use it.
         if let keys = deviceKeys, isCredentialOwner {
@@ -215,6 +230,7 @@ final class AppModel {
         node.pairing = .paired(serverSPKISHA256: serverSPKI, deviceID: deviceID, since: .now)
         node.serverNodeID = serverNodeID
         node.nextServerSPKISHA256 = nil
+        pairingHints[id] = nil
         let name = serverName.trimmingCharacters(in: .whitespacesAndNewlines)
         if !node.isNamedByUser, !name.isEmpty { node.displayName = name }
         keyBackends[id] = backend
@@ -474,6 +490,38 @@ final class AppModel {
 
     func presentAddNode() {
         sheet = .addNode
+    }
+
+    /// The server key a pairing link named for this node, to refuse any other while pairing.
+    func pairingHint(for id: NodeID) -> PairingHint? {
+        pairingHints[id]
+    }
+
+    /// Opens a `vaulthalla://pair` link (untrusted): Add Node prefilled from it, or the node it names when this Mac
+    /// already has it. A link that doesn't parse is explained, never half-used.
+    func openPairLink(_ url: URL) {
+        let link: PairLink
+        do {
+            link = try PairLink(url: url)
+        } catch {
+            pairLinkProblem = error.description
+            return
+        }
+        guard isCredentialOwner else {
+            pairLinkProblem = CredentialOwnershipError.notOwner(operation: "pair this Mac").description
+            return
+        }
+        let known = link.endpoints.lazy.compactMap { self.existingNode(at: $0, serverNodeID: link.nodeID) }.first
+            ?? existingNode(at: nil, serverNodeID: link.nodeID)
+        if let known {
+            selectNode(known.id, section: .overview)
+            if !known.pairing.isPaired {
+                pairingHints[known.id] = PairingHint(serverSPKISHA256: link.serverSPKISHA256, serverNodeID: link.nodeID)
+                sheet = .pairing(known.id)
+            }
+            return
+        }
+        sheet = .addNodeFromLink(link)
     }
 
     func presentPairing(for id: NodeID) {

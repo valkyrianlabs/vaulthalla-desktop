@@ -22,6 +22,8 @@ public enum PairingFailure: Error, Hashable, Sendable {
     /// The server presented a different key during the attempt. Pairing stops: that is what an interception
     /// looks like.
     case serverIdentityChanged
+    /// The server presented a different key than the pairing link (`vaulthalla://pair?spki=`) names. Nothing was sent.
+    case unexpectedServerIdentity
     /// The listener couldn't be reached at all.
     case unreachable(endpoint: String)
     /// The connection kept dropping after the first contact.
@@ -53,6 +55,9 @@ public enum PairingFailure: Error, Hashable, Sendable {
         case .serverIdentityChanged:
             "The server's identity changed during pairing, so pairing stopped. Someone on the network may be "
                 + "intercepting the connection."
+        case .unexpectedServerIdentity:
+            "The server at this address isn't the one the pairing link names, so pairing stopped and nothing was sent. "
+                + "Check the address, or open the link from the server's own Pair a Device dialog again."
         case .unreachable(let endpoint):
             "Can't reach the Vaulthalla device listener at \(endpoint)."
         case .connectionLost:
@@ -81,7 +86,9 @@ public enum PairingFailure: Error, Hashable, Sendable {
 ///
 /// The server's key is trusted on first use and recorded; if the connection drops, the client reconnects pinned to
 /// that key, so a different server makes the handshake fail and the attempt stops (`.serverIdentityChanged`).
-/// Nothing is ever sent to a second key. The device commits to its nonce (`device.pair.request`), learns the
+/// Nothing is ever sent to a second key. With ``Configuration/expectedServerSPKI`` (from a `vaulthalla://pair` link,
+/// the server's transfer protocol §1.2) every connection is pinned to that key from the start, and a server presenting
+/// another one stops the attempt before anything is sent (`.unexpectedServerIdentity`); the code stays authoritative. The device commits to its nonce (`device.pair.request`), learns the
 /// server's, reveals its own (`device.pair.confirm`), shows the SAS, and long-polls `device.pair.status` until the
 /// owner decides.
 ///
@@ -111,6 +118,9 @@ public final class PairingClient: Sendable {
 
     public struct Configuration: Sendable {
         public var endpoint: NodeEndpoint
+        /// The server key a pairing link named (untrusted until the code matches): when set, a pairing connection
+        /// presenting any other key is refused.
+        public var expectedServerSPKI: Data?
         /// The name the owner sees in the approval list (the Mac's name), at most 64 characters.
         public var deviceName: String
         public var appVersion: String
@@ -175,7 +185,14 @@ public final class PairingClient: Sendable {
 
 /// The server SPKI seen on the pairing connection(s). The TLS verify block reports it on a Network.framework queue.
 private final class ServerKeyRecord: Sendable {
-    private let state = Mutex<(first: Data?, changed: Bool)>((nil, false))
+    private let state: Mutex<(first: Data?, changed: Bool)>
+    /// A pairing link's key: every connection is pinned to it from the start.
+    let expected: Data?
+
+    init(expected: Data?) {
+        self.expected = expected.flatMap { $0.count == 32 ? $0 : nil }
+        state = Mutex((self.expected, false))
+    }
 
     func observe(_ spki: Data) {
         state.withLock { state in
@@ -341,7 +358,7 @@ private struct Attempt {
     actor Link {
         let identity: DeviceIdentity
         let configuration: PairingClient.Configuration
-        nonisolated let serverKey = ServerKeyRecord()
+        nonisolated let serverKey: ServerKeyRecord
         private var client: WsClient?
         private var reconnects = 0
         private var everConnected = false
@@ -349,6 +366,7 @@ private struct Attempt {
         init(identity: DeviceIdentity, configuration: PairingClient.Configuration) {
             self.identity = identity
             self.configuration = configuration
+            serverKey = ServerKeyRecord(expected: configuration.expectedServerSPKI)
         }
 
         func close() async {
@@ -409,10 +427,14 @@ private struct Attempt {
             let state = await failed.connectionState
             await failed.close()
             client = nil
-            // A pinned connection that failed its handshake: the server now has another key.
+            // A pinned connection that failed its handshake: not the link's server, or the server now has another key.
+            if case .failed = state, serverKey.expected != nil, !everConnected {
+                throw PairingFailure.unexpectedServerIdentity
+            }
             if case .failed = state, serverKey.spki != nil { throw PairingFailure.serverIdentityChanged }
-            // Never reached at all: report the address rather than retrying an unreachable host.
-            guard everConnected || serverKey.spki != nil else {
+            // Never reached at all: report the address rather than retrying an unreachable host. (With a link's key
+            // the handshake reports nothing, so only an earlier answer counts.)
+            guard everConnected || (serverKey.expected == nil && serverKey.spki != nil) else {
                 throw PairingFailure.unreachable(endpoint: configuration.endpoint.description)
             }
             reconnects += 1

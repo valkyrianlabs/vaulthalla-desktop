@@ -3,8 +3,8 @@ import SwiftUI
 import VHCore
 import VHNodes
 
-/// Adds a node (discovered on the network or typed in), then explains pairing. Opening it for an existing node
-/// goes straight to the pairing step.
+/// Adds a node (discovered on the network, typed in, or from a `vaulthalla://pair` link), then explains pairing.
+/// Opening it for an existing node goes straight to the pairing step.
 struct AddNodeSheet: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -14,6 +14,9 @@ struct AddNodeSheet: View {
     @State private var address = ""
     @State private var name = ""
     @State private var pickedServerID: DiscoveredServer.ID?
+    /// The pairing link this sheet was opened from (untrusted), and what probing its endpoints found.
+    @State private var link: PairLink?
+    @State private var linkProbe: EndpointSelection?
 
     private enum Step: Equatable {
         case choose
@@ -22,8 +25,14 @@ struct AddNodeSheet: View {
 
     init(start: AppModel.Sheet) {
         switch start {
-        case .addNode: _step = State(initialValue: .choose)
-        case .pairing(let id): _step = State(initialValue: .pair(id))
+        case .addNode:
+            _step = State(initialValue: .choose)
+        case .addNodeFromLink(let link):
+            _step = State(initialValue: .choose)
+            _link = State(initialValue: link)
+            _address = State(initialValue: link.endpoints.first?.description ?? "")
+        case .pairing(let id):
+            _step = State(initialValue: .pair(id))
         }
     }
 
@@ -55,20 +64,36 @@ struct AddNodeSheet: View {
             SheetHeader(
                 systemImage: "server.rack",
                 title: "Add a Node",
-                subtitle: "Pick a Vaulthalla server on this network, or enter its address."
+                subtitle: link == nil ? "Pick a Vaulthalla server on this network, or enter its address."
+                    : "From a pairing link. Check the address, then pair with the code."
             )
 
             Form {
-                Section {
-                    DiscoveredServerList(browser: browser, pickedID: pickedServerID, existingNode: existingNode(for:)) { server in
-                        pick(server)
+                if let link {
+                    Section {
+                        PairLinkSummary(link: link, probe: linkProbe)
+                    } header: {
+                        HStack {
+                            Text("From the Pairing Link")
+                            Spacer()
+                            if linkProbe == nil {
+                                ProgressView().controlSize(.mini)
+                            }
+                        }
                     }
-                } header: {
-                    HStack {
-                        Text("On This Network")
-                        Spacer()
-                        if browser.status == .browsing {
-                            ProgressView().controlSize(.mini)
+                } else {
+                    Section {
+                        DiscoveredServerList(browser: browser, pickedID: pickedServerID,
+                                             existingNode: existingNode(for:)) { server in
+                            pick(server)
+                        }
+                    } header: {
+                        HStack {
+                            Text("On This Network")
+                            Spacer()
+                            if browser.status == .browsing {
+                                ProgressView().controlSize(.mini)
+                            }
                         }
                     }
                 }
@@ -99,8 +124,18 @@ struct AddNodeSheet: View {
                     .disabled(validation.endpoint == nil)
             }
         }
-        .onAppear { browser.start() }
+        .onAppear { if link == nil { browser.start() } }
         .onDisappear { browser.stop() }
+        .task(id: link) {
+            // Probe the link's endpoints with its server key and prefill the best verified one.
+            guard let link else { return }
+            let found = await link.probe()
+            linkProbe = found
+            if let best = found.chosen?.candidate.endpoint,
+               address.isEmpty || address == link.endpoints.first?.description {
+                address = best.description
+            }
+        }
         .onChange(of: address) { _, text in
             // Typing over a picked server's address makes it a manual entry.
             if let picked = pickedServer, picked.endpoint?.description != text { pickedServerID = nil }
@@ -154,7 +189,7 @@ struct AddNodeSheet: View {
         guard let endpoint = NodeEndpoint(parsing: text), !endpoint.host.contains(where: \.isWhitespace) else {
             return (nil, "Enter a host name or IP address, optionally with a port, like vh-storage.local:36972.")
         }
-        if let existing = model.existingNode(at: endpoint, serverNodeID: pickedServer?.nodeID) {
+        if let existing = model.existingNode(at: endpoint, serverNodeID: pickedServer?.nodeID ?? link?.nodeID) {
             return (nil, "This Mac already has \(endpoint.description) as “\(existing.displayName)”.")
         }
         return (endpoint, nil)
@@ -165,9 +200,54 @@ struct AddNodeSheet: View {
         let displayName = name.isEmpty ? (pickedServer?.displayName ?? endpoint.host) : name
         // A name filled in from discovery is the server's own; only a typed one is kept over the paired server's.
         let typed = !name.isEmpty && !browser.servers.contains { $0.displayName == name }
-        guard let node = model.addNode(displayName: displayName, endpoint: endpoint, namedByUser: typed) else { return }
+        let hint = link.map { AppModel.PairingHint(serverSPKISHA256: $0.serverSPKISHA256, serverNodeID: $0.nodeID) }
+        guard let node = model.addNode(displayName: displayName, endpoint: endpoint, namedByUser: typed,
+                                       endpoints: link?.advertisedEndpoints ?? [], hint: hint)
+        else { return }
         browser.stop()
         withAnimation(.snappy) { step = .pair(node.id) }
+    }
+}
+
+// MARK: - Pairing link
+
+/// What a pairing link carries and what probing its endpoints showed, in plain words.
+private struct PairLinkSummary: View {
+    var link: PairLink
+    var probe: EndpointSelection?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let probe {
+                if let chosen = probe.chosen {
+                    Label(verifiedLine(chosen), systemImage: "checkmark.seal")
+                        .foregroundStyle(StatusTone.ok.color)
+                } else if probe.reports.contains(where: { $0.outcome == .identityMismatch }) {
+                    Label("A different server answered at the link's addresses. Pairing with it will be refused.",
+                          systemImage: "exclamationmark.shield")
+                        .foregroundStyle(StatusTone.danger.color)
+                } else {
+                    Label("None of the link's addresses answered from this Mac. Check the address below.",
+                          systemImage: "wifi.exclamationmark")
+                        .foregroundStyle(StatusTone.warn.color)
+                }
+            } else {
+                Text("Checking the link's \(link.endpoints.count) address\(link.endpoints.count == 1 ? "" : "es")…")
+                    .foregroundStyle(.fgMuted)
+            }
+            Text(link.serverSPKISHA256 == nil
+                 ? "The link names no server key, so compare the code carefully when pairing."
+                 : "Pairing will only talk to the server key the link names (\(link.serverSPKISHA256?.shortFingerprint ?? "")). The code still decides.")
+                .font(.caption)
+                .foregroundStyle(.fgSubtle)
+        }
+        .font(.callout)
+        .padding(.vertical, 2)
+    }
+
+    private func verifiedLine(_ chosen: EndpointSelection.Report) -> String {
+        let key = link.serverSPKISHA256 == nil ? "A Vaulthalla server answered" : "The server's key checks out"
+        return "\(key) at \(chosen.candidate.endpoint.description) (\(chosen.transportClass.displayName))."
     }
 }
 

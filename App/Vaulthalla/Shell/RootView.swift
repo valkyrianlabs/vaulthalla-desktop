@@ -35,6 +35,11 @@ struct RootView: View {
         } message: {
             Text(model.errorMessage ?? "")
         }
+        .alert("Can't use this pairing link", isPresented: pairLinkBinding) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.pairLinkProblem ?? "")
+        }
         .alert("Rename Node", isPresented: renameBinding, presenting: model.nodePendingRename) { node in
             TextField("Name", text: $renameText)
             Button("Rename") { model.rename(node.id, to: renameText) }
@@ -86,6 +91,13 @@ struct RootView: View {
         Binding(
             get: { model.errorMessage != nil },
             set: { if !$0 { model.errorMessage = nil } }
+        )
+    }
+
+    private var pairLinkBinding: Binding<Bool> {
+        Binding(
+            get: { model.pairLinkProblem != nil },
+            set: { if !$0 { model.pairLinkProblem = nil } }
         )
     }
 }

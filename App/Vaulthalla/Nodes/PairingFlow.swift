@@ -89,8 +89,11 @@ final class PairingFlow {
             }
             guard let self, !Task.isCancelled else { return }
             backend = identity.backend
-            let client = PairingClient(identity: identity, configuration: .init(
-                endpoint: node.endpoint, deviceName: Self.deviceName, appVersion: Self.appVersion))
+            var configuration = PairingClient.Configuration(
+                endpoint: node.endpoint, deviceName: Self.deviceName, appVersion: Self.appVersion)
+            // A pairing link's server key: any other is refused before anything is sent (the code still decides).
+            configuration.expectedServerSPKI = model?.pairingHint(for: node.id)?.serverSPKISHA256
+            let client = PairingClient(identity: identity, configuration: configuration)
             self.client = client
             for await state in client.start() {
                 switch state {
@@ -125,7 +128,7 @@ final class PairingFlow {
 }
 
 #if DEBUG
-/// `-VHDebugPairing awaiting|connecting|approved|denied|expired|noWindow|unreachable|changed|incompatible` shows a
+/// `-VHDebugPairing awaiting|connecting|approved|denied|expired|noWindow|unreachable|changed|unexpected|incompatible` shows a
 /// pairing sheet in that phase without contacting anything (for `DebugSnapshot`).
 enum DebugPairing {
     static func phase() -> PairingFlow.Phase? {
@@ -138,6 +141,7 @@ enum DebugPairing {
         case "noWindow": return .failed(.noPairingWindow)
         case "unreachable": return .failed(.unreachable(endpoint: "vh-storage.local:36972"))
         case "changed": return .failed(.serverIdentityChanged)
+        case "unexpected": return .failed(.unexpectedServerIdentity)
         case "incompatible":
             return .failed(.incompatible(ProtocolMismatch(serverMin: 2, serverMax: 3, serverVersion: "2.0.0")))
         default:
