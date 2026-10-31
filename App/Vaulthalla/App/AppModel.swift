@@ -44,6 +44,8 @@ final class AppModel {
     /// What each node's session negotiated with `meta.hello` (docs/architecture.md §3, "Protocol negotiation").
     /// Absent: not settled yet, support unknown.
     private(set) var nodeProtocols: [NodeID: NodeProtocol] = [:]
+    /// The route each node's session takes (endpoint, class, RTT, the selection behind it), as it last reported.
+    private(set) var routes: [NodeID: NodeRoute] = [:]
     /// Whether this app manages the device keys and the node list (it holds the credential lease) or only reads
     /// what another process manages (docs/architecture.md §3, "Credential ownership").
     private(set) var credentialRole: CredentialRole
@@ -160,6 +162,7 @@ final class AppModel {
         queryStores[id] = nil
         keyBackends[id] = nil
         nodeProtocols[id] = nil
+        routes[id] = nil
         nodesNeedingPairing.remove(id)
         // The key was filed under this node's local id; nothing else can use it.
         if let keys = deviceKeys, isCredentialOwner {
@@ -195,6 +198,7 @@ final class AppModel {
         offlineReasons[id] = nil
         queryStores[id] = nil
         nodeProtocols[id] = nil
+        routes[id] = nil
         nodesNeedingPairing.remove(id)
     }
 
@@ -276,6 +280,9 @@ final class AppModel {
         for id in nodeProtocols.keys where !live.contains(id) {
             nodeProtocols[id] = nil
         }
+        for id in routes.keys where !live.contains(id) {
+            routes[id] = nil
+        }
     }
 
     private func handle(_ event: NodeSession.Event, from id: NodeID) {
@@ -309,7 +316,23 @@ final class AppModel {
         case .protocolNegotiated(let settled):
             nodeProtocols[id] = settled
             queryStores[id]?.protocolChanged(settled)
+        case .route(let route):
+            routes[id] = route
+        case .endpointsChanged(let endpoints, let advertisedAt, let lastGood):
+            // Routing hints from an owner session: saving them doesn't restart it (they aren't part of its basis).
+            guard var node = node(withID: id),
+                  node.endpoints != endpoints || node.lastAdvertisedAt != advertisedAt || node.lastGood != lastGood
+            else { return }
+            node.endpoints = endpoints
+            node.lastAdvertisedAt = advertisedAt
+            node.lastGood = lastGood
+            edit { try store.update(node) }
         }
+    }
+
+    /// The route the node's session takes, as it last reported; nil before its first selection.
+    func route(for id: NodeID) -> NodeRoute? {
+        routes[id]
     }
 
     // MARK: - Protocol

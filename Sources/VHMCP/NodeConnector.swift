@@ -104,9 +104,20 @@ public struct KeychainNodeConnector: NodeMCPConnector {
     }
     private let presented = Presented()
 
+    /// Each node's endpoint selection (the server's transfer protocol §2), made with the saved credentials and reused
+    /// for a few minutes. Read-only: the bridge never saves routes; the app does.
+    public let routes: RouteCache
+    /// Nodes a transport was made for: connecting again means the last one failed, so the route is selected again.
+    private let connected = Connected()
+
+    private final class Connected: Sendable {
+        let ids = Mutex<Set<NodeID>>([])
+    }
+
     /// `registry`: where a reconnect after a refusal re-reads the record (nil: the bridge's record is used as given).
-    public init(keys: DeviceKeys, registry: NodeStore? = nil) {
+    public init(keys: DeviceKeys, registry: NodeStore? = nil, routes: RouteCache = RouteCache()) {
         self.reader = CredentialReader(registry: registry, keys: keys)
+        self.routes = routes
     }
 
     public func connect(_ node: Node, idleTimeout: Duration) async throws(NodeConnectFailure)
@@ -118,7 +129,13 @@ public struct KeychainNodeConnector: NodeMCPConnector {
         } catch {
             throw NodeConnectFailure(error)
         }
-        return try transport(credentials, idleTimeout: idleTimeout)
+        if !connected.ids.withLock({ $0.insert(node.id).inserted }) { await routes.invalidate(node.id) }
+        return try transport(await routed(credentials), idleTimeout: idleTimeout)
+    }
+
+    /// `credentials` over the endpoint the selection chose (the configured one when nothing proved the pin).
+    private func routed(_ credentials: NodeCredentials) async -> NodeCredentials {
+        credentials.routed(to: await routes.endpoint(for: credentials))
     }
 
     public func reconnect(afterRefusalOf node: Node, idleTimeout: Duration) async throws(NodeConnectFailure)
@@ -131,13 +148,13 @@ public struct KeychainNodeConnector: NodeMCPConnector {
         } catch {
             throw NodeConnectFailure(error)
         }
-        return (try transport(credentials, idleTimeout: idleTimeout), credentials.node)
+        return (try transport(await routed(credentials), idleTimeout: idleTimeout), credentials.node)
     }
 
     /// One ws connection with the saved credentials and `meta.hello` (``CredentialReader/negotiate(_:timeout:)``).
     public func support(for capability: WsCapability, of node: Node) async -> ProtocolSupport {
-        guard let credentials = try? await reader.load(node),
-              let settled = await reader.negotiate(credentials)
+        guard let saved = try? await reader.load(node),
+              let settled = await reader.negotiate(await routed(saved))
         else { return .unknown }
         return settled.supports(capability: capability)
     }

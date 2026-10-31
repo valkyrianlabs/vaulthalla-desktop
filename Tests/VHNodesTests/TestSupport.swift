@@ -229,7 +229,19 @@ enum Fast {
         configuration.reconnect = .init(base: .milliseconds(20), cap: .milliseconds(80))
         configuration.connectTimeout = .seconds(2)
         configuration.requestTimeout = .seconds(2)
+        configuration.routes = routes()
         return configuration
+    }
+
+    /// Endpoint selection without Bonjour or path monitoring, with short probes and a short floor between selections.
+    static func routes() -> RouteSettings {
+        var routes = RouteSettings()
+        routes.bonjour = nil
+        routes.pathChanges = nil
+        routes.selector.probeTimeout = .seconds(1)
+        routes.selector.overallTimeout = .seconds(2)
+        routes.schedule.minimumInterval = .milliseconds(100)
+        return routes
     }
 
     static func pairing(port: UInt16) -> PairingClient.Configuration {

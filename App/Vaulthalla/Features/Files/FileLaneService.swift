@@ -17,15 +17,17 @@ nonisolated protocol FileLaneService: Sendable {
         async throws(TransferError) -> Set<String>
 }
 
-/// The node's lanes as its current session reaches them: this Mac's identity for the node and the pinned server key.
-/// The client is made on first use and again after a key rotation (the old identity stops being accepted).
+/// The node's lanes as its current session reaches them: the endpoint the session selected, this Mac's identity for
+/// the node and the pinned server key. The client is made on first use and again after a key rotation (the old
+/// identity stops being accepted) or when a new selection moved the endpoint. A connection failure on a lane asks the
+/// session to select again.
 ///
 /// Each lane is checked against what the node announced in `meta.hello` (`device.lanes.*`): a node known not to
 /// serve it isn't asked (``TransferError/laneUnavailable(_:)``), and a 404 there means the lane, not the item. On a
 /// legacy node (nothing announced) a 404 stays "this item no longer exists", as before.
 actor NodeFileLanes: FileLaneService {
     private let session: @MainActor @Sendable () -> NodeSession?
-    private var cached: (identity: String, lanes: VaultLanes)?
+    private var cached: (identity: String, endpoint: NodeEndpoint, lanes: VaultLanes)?
 
     init(session: @escaping @MainActor @Sendable () -> NodeSession?) {
         self.session = session
@@ -44,11 +46,13 @@ actor NodeFileLanes: FileLaneService {
         if let mismatch = await session.nodeProtocol?.mismatch { throw .protocolUnsupported(mismatch.message) }
         let support = await session.supports(capability: lane.capability)
         if support == .no { throw .laneUnavailable(lane) }
-        if let cached, cached.identity == identity { return (cached.lanes, support) }
+        if let cached, cached.identity == identity, cached.endpoint == configuration.endpoint {
+            return (cached.lanes, support)
+        }
         cached?.lanes.invalidate()
         do {
             let made = try VaultLanes(configuration: configuration)
-            cached = (identity, made)
+            cached = (identity, configuration.endpoint, made)
             return (made, support)
         } catch {
             throw .connection("the node's address can't be used")
@@ -63,6 +67,7 @@ actor NodeFileLanes: FileLaneService {
         do throws(TransferError) {
             return try await body(lanes)
         } catch {
+            if case .connection = error { await session()?.laneConnectionFailed() }
             throw error.interpreted(for: lane, support: support)
         }
     }

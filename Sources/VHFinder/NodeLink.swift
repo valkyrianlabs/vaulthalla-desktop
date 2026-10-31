@@ -60,7 +60,8 @@ public actor NodeLink: ReplicaLink {
     private var epoch = 0
     /// Set once the node can't be acted for: every later call fails closed with it.
     private var failure: FinderError?
-    private var lanes: (client: VaultLanes, deviceID: String)?
+    /// The lanes, for the identity and the endpoint they were made with (a new selection may move the endpoint).
+    private var lanes: (client: VaultLanes, deviceID: String, endpoint: NodeEndpoint)?
 
     public init(nodeID: NodeID, reader: CredentialReader, configuration: Configuration = Configuration()) {
         self.nodeID = nodeID
@@ -174,7 +175,8 @@ public actor NodeLink: ReplicaLink {
         case .pairingRequired:
             let reason = if case .offline(let why) = status { why } else { "Pair this Mac with the node again." }
             _ = fail(.notAuthenticated(reason))
-        case .identity, .recordChanged, .protocolNegotiated:
+        case .identity, .recordChanged, .protocolNegotiated, .route, .endpointsChanged:
+            // A consumer: routes are the session's to choose and never saved from here.
             // ws calls on an incompatible node are refused by the session itself; lanes check it in `withLanes`.
             break
         }
@@ -204,6 +206,7 @@ public actor NodeLink: ReplicaLink {
         } catch .forbidden {
             // The owner may have rotated the key since the lanes were made: reload, and try once more.
         } catch {
+            if case .connection = error { await session?.laneConnectionFailed() }
             throw FinderError(error, during: operation)
         }
         let fresh = try await reloadedLanes(refusing: first.deviceID)
@@ -228,10 +231,12 @@ public actor NodeLink: ReplicaLink {
         guard let deviceID = await session.laneIdentityID,
               let configuration = await session.laneConfiguration(timeout: self.configuration.laneTimeout)
         else { throw .serverUnreachable("The node's session has no identity yet.") }
-        if let lanes, lanes.deviceID == deviceID { return lanes }
+        if let lanes, lanes.deviceID == deviceID, lanes.endpoint == configuration.endpoint {
+            return (lanes.client, deviceID)
+        }
         let made = try makeLanes(configuration)
         lanes?.client.invalidate()
-        lanes = (made, deviceID)
+        lanes = (made, deviceID, configuration.endpoint)
         return (made, deviceID)
     }
 
@@ -246,15 +251,18 @@ public actor NodeLink: ReplicaLink {
         } catch {
             throw fail(FinderError(error))
         }
-        let credentials: NodeCredentials
+        var credentials: NodeCredentials
         do throws(CredentialFailure) {
             credentials = try await reader.reload(record, refusing: deviceID)
         } catch {
             throw fail(FinderError(error))
         }
-        let made = try makeLanes(credentials.laneConfiguration(timeout: configuration.laneTimeout))
+        // The endpoint the session selected (read-only: the extension never saves routes).
+        credentials = credentials.routed(to: await session?.activeEndpoint)
+        let lane = credentials.laneConfiguration(timeout: configuration.laneTimeout)
+        let made = try makeLanes(lane)
         lanes?.client.invalidate()
-        lanes = (made, credentials.identity.deviceID)
+        lanes = (made, credentials.identity.deviceID, lane.endpoint)
         return (made, credentials)
     }
 

@@ -9,10 +9,22 @@ import VHContract
 public struct NodeCredentials: Sendable {
     public let node: Node
     public let identity: DeviceIdentity
+    /// The endpoint a selection chose (``RouteCache``, a session's ``NodeSession/activeEndpoint``); nil: the
+    /// configured one.
+    public var route: NodeEndpoint?
 
-    public init(node: Node, identity: DeviceIdentity) {
+    public init(node: Node, identity: DeviceIdentity, route: NodeEndpoint? = nil) {
         self.node = node
         self.identity = identity
+        self.route = route
+    }
+
+    /// Where these credentials reach the node: the selected endpoint, else the configured one.
+    public var endpoint: NodeEndpoint { route ?? node.endpoint }
+
+    /// The same credentials over `endpoint`.
+    public func routed(to endpoint: NodeEndpoint?) -> NodeCredentials {
+        NodeCredentials(node: node, identity: identity, route: endpoint)
     }
 
     /// The pinned server key (empty unless the record is paired).
@@ -21,10 +33,10 @@ public struct NodeCredentials: Sendable {
         return Data()
     }
 
-    /// The device listener's HTTP lanes with these credentials: this identity, the pinned server key and the
-    /// announced next one.
+    /// The device listener's HTTP lanes with these credentials: the endpoint (``endpoint``), this identity, the pinned
+    /// server key and the announced next one.
     public func laneConfiguration(timeout: Duration = .seconds(30)) -> DeviceHTTPClient.Configuration {
-        DeviceHTTPClient.Configuration(endpoint: node.endpoint, identity: identity.secIdentity, serverSPKIPin: serverPin,
+        DeviceHTTPClient.Configuration(endpoint: endpoint, identity: identity.secIdentity, serverSPKIPin: serverPin,
                                        nextServerSPKIPin: node.nextServerSPKISHA256, timeout: timeout)
     }
 }
@@ -223,7 +235,7 @@ public struct CredentialReader: Sendable {
         let client: WsClient
         do {
             client = try WsClient(configuration: .init(
-                endpoint: credentials.node.endpoint,
+                endpoint: credentials.endpoint,
                 security: .mutualTLS(identity: credentials.identity.secIdentity, serverSPKIPin: credentials.serverPin,
                                      onServerSPKI: { _ in }),
                 connectTimeout: timeout))
@@ -240,12 +252,12 @@ public struct CredentialReader: Sendable {
         let client: WsClient
         do {
             client = try WsClient(configuration: .init(
-                endpoint: credentials.node.endpoint,
+                endpoint: credentials.endpoint,
                 security: .mutualTLS(identity: credentials.identity.secIdentity, serverSPKIPin: pin,
                                      onServerSPKI: { _ in }),
                 connectTimeout: timeout))
         } catch {
-            return .inconclusive("The node's address \(credentials.node.endpoint) can't be used.")
+            return .inconclusive("The node's address \(credentials.endpoint) can't be used.")
         }
         defer { Task { await client.close() } }
         do {
