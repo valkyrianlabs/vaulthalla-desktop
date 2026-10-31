@@ -26,6 +26,13 @@ struct ConnectionPanel: View {
                              systemImage: "arrow.down.circle", hint: rateHint(stats?.throughputDown, measured: testDownload))
                 }
                 DefinitionList(items: details(route), monospacedValues: ["Endpoint", "Address reached"], termWidth: 130)
+                Toggle(isOn: tuning) {
+                    Text("Automatic tuning")
+                    Text("Adapts the part size and the parts sent at once to the measured link. Off, uploads send "
+                         + "64 MiB parts, two at a time.")
+                }
+                .toggleStyle(.switch)
+                .controlSize(.small)
                 if let route, let selection = route.selection {
                     WhyNotBetter(route: route, selection: selection)
                 }
@@ -43,12 +50,18 @@ struct ConnectionPanel: View {
                 Button("Test Connection") { model.testConnection(for: node.id) }
                     .controlSize(.small)
                     .disabled(!model.canTestConnection(for: node.id))
-                    .help("Probe every address of the node again and use the best one that proves its key")
+                    .help("Probe every address of the node again, use the best one that proves its key, and measure "
+                          + "throughput both ways where the node serves the calibration lanes")
             }
         }
     }
 
     private var stats: TransferStats? { model.transferStats[node.id] }
+
+    private var tuning: Binding<Bool> {
+        Binding(get: { model.automaticTuning(for: node.id) },
+                set: { model.setAutomaticTuning($0, for: node.id) })
+    }
 
     private var testResult: ConnectionTestResult? {
         if case .finished(let result)? = model.connectionTests[node.id] { return result }
@@ -95,11 +108,17 @@ struct ConnectionPanel: View {
     }
 
     private var transferItems: [(term: String, value: String)] {
-        [
+        var items: [(term: String, value: String)] = [
             ("Part size", stats?.partBytes.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .binary) } ?? "—"),
-            ("Parts in flight", stats?.partsInFlight.map(String.init) ?? "—"),
-            ("Auto-tuning", stats?.tuning.map { $0 ? "On" : "Off" } ?? "—"),
+            ("Parts in flight", ConnectionWords.parts(inFlight: stats?.partsInFlight, allowed: stats?.concurrency)),
         ]
+        if let stats {
+            if let source = stats.source { items.append(("Tuned from", ConnectionWords.source(source))) }
+            if let serverBound = stats.serverBound {
+                items.append(("Limited by", serverBound ? "the server's disk" : "the network"))
+            }
+        }
+        return items
     }
 }
 
@@ -194,6 +213,22 @@ enum ConnectionWords {
     static func milliseconds(_ duration: Duration) -> String {
         let ms = Double(duration.components.seconds) * 1000 + Double(duration.components.attoseconds) / 1e15
         return ms < 10 ? String(format: "%.1f ms", ms) : String(format: "%.0f ms", ms)
+    }
+
+    /// "2 of 4 allowed", "2", or "—".
+    static func parts(inFlight: Int?, allowed: Int?) -> String {
+        guard let inFlight else { return "—" }
+        guard let allowed else { return String(inFlight) }
+        return "\(inFlight) of \(allowed) allowed"
+    }
+
+    static func source(_ source: TransferStats.EstimateSource) -> String {
+        switch source {
+        case .defaults: "starting values (nothing measured yet)"
+        case .cached: "the last transfer over this kind of route"
+        case .calibrated: "a calibration"
+        case .measured: "this transfer's parts"
+        }
     }
 
     /// "12.4 MB/s", or "—" when nothing reported it.

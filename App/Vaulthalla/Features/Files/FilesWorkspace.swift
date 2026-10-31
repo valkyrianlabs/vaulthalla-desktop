@@ -132,13 +132,9 @@ enum FilesWorkspaces {
         if let existing = byNode[node.id] { return existing }
         let lanes: any FileLaneService
         #if DEBUG
-        if model.sessions == nil {
-            lanes = PreviewFileLanes()
-        } else {
-            lanes = NodeFileLanes(nodeID: node.id) { [weak model] in model?.sessions?.session(for: node.id) }
-        }
+        lanes = model.sessions == nil ? PreviewFileLanes() : model.fileLanes(for: node.id)
         #else
-        lanes = NodeFileLanes(nodeID: node.id) { [weak model] in model?.sessions?.session(for: node.id) }
+        lanes = model.fileLanes(for: node.id)
         #endif
         let made = FilesWorkspace(nodeID: node.id, lanes: lanes)
         byNode[node.id] = made

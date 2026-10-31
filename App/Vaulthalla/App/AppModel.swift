@@ -74,6 +74,14 @@ final class AppModel {
     /// Where transfer code reports `TransferStats`.
     @ObservationIgnored let transferStatsBoard: TransferStatsBoard
     @ObservationIgnored private var statsWatch: Task<Void, Never>?
+    /// Each node's HTTP lanes (the Files section, Test Connection), made on first use and kept while the node is
+    /// listed, with the feed that reports their transfer monitor to `transferStatsBoard`.
+    @ObservationIgnored private var laneServices: [NodeID: NodeFileLanes] = [:]
+    @ObservationIgnored private var statsFeeds: [NodeID: TransferStatsFeed] = [:]
+    /// Nodes whose transfers run with automatic tuning off (the Connection panel's switch): fixed part size and
+    /// concurrency. Saved in UserDefaults under `transferTuningKey` (node ids only, nothing secret).
+    private(set) var tuningDisabled: Set<NodeID> = AppModel.savedTuningDisabled()
+    static let transferTuningKey = "transfers.automaticTuningOff"
     /// Whether this app manages the device keys and the node list (it holds the credential lease) or only reads
     /// what another process manages (docs/architecture.md §3, "Credential ownership").
     private(set) var credentialRole: CredentialRole
@@ -138,6 +146,55 @@ final class AppModel {
         Task { [weak self] in
             let result = await test(session)
             self?.connectionTests[id] = .finished(result)
+        }
+    }
+
+    // MARK: - Transfers
+
+    /// The node's HTTP lanes, made on first use: its transfer monitor starts with the node's tuning switch and its
+    /// route's class, and reports to `transferStatsBoard` from then on.
+    func fileLanes(for id: NodeID) -> NodeFileLanes {
+        if let existing = laneServices[id] { return existing }
+        let made = NodeFileLanes(nodeID: id) { [weak self] in self?.sessions?.session(for: id) }
+        laneServices[id] = made
+        if let monitor = made.transferMonitor {
+            monitor.setTuningEnabled(!tuningDisabled.contains(id))
+            if let route = routes[id] { monitor.setEndpointClass(TransferEndpointClass(route.transportClass)) }
+            statsFeeds[id] = TransferStatsFeed(monitor: monitor, node: id, board: transferStatsBoard)
+        }
+        return made
+    }
+
+    private func dropFileLanes(for id: NodeID) {
+        statsFeeds.removeValue(forKey: id)?.stop()
+        laneServices[id] = nil
+    }
+
+    /// Whether the node's transfers adapt part size and concurrency to the measured link.
+    func automaticTuning(for id: NodeID) -> Bool {
+        !tuningDisabled.contains(id)
+    }
+
+    /// The Connection panel's switch: applies to the node's transfers now (parts already sent are unaffected) and
+    /// is remembered for the next launch.
+    func setAutomaticTuning(_ enabled: Bool, for id: NodeID) {
+        guard enabled != automaticTuning(for: id) else { return }
+        if enabled { tuningDisabled.remove(id) } else { tuningDisabled.insert(id) }
+        saveTuningDisabled()
+        laneServices[id]?.transferMonitor?.setTuningEnabled(enabled)
+    }
+
+    private static func savedTuningDisabled() -> Set<NodeID> {
+        let saved = UserDefaults.standard.stringArray(forKey: transferTuningKey) ?? []
+        return Set(saved.map { NodeID(rawValue: $0) })
+    }
+
+    private func saveTuningDisabled() {
+        let ids = tuningDisabled.map(\.rawValue).sorted()
+        if ids.isEmpty {
+            UserDefaults.standard.removeObject(forKey: Self.transferTuningKey)
+        } else {
+            UserDefaults.standard.set(ids, forKey: Self.transferTuningKey)
         }
     }
 
@@ -226,6 +283,8 @@ final class AppModel {
         pairingHints[id] = nil
         connectionTests[id] = nil
         transferStats[id] = nil
+        dropFileLanes(for: id)
+        if tuningDisabled.remove(id) != nil { saveTuningDisabled() }
         nodesNeedingPairing.remove(id)
         // The key was filed under this node's local id; nothing else can use it.
         if let keys = deviceKeys, isCredentialOwner {
@@ -382,6 +441,8 @@ final class AppModel {
             queryStores[id]?.protocolChanged(settled)
         case .route(let route):
             routes[id] = route
+            // Learning starts over when the class of route changes (a LAN estimate says nothing about a WAN route).
+            laneServices[id]?.transferMonitor?.setEndpointClass(TransferEndpointClass(route.transportClass))
         case .endpointsChanged(let endpoints, let advertisedAt, let lastGood):
             // Routing hints from an owner session: saving them doesn't restart it (they aren't part of its basis).
             guard var node = node(withID: id),

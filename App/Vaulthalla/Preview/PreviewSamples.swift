@@ -97,7 +97,8 @@ enum PreviewSamples {
         model.usePreviewData(for: nodes[1].id, transport: PreviewTransport(.full), negotiated: negotiated)
         model.usePreviewData(for: nodes[3].id, transport: PreviewTransport(.restricted), negotiated: .legacy)
         model.usePreviewRoute(homeLabRoute, stats: TransferStats(
-            throughputUp: 41_200_000, throughputDown: 87_500_000, partBytes: 64 << 20, partsInFlight: 4, tuning: true),
+            throughputUp: 41_200_000, throughputDown: 87_500_000, partBytes: 64 << 20, partsInFlight: 3, tuning: true,
+            concurrency: 4, serverBound: false, source: .measured),
             for: nodes[1].id)
         model.usePreviewRoute(studioRoute, stats: nil, for: nodes[3].id)
         RecoveryKeysPreviewData.install(on: model)
