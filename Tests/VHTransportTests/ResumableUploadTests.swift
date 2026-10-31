@@ -287,6 +287,25 @@ import VHCore
         #expect(outcome.committed.keys.sorted() == ["/fresh.txt"])
     }
 
+    /// Uploads to one node share its tuner (one part at a time here): both still finish, side by side.
+    @Test func uploadsSideBySideShareTheTunerAndBothFinish() async throws {
+        let fixture = try await Self.start()
+        defer { fixture.stop() }
+        var oneAtATime = Self.smallParts
+        oneAtATime.fixedConcurrency = 1
+        let lanes = try Self.lanes(port: fixture.server.port, tuning: oneAtATime)
+        defer { lanes.invalidate() }
+        let a = try fixture.file("a.bin", count: 3 * Self.mib, seed: 3)
+        let b = try fixture.file("b.bin", count: 3 * Self.mib, seed: 4)
+        async let first = lanes.upload([.init(source: a, relativePath: "a.bin", size: Int64(3 * Self.mib))],
+                                       vaultID: 1, into: "/") { _ in }
+        async let second = lanes.upload([.init(source: b, relativePath: "b.bin", size: Int64(3 * Self.mib))],
+                                        vaultID: 1, into: "/") { _ in }
+        _ = try await (first, second)
+        #expect(fixture.fake.data("/a.bin") == (try Data(contentsOf: a)))
+        #expect(fixture.fake.data("/b.bin") == (try Data(contentsOf: b)))
+    }
+
     // MARK: Resume, cancel
 
     /// The app quits mid-upload (suspended): the session and the record stay; the next run asks the node what it holds

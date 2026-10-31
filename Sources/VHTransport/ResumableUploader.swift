@@ -442,8 +442,11 @@ public struct ResumableUploader: Sendable {
                 }
             }
             func fill() {
+                // The tuner's limits count every upload to the node; a session with nothing in flight always sends one
+                // part, so uploads running side by side each make progress.
                 while failure == nil, !Task.isCancelled, inFlight < run.limits.maxInFlight,
-                      let (part, file) = run.next(partBytes: monitor.partBytes, admit: { monitor.admit(nextPart: $0) }) {
+                      let (part, file) = run.next(partBytes: monitor.partBytes,
+                                                  admit: { inFlight == 0 || monitor.admit(nextPart: $0) }) {
                     launch(part, file: file)
                 }
             }
@@ -511,6 +514,11 @@ public struct ResumableUploader: Sendable {
                 guard let ack = WireUpload.decode(WireUpload.Ack.self, answer.body),
                       ack.offset == part.range.lowerBound, ack.length == Int64(part.range.count)
                 else {
+                    // An answer for another range than was sent: ask the node what it holds.
+                    run.files[position].attempt(part.range.lowerBound)
+                    guard run.files[position].attempts[part.range.lowerBound, default: 0] <= policy.partRetries else {
+                        throw .unexpectedAnswer("the server acknowledged another part than was sent")
+                    }
                     try await resync(&run)
                     return
                 }
