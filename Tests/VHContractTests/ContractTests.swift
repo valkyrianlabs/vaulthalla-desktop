@@ -148,8 +148,14 @@ private func vendoredContract() throws -> JSONValue {
 
     @Test func capabilitiesAndProtocolMatchTheVendoredDaemon() throws {
         // Every capability this build checks is one the daemon declares (a typo would read as "no" forever).
-        for capability in WsCapability.used {
+        for capability in WsCapability.used where !WsCapability.awaitingContract.contains(capability) {
             #expect(WsContract.capabilities[capability.rawValue] != nil, "\(capability) isn't in the contract")
+        }
+        // Spec capabilities the vendored contract doesn't have yet: once it does, they leave `awaitingContract`.
+        for capability in WsCapability.awaitingContract {
+            #expect(WsContract.capabilities[capability.rawValue] == nil,
+                    "\(capability) is in the contract now: remove it from WsCapability.awaitingContract")
+            #expect(WsCapability.used.contains(capability))
         }
         // The daemon this contract came from speaks a protocol this build speaks.
         let server = try #require(WsContract.serverProtocol)

@@ -54,12 +54,26 @@ public struct WsCapability: RawRepresentable, Hashable, Sendable, ExpressibleByS
     public static let deviceMCP: WsCapability = "device.mcp"
     /// `device.server.identity` answers the server key's SPKI hash on device sessions.
     public static let serverIdentity: WsCapability = "device.server.identity"
+    /// ws `device.endpoints` on Device sessions, and `endpoints` in `device.pairing.open` (the server's transfer
+    /// protocol §1).
+    public static let deviceEndpoints: WsCapability = "device.endpoints"
+    /// The device listener serves `/transfer/probe`, `/transfer/sink` and `/transfer/source` (calibration, §4).
+    public static let transferLane: WsCapability = "device.lanes.transfer"
+    /// `/upload/sessions`: resumable uploads (§3), on both listeners.
+    public static let resumableUpload: WsCapability = "http.upload.resumable"
 
-    /// The capabilities this build looks for (each one is in the vendored contract's `WsContract.capabilities`).
+    /// The capabilities this build looks for (each one is in the vendored contract's `WsContract.capabilities`, except
+    /// those in ``awaitingContract``).
     public static let used: [WsCapability] = [
         .unknownCommandCode, .fsEntryMetadataVersion, .previewLane, .downloadLane, .uploadLane, .deviceMCP,
-        .serverIdentity,
+        .serverIdentity, .deviceEndpoints, .transferLane, .resumableUpload,
     ]
+
+    /// Capabilities the normative spec (the server's `docs/reference/transfer-protocol.md`, server 1.20.0) defines
+    /// but the vendored contract doesn't declare yet: the server side hadn't published its regenerated contract when
+    /// they were added. Empty this once `tools/gen-contract.py --from` vendors a contract that has them (a test fails
+    /// as soon as it does).
+    public static let awaitingContract: Set<WsCapability> = [.deviceEndpoints, .transferLane, .resumableUpload]
 }
 
 /// Whether a node has a command or a capability: known either way once `meta.hello` answered, unknown on a legacy
