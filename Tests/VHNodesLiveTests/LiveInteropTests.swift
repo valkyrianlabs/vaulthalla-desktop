@@ -162,7 +162,7 @@ struct LiveInteropTests {
 
     /// One pairing attempt: opens the owner's window, waits for the code, lets `choose` pick the code to approve
     /// with from the three the daemon offers, approves through the CLI, and returns the client's final state.
-    private static func pair(_ identity: DeviceIdentity, endpoint: NodeEndpoint,
+    static func pair(_ identity: DeviceIdentity, endpoint: NodeEndpoint,
                              choose: (PairingCode, [String]) throws -> String) async throws -> PairingClient.State {
         try await LiveNode.vh(["device", "pair"])
         let client = PairingClient(identity: identity, configuration: .init(

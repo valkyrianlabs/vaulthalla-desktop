@@ -65,12 +65,12 @@ enum LiveNode {
     }
 
     /// Runs a command on the instance's box. Every argument is single-quoted for the remote shell.
-    private static func remote(_ command: [String]) async throws -> String {
+    static func remote(_ command: [String]) async throws -> String {
         let line = command.map { "'" + $0.replacingOccurrences(of: "'", with: "'\\''") + "'" }.joined(separator: " ")
         return try await run("/usr/bin/ssh", ["-o", "BatchMode=yes", "-o", "ConnectTimeout=10", sshDestination, line])
     }
 
-    private static func run(_ executable: String, _ arguments: [String]) async throws -> String {
+    static func run(_ executable: String, _ arguments: [String]) async throws -> String {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: executable)
         process.arguments = arguments
