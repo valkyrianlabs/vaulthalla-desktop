@@ -138,7 +138,7 @@ final class HTTPTestServer: Sendable {
     // MARK: Reading
 
     private func receive(_ connection: NWConnection, _ next: @escaping @Sendable (Data?) -> Void) {
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { content, _, done, error in
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 1 << 20) { content, _, done, error in
             guard error == nil else { connection.cancel(); return next(nil) }
             if done && content == nil { connection.cancel(); return next(nil) }
             next(content ?? Data())
