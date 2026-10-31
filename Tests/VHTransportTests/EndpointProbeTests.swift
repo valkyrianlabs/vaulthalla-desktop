@@ -18,7 +18,7 @@ import VHCore
         defer { server.stop() }
         let prober = TLSEndpointProber(identity: try WsClientTLSTests.identity(WsClientTLSTests.clientP12),
                                        pins: [Data(repeating: 9, count: 32), pin])
-        let result = await prober.probe(NodeEndpoint(host: "127.0.0.1", port: server.port), timeout: .seconds(3))
+        let result = await prober.probe(NodeEndpoint(host: "127.0.0.1", port: server.port), timeout: .seconds(15))
         #expect(result.outcome == .ok)
         #expect(result.matchedPin == pin)
         #expect(result.remoteAddress == "127.0.0.1")
@@ -30,7 +30,7 @@ import VHCore
         defer { server.stop() }
         let prober = TLSEndpointProber(identity: try WsClientTLSTests.identity(WsClientTLSTests.clientP12),
                                        pins: [Data(repeating: 7, count: 32)])
-        let result = await prober.probe(NodeEndpoint(host: "127.0.0.1", port: server.port), timeout: .seconds(3))
+        let result = await prober.probe(NodeEndpoint(host: "127.0.0.1", port: server.port), timeout: .seconds(15))
         #expect(result.outcome == .identityMismatch)
         #expect(result.matchedPin == nil)
     }
@@ -56,10 +56,10 @@ import VHCore
         defer { server.stop() }
         let endpoint = NodeEndpoint(host: "127.0.0.1", port: server.port)
         // A pairing link's expected key, or any key (trust on first use) when the link has none.
-        #expect(await TLSEndpointProber(identity: nil, pins: [pin]).probe(endpoint, timeout: .seconds(3)).outcome == .ok)
-        #expect(await TLSEndpointProber(identity: nil, pins: []).probe(endpoint, timeout: .seconds(3)).outcome == .ok)
+        #expect(await TLSEndpointProber(identity: nil, pins: [pin]).probe(endpoint, timeout: .seconds(15)).outcome == .ok)
+        #expect(await TLSEndpointProber(identity: nil, pins: []).probe(endpoint, timeout: .seconds(15)).outcome == .ok)
         let wrong = await TLSEndpointProber(identity: nil, pins: [Data(repeating: 1, count: 32)])
-            .probe(endpoint, timeout: .seconds(3))
+            .probe(endpoint, timeout: .seconds(15))
         #expect(wrong.outcome == .identityMismatch)
     }
 

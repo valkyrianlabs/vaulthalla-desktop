@@ -120,8 +120,10 @@ final class TestServer: Sendable {
         waiter?.continuation.resume(returning: received)
     }
 
-    /// The next frame the server receives, or nil if none arrives within `timeout`.
-    func next(within timeout: Duration = .seconds(2)) async -> Received? {
+    /// The next frame the server receives, or nil if none arrives within `timeout`. The default is generous: it only
+    /// delays a failure, and a loaded CI runner can take seconds to finish a TLS handshake. A test that expects no
+    /// frame passes its own short timeout.
+    func next(within timeout: Duration = .seconds(20)) async -> Received? {
         let id = UUID()
         return await withCheckedContinuation { continuation in
             let ready = inbox.withLock { inbox -> Received? in

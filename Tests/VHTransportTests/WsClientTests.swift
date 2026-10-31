@@ -9,13 +9,14 @@ private func client(for server: TestServer, tokens: TokenStore = TokenStore()) t
     try WsClient(
         configuration: .init(endpoint: NodeEndpoint(host: "127.0.0.1", port: server.port), security: .plaintext,
                              reconnect: ReconnectPolicy(base: .milliseconds(20), cap: .milliseconds(80)),
-                             connectTimeout: .seconds(2)),
+                             connectTimeout: .seconds(15)),
         tokens: tokens
     )
 }
 
-/// Waits (bounded) for the first element of `stream` that satisfies `predicate`.
-private func first<T: Sendable>(_ stream: AsyncStream<T>, within timeout: Duration = .seconds(2),
+/// Waits (bounded) for the first element of `stream` that satisfies `predicate`. Every caller expects one, so the
+/// bound only delays a failure: generous, for loaded CI runners.
+private func first<T: Sendable>(_ stream: AsyncStream<T>, within timeout: Duration = .seconds(20),
                                 where predicate: @escaping @Sendable (T) -> Bool) async -> T? {
     await withTaskGroup(of: T?.self) { group in
         group.addTask {
