@@ -451,6 +451,7 @@ public struct VaultLanes: Sendable {
                                 progress: @escaping @Sendable (UploadProgress) -> Void)
         async throws(TransferError) -> Set<String>
     {
+        await calibrateIfNeeded(totalBytes: record.totalBytes - record.storedBytes)
         let outcome = try await resumableUploader.upload(record, control: control, progress: progress)
         if let first = outcome.failed.first { throw first.error }
         return outcome.folders

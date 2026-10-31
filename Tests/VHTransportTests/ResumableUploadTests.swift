@@ -478,6 +478,42 @@ import VHCore
         #expect(fixture.server.requests.map(\.path) == ["/upload/content"])
     }
 
+    // MARK: Calibration
+
+    @Test func testConnectionMeasuresWithinItsBudget() async throws {
+        let fixture = try await Self.start()
+        defer { fixture.stop() }
+        var lanes = try Self.lanes(port: fixture.server.port, tuning: TransferTuner.Configuration())
+        defer { lanes.invalidate() }
+        let result = try await lanes.testConnection()
+        #expect(result.rtt != nil)
+        #expect((result.uploadBytesPerSecond ?? 0) > 0)
+        #expect((result.downloadBytesPerSecond ?? 0) > 0)
+        #expect(result.bytesSent <= 16 << 20 && result.bytesReceived <= 16 << 20)
+        #expect(result.suggestedConcurrency >= 1 && result.suggestedPartBytes >= 8 << 20)
+        let calibration = fixture.fake.state.withLock { $0.calibration }
+        #expect(calibration.probes == 3)
+        #expect(calibration.sunk == result.bytesSent)
+        #expect(lanes.monitor?.snapshot.source == .calibrated)
+        // Nothing was written: no session was opened.
+        #expect(fixture.fake.state.withLock { $0.sessions.isEmpty })
+
+        lanes.features.transferLanes = false
+        await #expect(throws: TransferError.laneUnavailable(.transfer)) { try await lanes.testConnection() }
+    }
+
+    @Test func calibrationRunsOnlyForLargeUploadsWithoutAnEstimate() async throws {
+        let fixture = try await Self.start()
+        defer { fixture.stop() }
+        let lanes = try Self.lanes(port: fixture.server.port, tuning: TransferTuner.Configuration())
+        defer { lanes.invalidate() }
+        #expect(await lanes.calibrateIfNeeded(totalBytes: 10 << 20) == false)
+        #expect(await lanes.calibrateIfNeeded(totalBytes: 1 << 30) == true)
+        // Fresh now: never again until the estimate expires or the route changes.
+        #expect(await lanes.calibrateIfNeeded(totalBytes: 1 << 30) == false)
+        #expect(fixture.fake.state.withLock { $0.calibration.probes } == 3)
+    }
+
     // MARK: Pieces
 
     @Test func errorCodesMapWithoutReadingWords() {
