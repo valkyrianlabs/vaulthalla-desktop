@@ -9,6 +9,26 @@ import Synchronization
 public struct VaultLanes: Sendable {
     public let transfers: DeviceTransferClient
     public var policy: Policy
+    /// What the node announced beyond the base lanes; the owner sets it from `meta.hello` before each use.
+    public var features = Features()
+    /// The node's transfer tuning and stats, shared by every lanes value made for it (nil: a private one per call).
+    public var monitor: TransferMonitor?
+    /// Where resumable uploads persist their progress (nil: in memory only, nothing survives a relaunch).
+    public var store: ResumableStore?
+
+    /// Optional lanes the node serves, each gated on its `meta.hello` capability.
+    public struct Features: Sendable, Hashable {
+        /// `http.upload.resumable`: `/upload/sessions` (resumable parts). Off, uploads use `/upload/session` and
+        /// `PUT /upload/content` exactly as before.
+        public var resumableUploads = false
+        /// `device.lanes.transfer`: `/transfer/probe|sink|source` for calibration and Test Connection.
+        public var transferLanes = false
+
+        public init(resumableUploads: Bool = false, transferLanes: Bool = false) {
+            self.resumableUploads = resumableUploads
+            self.transferLanes = transferLanes
+        }
+    }
 
     public struct Policy: Sendable {
         /// Files per upload session and bytes per session: a large drop becomes several sessions, as on the web.
@@ -20,6 +40,12 @@ public struct VaultLanes: Sendable {
         public var retries = 3
         /// The first retry's delay; each later one doubles it.
         public var backoff: Duration = .milliseconds(800)
+        /// Resumable uploads (``Features/resumableUploads``).
+        public var resumable = ResumableUploader.Policy()
+        /// A conditional write (``putContent(vaultID:path:from:precondition:mimeType:progress:)``) at most this large
+        /// stays one `PUT /upload/content` even on a node with resumable uploads: there is nothing to resume, and one
+        /// request beats three.
+        public var resumableThreshold: Int64 = 8 << 20
 
         public init() {}
     }
@@ -150,6 +176,7 @@ public struct VaultLanes: Sendable {
 
         // The validator of what is on disk, so the next attempt asks for the rest of the same file.
         let etag = Mutex<String?>(nil)
+        let progress = metered(progress)
         var attempt = 0
         while true {
             let resume = isDirectory ? nil : DeviceTransferClient.resumeState(of: partial, etag: etag.withLock { $0 })
@@ -239,13 +266,27 @@ public struct VaultLanes: Sendable {
         return sessions
     }
 
+    /// Uploads `files` into `directory`: in resumable parts when the node announced them
+    /// (``Features/resumableUploads``, ``uploadResumable(_:control:progress:)``), else the session flow below, unchanged.
+    @discardableResult
+    public func upload(_ files: [UploadFile], vaultID: Int64, into directory: String, control: UploadControl? = nil,
+                       progress: @escaping @Sendable (UploadProgress) -> Void)
+        async throws(TransferError) -> Set<String>
+    {
+        guard features.resumableUploads else {
+            return try await uploadSessions(files, vaultID: vaultID, into: directory, progress: progress)
+        }
+        let record = ResumableUploader.plan(files, vaultID: vaultID, into: directory)
+        return try await uploadResumable(record, control: control, progress: progress)
+    }
+
     /// Uploads `files` into `directory` of the vault. Each session is opened, filled (``Policy/concurrency`` files at
     /// a time) and finished; nothing is committed until its finish. A session that fails is discarded on the node
     /// (`DELETE`), and opened again from the start when the failure is worth a retry (a file the node saw fail can't be
     /// sent again within its session). Cancelling discards the open session too. Returns the folders that changed.
     @discardableResult
-    public func upload(_ files: [UploadFile], vaultID: Int64, into directory: String,
-                       progress: @escaping @Sendable (UploadProgress) -> Void)
+    public func uploadSessions(_ files: [UploadFile], vaultID: Int64, into directory: String,
+                               progress: @escaping @Sendable (UploadProgress) -> Void)
         async throws(TransferError) -> Set<String>
     {
         let target = VaultPathString.normalize(directory)
@@ -392,6 +433,40 @@ public struct VaultLanes: Sendable {
             var request = URLRequest(url: url)
             request.httpMethod = "DELETE"
             _ = try? await http.data(for: request)
+        }
+    }
+
+    // MARK: - Resumable uploads
+
+    /// The resumable uploader on these lanes (its tuning is ``monitor``, or a private one).
+    public var resumableUploader: ResumableUploader {
+        ResumableUploader(transfers: transfers, monitor: monitor ?? TransferMonitor(node: "unshared"), store: store,
+                          policy: policy.resumable)
+    }
+
+    /// Runs or resumes a resumable upload (``ResumableUploader``). Throws the first file's failure when any failed,
+    /// after the others finished; returns the folders that changed.
+    @discardableResult
+    public func uploadResumable(_ record: ResumableUploadRecord, control: UploadControl? = nil,
+                                progress: @escaping @Sendable (UploadProgress) -> Void)
+        async throws(TransferError) -> Set<String>
+    {
+        let outcome = try await resumableUploader.upload(record, control: control, progress: progress)
+        if let first = outcome.failed.first { throw first.error }
+        return outcome.folders
+    }
+
+    /// Wraps a download's progress so its bytes reach the monitor's meter.
+    private func metered(_ progress: @escaping @Sendable (Int64, Int64?) -> Void) -> @Sendable (Int64, Int64?) -> Void {
+        guard let monitor else { return progress }
+        let seen = Mutex<Int64>(0)
+        return { done, total in
+            let delta = seen.withLock { last in
+                defer { last = done }
+                return done > last ? done - last : 0
+            }
+            if delta > 0 { monitor.downloaded(delta) }
+            progress(done, total)
         }
     }
 
