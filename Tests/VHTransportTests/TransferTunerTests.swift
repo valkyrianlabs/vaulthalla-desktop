@@ -52,7 +52,7 @@ import Testing
                 serverTiming = .init(recv: duration * 1000, write: min(write, duration) * 1000, sync: 5)
             }
             for _ in 0..<parallel {
-                tuner.record(.init(bytes: bytes, start: now, end: now + duration, parallel: parallel,
+                tuner.record(.init(bytes: bytes, start: now, end: now + duration, parallel: Double(parallel),
                                    ackLatency: rtt + 0.005, serverTiming: serverTiming))
             }
             now += duration
@@ -74,7 +74,8 @@ import Testing
         #expect(used.filter { $0 > 2 }.count <= 4)
         #expect(used.suffix(10).filter { $0 > 2 }.count <= 1)
         #expect(abs((tuner.throughput ?? 0) - 2.5e6) / 2.5e6 < 0.1)
-        #expect(tuner.rtt.map { abs($0 - 0.085) < 0.01 } == true)
+        #expect(tuner.ackLatency.map { abs($0 - 0.085) < 0.01 } == true)
+        #expect(tuner.rtt == tuner.ackLatency)
     }
 
     @Test func aFastLANGetsLargePartsAndKeepsTwoStreams() {
@@ -146,7 +147,7 @@ import Testing
         // Queues fill (RTT 10 ms → 300 ms) without any more throughput: one part fewer per round of parts.
         var bloated = Self.wide
         bloated.rtt = 0.3
-        bloated.capacity = 160e6
+        bloated.capacity = 100e6
         let (_, used) = Self.trace(&tuner, bloated, rounds: 6, from: end)
         #expect(tuner.concurrency < 4)
         #expect(used.last ?? 4 < 4)

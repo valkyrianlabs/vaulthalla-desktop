@@ -149,6 +149,14 @@ public final class TransferMonitor: Sendable {
         var seeded = false
         var inFlightParts = 0
         var inFlightBytes: Int64 = 0
+        /// ∫ parts in flight dt, for each part's average parallelism.
+        var parallelIntegral: Double = 0
+        var integratedAt: Double = 0
+
+        mutating func integrate(to now: Double) {
+            if integratedAt > 0 { parallelIntegral += Double(inFlightParts) * max(0, now - integratedAt) }
+            integratedAt = now
+        }
         var up = RateMeter()
         var down = RateMeter()
         var observers: [UUID: AsyncStream<TransferTuningSnapshot>.Continuation] = [:]
@@ -237,6 +245,12 @@ public final class TransferMonitor: Sendable {
         return true
     }
 
+    /// An upload starts (``TransferTuner/beginTransfer(at:)``).
+    func beginTransfer() {
+        let now = clock()
+        mutate { $0.tuner.beginTransfer(at: now) }
+    }
+
     /// A calibration's measurement (``TransferCalibrator``).
     func seed(_ estimate: TransferTuner.Estimate) {
         let now = clock()
@@ -264,20 +278,42 @@ public final class TransferMonitor: Sendable {
 
     var partBytes: Int64 { state.withLock { $0.tuner.partBytes } }
 
-    /// A part started; returns the parts in flight with it.
-    func partStarted(bytes: Int64) -> Int {
-        let parallel = state.withLock { state -> Int in
+    /// Where a part started, for its average parallelism (``parallelism(since:)``).
+    struct PartTicket: Sendable {
+        var start: Double
+        var integral: Double
+        var parallel: Int
+    }
+
+    /// A part started.
+    func partStarted(bytes: Int64) -> PartTicket {
+        let now = clock()
+        let ticket = state.withLock { state -> PartTicket in
+            state.integrate(to: now)
             state.inFlightParts += 1
             state.inFlightBytes += bytes
-            return state.inFlightParts
+            return PartTicket(start: now, integral: state.parallelIntegral, parallel: state.inFlightParts)
         }
         publish(force: true)
-        return parallel
+        return ticket
+    }
+
+    /// The parts in flight beside the one `ticket` started, on average over its time so far (itself included).
+    func parallelism(since ticket: PartTicket) -> Double {
+        let now = clock()
+        return state.withLock { state in
+            state.integrate(to: now)
+            let span = now - ticket.start
+            guard span > 0 else { return Double(ticket.parallel) }
+            return max(1, (state.parallelIntegral - ticket.integral) / span)
+        }
     }
 
     /// A part ended (acknowledged or not).
     func partEnded(bytes: Int64) {
+        let now = clock()
         state.withLock { state in
+            state.integrate(to: now)
             state.inFlightParts = max(0, state.inFlightParts - 1)
             state.inFlightBytes = max(0, state.inFlightBytes - bytes)
         }

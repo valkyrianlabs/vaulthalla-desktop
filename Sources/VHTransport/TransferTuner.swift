@@ -105,13 +105,13 @@ public struct TransferTuner: Sendable {
         /// When its request started and when its answer arrived (seconds on any monotonic clock).
         public var start: Double
         public var end: Double
-        /// Parts in flight when it started, itself included.
-        public var parallel: Int
+        /// Parts in flight beside it on average over its time, itself included.
+        public var parallel: Double
         /// Seconds from its last body byte to the answer's head, when known.
         public var ackLatency: Double?
         public var serverTiming: ServerTiming?
 
-        public init(bytes: Int64, start: Double, end: Double, parallel: Int, ackLatency: Double? = nil,
+        public init(bytes: Int64, start: Double, end: Double, parallel: Double, ackLatency: Double? = nil,
                     serverTiming: ServerTiming? = nil) {
             self.bytes = bytes
             self.start = start
@@ -160,10 +160,15 @@ public struct TransferTuner: Sendable {
     public private(set) var limits: Limits
     /// Aggregate bytes/s, nil before a measurement or a seed.
     public private(set) var throughput: Double?
-    /// Seconds.
-    public private(set) var rtt: Double?
-    /// The lowest RTT seen: the link without queues.
-    public private(set) var baseRTT: Double?
+    /// Seconds: a calibration probe's round trip when there was one, else the parts' answer latency.
+    public var rtt: Double? { probeRTT ?? ackLatency }
+    /// The smoothed wait between a part's last byte and its answer (less the server's sync). It includes the time the
+    /// sender's buffers take to drain, so it is compared only with itself.
+    public private(set) var ackLatency: Double?
+    /// The lowest recent answer latency: the link without queues.
+    public private(set) var baseAckLatency: Double?
+    /// The smoothed round trip of calibration probes.
+    public private(set) var probeRTT: Double?
     public private(set) var partBytes: Int64
     public private(set) var concurrency: Int
     /// The server's write path, not the network, bounds the transfer.
@@ -184,14 +189,36 @@ public struct TransferTuner: Sendable {
     private var recentRTTs: [Double] = []
     /// Increases that didn't pay in a row: each doubles the next hold-down.
     private var failedProbes = 0
+    /// Recent measured parts.
+    private var recent: [Part] = []
+
+    struct Part {
+        var bytes: Double
+        var duration: Double
+        var parallel: Double
+    }
+
+    /// The aggregate rate of `parts`: their bytes over their time, times the parts that ran beside them on average
+    /// (weighted by time). Unbiased when parallel parts share the link unevenly, which a mean of per-part rates isn't.
+    static func aggregate(_ parts: [Part]) -> Double {
+        let time = parts.reduce(0) { $0 + $1.duration }
+        guard time > 0 else { return 0 }
+        let bytes = parts.reduce(0) { $0 + $1.bytes }
+        let parallel = parts.reduce(0) { $0 + $1.parallel * $1.duration } / time
+        return bytes / time * parallel
+    }
+    /// The last epoch's aggregate rate at each concurrency.
+    private var rateAt: [Int: Double] = [:]
 
     private struct Epoch {
         var start: Double
         var concurrency: Int
         /// It began with an increase that has to prove itself.
         var increased: Bool
-        var rates: [Double] = []
+        var parts: [Part] = []
         var trouble = false
+
+        var rate: Double { TransferTuner.aggregate(parts) }
     }
 
     public init(configuration: Configuration = Configuration(), limits: Limits = .protocolDefaults) {
@@ -225,10 +252,7 @@ public struct TransferTuner: Sendable {
     /// as they arrive.
     public mutating func seed(_ estimate: Estimate, at now: Double = 0) {
         throughput = estimate.throughput > 0 ? estimate.throughput : throughput
-        if let rtt = estimate.rtt, rtt > 0 {
-            self.rtt = nil
-            recordRTT(rtt)
-        }
+        if let rtt = estimate.rtt, rtt > 0 { recordRTT(rtt) }
         source = estimate.source
         if configuration.enabled {
             if estimate.source == .cached { concurrency = estimate.concurrency }
@@ -245,14 +269,29 @@ public struct TransferTuner: Sendable {
                         source: source)
     }
 
+    /// A new upload starts: its first parts take the size the last one's measurements ask for, even when that one was
+    /// too short to resize while it ran.
+    public mutating func beginTransfer(at now: Double) {
+        guard configuration.enabled, measuredParts >= 1, let wanted = sizeFromThroughput() else { return }
+        partBytes = wanted
+        normalize()
+        startEpoch(at: now, increased: false)
+    }
+
     /// A round-trip measurement from elsewhere (a calibration probe).
     public mutating func recordRTT(_ seconds: Double) {
         guard seconds > 0 else { return }
-        rtt = rtt.map { $0 + configuration.smoothing * (seconds - $0) } ?? seconds
-        // The baseline is the lowest of the recent samples, so a route whose RTT really changed is relearned.
+        probeRTT = probeRTT.map { $0 + configuration.smoothing * (seconds - $0) } ?? seconds
+    }
+
+    /// A part's answer latency.
+    mutating func recordAckLatency(_ seconds: Double) {
+        guard seconds > 0 else { return }
+        ackLatency = ackLatency.map { $0 + configuration.smoothing * (seconds - $0) } ?? seconds
+        // The baseline is the lowest of the recent samples, so a route whose latency really changed is relearned.
         recentRTTs.append(seconds)
         if recentRTTs.count > 64 { recentRTTs.removeFirst(recentRTTs.count - 64) }
-        baseRTT = recentRTTs.min()
+        baseAckLatency = recentRTTs.min()
     }
 
     // MARK: - Admission
@@ -274,7 +313,7 @@ public struct TransferTuner: Sendable {
         if let latency = sample.ackLatency {
             let serverMs = sample.serverTiming?.sync ?? 0
             let network = latency - serverMs / 1000
-            if network > 0 { recordRTT(network) }
+            if network > 0 { recordAckLatency(network) }
         }
         if let timing = sample.serverTiming {
             let share = min(1, (timing.write + timing.sync) / (duration * 1000))
@@ -282,13 +321,18 @@ public struct TransferTuner: Sendable {
             serverBound = (serverShare ?? 0) >= 0.5
         }
         guard sample.bytes >= configuration.minSampleBytes else { return }
-        let rate = Double(sample.bytes) / duration * Double(sample.parallel)
+        // The aggregate over the last few parts (``aggregate(_:)``).
+        let part = Part(bytes: Double(sample.bytes), duration: duration, parallel: sample.parallel)
+        recent.append(part)
+        let window = max(4, 2 * concurrency)
+        if recent.count > window { recent.removeFirst(recent.count - window) }
+        let rate = Self.aggregate(recent)
         // Real transfers win over a cached or calibrated guess: the first one replaces it.
         throughput = source == .measured ? throughput.map { $0 + configuration.smoothing * (rate - $0) } ?? rate : rate
         measuredParts += 1
         source = .measured
         guard configuration.enabled else { return }
-        if sample.start >= epoch.start { epoch.rates.append(rate) }
+        if sample.start >= epoch.start { epoch.parts.append(part) }
         resize()
         evaluate(at: sample.end)
     }
@@ -311,13 +355,14 @@ public struct TransferTuner: Sendable {
 
     /// Judges the epoch once it has enough parts.
     private mutating func evaluate(at now: Double) {
-        guard epoch.rates.count >= max(3, epoch.concurrency) else { return }
-        let rate = epoch.rates.reduce(0, +) / Double(epoch.rates.count)
+        guard epoch.parts.count >= max(3, epoch.concurrency) else { return }
+        let rate = epoch.rate
         let previous = lastEpochRate
         if let previous, !epoch.increased, abs(rate - previous) / previous > 0.3 {
             // The link changed under us: what held concurrency down may not hold any more.
             holdUntil = -.infinity
             failedProbes = 0
+            rateAt = [:]
         }
         if epoch.increased, let previous, rate < previous * (1 + configuration.rampGain) {
             // The added part didn't pay: back to where it was, and stay there a while (longer each time).
@@ -330,8 +375,11 @@ public struct TransferTuner: Sendable {
         }
         if epoch.increased { failedProbes = 0 }
         lastEpochRate = rate
-        if rttRising, concurrency > 1 {
-            // Queues are filling: one part fewer.
+        rateAt[concurrency] = rate
+        let fewer = rateAt[concurrency - 1]
+        if concurrency > 1, rttRising && fewer.map({ rate < $0 * (1 + configuration.rampGain) }) ?? rttSurging {
+            // Queues are filling and the last part added doesn't buy throughput (or, not measured yet, latency surged):
+            // one part fewer. Going back up later has to show the gain.
             decrease(at: now, halve: false)
             return
         }
@@ -353,10 +401,16 @@ public struct TransferTuner: Sendable {
         return Int64(concurrency + 1) * partBytes <= configuration.memoryBudget
     }
 
-    /// The RTT is well above its baseline: queues are filling somewhere.
+    /// The answer latency is well above its baseline: queues are filling somewhere.
     var rttRising: Bool {
-        guard let rtt, let baseRTT else { return false }
-        return rtt > baseRTT * configuration.rttRise + 0.010
+        guard let ackLatency, let baseAckLatency else { return false }
+        return ackLatency > baseAckLatency * configuration.rttRise + 0.010
+    }
+
+    /// Far above it: worth a step down even before fewer parts were measured.
+    var rttSurging: Bool {
+        guard let ackLatency, let baseAckLatency else { return false }
+        return ackLatency > baseAckLatency * 2 * configuration.rttRise + 0.050
     }
 
     private mutating func decrease(at now: Double, halve: Bool) {

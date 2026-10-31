@@ -103,6 +103,7 @@ public struct ResumableUploader: Sendable {
         var job = Job(record: record, store: store, persistInterval: policy.persistInterval)
         job.persist(force: true)
         monitor.seedFromCache()
+        monitor.beginTransfer()
         let tally = Tally(record: job.record)
         progress(tally.report())
         var failures = 0
@@ -379,7 +380,7 @@ public struct ResumableUploader: Sendable {
         var answer: Result<DeviceTransferClient.PartAnswer, TransferError>
         var start: Double
         var end: Double
-        var parallel: Int
+        var parallel: Double
         /// The hash of the bytes sent, when all of them were (also on a failure: the answer may be what was lost).
         var digest: String?
     }
@@ -403,7 +404,7 @@ public struct ResumableUploader: Sendable {
                 let key = "\(part.file):\(part.range.lowerBound)"
                 let length = Int64(part.range.count)
                 // Counted now, not when the task runs, so the next admission sees it.
-                let parallel = monitor.partStarted(bytes: length)
+                let ticket = monitor.partStarted(bytes: length)
                 group.addTask {
                     defer {
                         monitor.partEnded(bytes: length)
@@ -433,10 +434,10 @@ public struct ResumableUploader: Sendable {
                                 if tally.allow() { progress(tally.report()) }
                             })
                         return PartResult(job: part, answer: .success(answer), start: start, end: monitor.now,
-                                          parallel: parallel)
+                                          parallel: monitor.parallelism(since: ticket))
                     } catch {
                         return PartResult(job: part, answer: .failure(error), start: start, end: monitor.now,
-                                          parallel: parallel, digest: digest.withLock { $0 })
+                                          parallel: 1, digest: digest.withLock { $0 })
                     }
                 }
             }
