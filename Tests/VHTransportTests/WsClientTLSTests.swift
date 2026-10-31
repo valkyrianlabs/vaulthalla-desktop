@@ -95,7 +95,7 @@ final class Recorded<Value: Sendable>: Sendable {
                 observed.record(spki)
             }),
             reconnect: ReconnectPolicy(base: .milliseconds(20), cap: .milliseconds(80)),
-            connectTimeout: .seconds(15)
+            connectTimeout: .seconds(2)
         ))
     }
 

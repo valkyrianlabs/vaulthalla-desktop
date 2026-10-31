@@ -165,6 +165,12 @@ extension KeychainSuite {
             // Once the owner's first handshake with the new key ends the old key's grace, the old key is refused.
             let index = ownerEvents.all.firstIndex { if case .identity(rotated, _) = $0 { true } else { false } } ?? 0
             #expect(await online(ownerEvents, after: index))
+            // The mock authorizes a connection on its first message, which can come after the owner reports online:
+            // wait (bounded) for that handshake to have ended the old key's grace, rather than assume the order.
+            let graceEnded = ContinuousClock.now + .seconds(8)
+            while fixture.daemon.device(matching: fixture.identity.spkiSHA256) != nil, ContinuousClock.now < graceEnded {
+                try await Task.sleep(for: .milliseconds(20))
+            }
             #expect(fixture.daemon.device(matching: fixture.identity.spkiSHA256) == nil)
 
             // The consumer reconnects with the old key, is refused, reloads, and is back with the owner's key.

@@ -181,15 +181,12 @@ public struct TransferCalibrator: Sendable {
         Double(duration.components.seconds) + Double(duration.components.attoseconds) / 1e18
     }
 
-    /// Bytes that don't compress (a linear congruential sequence).
+    /// Bytes that don't compress. Filled by the system's generator at memory speed: a byte-at-a-time loop here ran
+    /// for seconds on the cooperative pool in debug builds (megabytes per sample) and stalled every other task.
     static func payload(_ count: Int) -> Data {
         var data = Data(count: count)
         data.withUnsafeMutableBytes { buffer in
-            var state: UInt64 = 0x9E37_79B9_7F4A_7C15
-            for index in 0..<count {
-                state = state &* 6_364_136_223_846_793_005 &+ 1_442_695_040_888_963_407
-                buffer[index] = UInt8(truncatingIfNeeded: state >> 33)
-            }
+            if let base = buffer.baseAddress { arc4random_buf(base, buffer.count) }
         }
         return data
     }

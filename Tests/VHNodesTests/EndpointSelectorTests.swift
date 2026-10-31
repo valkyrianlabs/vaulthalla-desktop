@@ -121,24 +121,34 @@ final class FakeProber: EndpointProbing {
             AdvertisedEndpoint(host: "100.101.1.2", port: 36972, kind: .vpn),
             AdvertisedEndpoint(host: "10.0.0.11", port: 36972, kind: .lan),
         ])
-        // Every probe hangs, so only the stagger spaces the starts.
-        let hang = FakeProber.fail(.timeout, after: .seconds(5))
+        // Every probe outlasts the whole selection, so no failure frees a slot early (that rule has its own test):
+        // only the stagger spaces the launches, and the in-flight cap is all that holds back the fifth.
+        var configuration = EndpointSelector.Configuration()
+        configuration.stagger = .milliseconds(60)
+        configuration.probeTimeout = .seconds(2)
+        configuration.overallTimeout = .seconds(2)
+        configuration.bonjourBrowse = .milliseconds(50)
+        let hang = FakeProber.fail(.timeout, after: .seconds(30))
         let prober = FakeProber(["127.0.0.1": hang, "::1": hang, "10.0.0.11": hang, "100.101.1.2": hang,
                                  "203.0.113.7": hang, "vh.example.com": hang])
-        let selection = await fast().select(EndpointCandidate.candidates(for: node), prober: prober)
+        let selection = await EndpointSelector(configuration: configuration)
+            .select(EndpointCandidate.candidates(for: node), prober: prober)
         #expect(selection.chosen == nil)
-        // loopback, lan, vpn, then wan (the configured name first: server order within the class).
-        #expect(prober.order == ["127.0.0.1", "::1", "10.0.0.11", "100.101.1.2", "vh.example.com", "203.0.113.7"])
-        let starts = prober.starts.map(\.at)
-        for (earlier, later) in zip(starts.prefix(4), starts.dropFirst().prefix(3)) {
-            #expect(later - earlier >= .milliseconds(50))
+        // The selector's own launch record: the prober sees starts later, and maybe reordered, by task-start latency.
+        let launches = selection.reports
+            .compactMap { report in report.launchedAfter.map { (report.candidate.endpoint.host, $0) } }
+            .sorted { $0.1 < $1.1 }
+        // At most four in flight, in priority order: loopback, lan, vpn. The two wan candidates are never tried.
+        #expect(launches.map(\.0) == ["127.0.0.1", "::1", "10.0.0.11", "100.101.1.2"])
+        for (earlier, later) in zip(launches.map(\.1), launches.map(\.1).dropFirst()) {
+            #expect(later - earlier >= .milliseconds(60))
         }
-        // At most four in flight: the fifth starts only when the first probe's 600 ms ran out.
-        #expect(starts[4] >= .milliseconds(580))
-        #expect(selection.reports.allSatisfy { $0.outcome == .timeout })
+        #expect(selection.reports.filter { $0.outcome == .notTried }.map(\.candidate.endpoint.host).sorted()
+                == ["203.0.113.7", "vh.example.com"])
+        #expect(selection.reports.filter { $0.outcome == .timeout }.count == 4)
     }
 
-    @Test func aFailureStartsTheNextProbeAtOnce() async {
+    @Test func aFailureStartsTheNextProbeAtOnce() async throws {
         let node = node("vh.example.com")
         let prober = FakeProber([
             "127.0.0.1": FakeProber.fail(.refused, after: .milliseconds(1)),
@@ -150,8 +160,10 @@ final class FakeProber: EndpointProbing {
         let selection = await EndpointSelector(configuration: configuration)
             .select(EndpointCandidate.candidates(for: node), prober: prober)
         #expect(selection.chosen?.candidate.endpoint.host == "vh.example.com")
-        // Without the early start the third probe would begin at 800 ms.
-        #expect(try! #require(prober.starts.last).at < .milliseconds(300))
+        // Without the early start the third probe would begin at 800 ms (two staggers); with it, right after the
+        // second failure. The selector's own launch record, so task-start latency doesn't count.
+        let third = selection.reports.first { $0.candidate.endpoint.host == "vh.example.com" }?.launchedAfter
+        #expect(try #require(third) < .milliseconds(800))
     }
 
     @Test func waitsBrieflyForABetterProbeStillInFlight() async {
@@ -171,18 +183,20 @@ final class FakeProber: EndpointProbing {
 
     @Test func theGraceWindowIsBounded() async {
         let node = node("vh.example.com", advertised: [AdvertisedEndpoint(host: "10.0.0.11", port: 36972, kind: .lan)])
+        // The LAN probe would answer only after 5 s: far past the grace window, so the selector must not wait for it.
         let prober = FakeProber([
-            "10.0.0.11": FakeProber.ok(after: .milliseconds(900), address: "10.0.0.11"),
+            "10.0.0.11": FakeProber.ok(after: .seconds(5), address: "10.0.0.11"),
             "vh.example.com": FakeProber.ok(after: .milliseconds(5), address: "203.0.113.7"),
         ])
         var configuration = EndpointSelector.Configuration()
         configuration.stagger = .milliseconds(10)
         configuration.grace = .milliseconds(100)
+        configuration.probeTimeout = .seconds(6)
         let clock = ContinuousClock()
         let started = clock.now
         let selection = await EndpointSelector(configuration: configuration)
             .select(EndpointCandidate.candidates(for: node), prober: prober)
-        #expect(clock.now - started < .milliseconds(600))
+        #expect(clock.now - started < .seconds(2.5))
         #expect(selection.chosen?.candidate.endpoint.host == "vh.example.com")
         #expect(selection.chosen?.transportClass == .wan)
         #expect(selection.report(for: NodeEndpoint(host: "10.0.0.11"))?.outcome == .timeout)
