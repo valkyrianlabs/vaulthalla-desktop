@@ -72,7 +72,7 @@ public struct WsCapability: RawRepresentable, Hashable, Sendable, ExpressibleByS
     /// Capabilities the normative spec (the server's `docs/reference/transfer-protocol.md`, server 1.20.0) defines
     /// but the vendored contract doesn't declare yet (the server publishes them as it implements them). Remove one once
     /// `tools/gen-contract.py --from` vendors a contract that has it (a test fails as soon as it does).
-    public static let awaitingContract: Set<WsCapability> = [.resumableUpload]
+    public static let awaitingContract: Set<WsCapability> = []
 }
 
 /// Whether a node has a command or a capability: known either way once `meta.hello` answered, unknown on a legacy
