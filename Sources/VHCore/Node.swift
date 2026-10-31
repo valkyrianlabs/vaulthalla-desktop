@@ -24,7 +24,7 @@ public struct Node: Identifiable, Codable, Hashable, Sendable {
     public var endpoints: [AdvertisedEndpoint]
     /// The endpoint a Device session last came up on.
     public var lastGood: LastGoodEndpoint?
-    /// When the node last answered `device.endpoints` (its `generated_at`, else when it was saved).
+    /// When the advertised list last changed: the `device.endpoints` answer's `generated_at`, else when it was saved.
     public var lastAdvertisedAt: Date?
 
     public init(

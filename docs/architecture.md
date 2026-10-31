@@ -94,7 +94,8 @@ number, `.release/*_NEXT.md`, ops parity tests, and `.claude/context` kept true.
 `storage.vault.*`, `stats.*`, `share.*`, `role.*`, `pricing.*`, `sync.*`, `s3.gateway.*`. The web gains from it too.
 Add an `effect` (`read | write | destructive`) to CLI usage nodes.
 
-**S5.** Bonjour advertisement (above).
+**S5.** Bonjour advertisement (above). Desktop reads TXT `node_id`, `port` and `name`/`display_name`; the endpoint
+selector uses Bonjour only as its last source (§3, "Endpoints and route selection").
 
 The web console's other behavior is unchanged.
 
@@ -140,7 +141,8 @@ docs/                   this plan, the pairing protocol, release notes
 - **Files:** a virtualized `Table`/grid backed by `fs.*`. Downloads and uploads use the HTTP lanes on the device
   listener (URLSession with the same identity). Quick Look previews come from `/preview`, and drag-and-drop works
   with Finder.
-- **Persistence:** node records (id, name, endpoints, pinned server SPKI, device id) in `nodes.json`: in the App Group
+- **Persistence:** node records (id, name, configured endpoint, advertised endpoints and the last good one, pinned
+  server SPKI, device id) in `nodes.json`: in the App Group
   container for signed builds, in Application Support otherwise (see "Signing and the shared container" below).
   Device keys live in the Keychain and Secure Enclave. Nothing secret goes in `UserDefaults` or in logs.
   - `Logger` uses `.private` for everything user-derived.
@@ -189,6 +191,53 @@ docs/                   this plan, the pairing protocol, release notes
   - **UI.** The node overview shows "Vaulthalla 1.19.0 · protocol 1" (legacy: "Vaulthalla 1.18 or earlier") and the
     contract identity from the hello; an incompatible node gets a sidebar badge, an "Incompatible" header badge and,
     where its sections would be, the message saying which side to update.
+- **Endpoints and route selection** (the server's `docs/reference/transfer-protocol.md` §1–§2, normative). A node is
+  reached over the best address that proves its server key, not only the one the operator typed.
+  - **Record.** `Node.endpoint` stays the configured address. `Node.endpoints` keeps the node's last
+    `device.endpoints` answer (host, port, kind, source, interface), `lastGood` the endpoint the last Device session
+    came up on (with time and class), `lastAdvertisedAt` when the list last changed. All optional on disk, decoded
+    leniently (a malformed entry is dropped, never the record); the envelope stays version 1. Only the credential
+    owner writes them: an owner session reports `NodeSession.Event.endpointsChanged`, and the app saves it without
+    restarting the session (routing hints aren't part of `NodeSessions`' restart basis). The File Provider extension
+    and `vaulthalla-mcp` read them and select on their own, never writing.
+  - **Candidates** (`VHNodes.EndpointCandidate`), merged and de-duplicated by (host lowercased, port): `127.0.0.1` and
+    `::1` at the listener's port for every node (the pin decides whether that server is this node), the configured
+    endpoint, the advertised list, the last good endpoint; Bonjour results whose TXT `node_id` equals `serverNodeID`
+    only after all of those failed (`BonjourServiceBrowser.endpoints(forNode:within:)`, a 1.5 s browse).
+  - **Probe** (`VHTransport.TLSEndpointProber`): a TLS 1.3 handshake on a fresh connection with the device identity
+    and the node's pins (current, then announced next) through the same verify path as `WsClient`, then close. TCP
+    alone never counts. Outcomes: `ok` (TCP handshake RTT, address reached, interface, which pin), `refused`,
+    `timeout`, `identity_mismatch`, `tls_error`, `unresolved`.
+  - **Selection** (`VHNodes.EndpointSelector`): at most 4 probes in flight, started in priority order 150 ms apart (at
+    once after a failure), 3 s each, 6 s overall; after the first success it waits up to 250 ms for a better probe
+    still in flight. The class is that of the address actually reached (`VHTransport.EndpointClassifier`: loopback;
+    lan = RFC 1918, ULA, link-local; vpn = 100.64/10 or a tunnel interface `utun*`, `wg*`, `tailscale*`, `zt*`, …;
+    wan; passthrough as the server declared it), so split-horizon names work; within a class last good first, then
+    server order. A key mismatch at an address other than the configured one marks only that candidate (another
+    server lives there) and never asks to pair again; only a mismatch at the configured address with nothing verified
+    is the old pin failure. With nothing verified the session connects to the configured address as before.
+  - **When** (`RouteSchedule`): on connect, when the network path changes, after two failed reconnects in a row,
+    after a lane's connection failure (`NodeSession.laneConnectionFailed()`), every 30 min while on a class worse than
+    lan, and on Test Connection; never more often than every 5 s. A working connection moves only to a better class
+    or off a route whose probe failed, so there are no reconnect storms. A selected endpoint that later presents
+    another key is selected away from, not re-paired.
+  - **Lanes** follow the route: `NodeSession.laneConfiguration` uses `activeEndpoint`; the app's `NodeFileLanes` and
+    the extension's `NodeLink` key cached clients by identity and endpoint; the MCP bridge selects per node through a
+    read-only `RouteCache` (reused 5 min, dropped after a failure). The extension's and the helper's Info.plists carry
+    `NSBonjourServices` and `NSLocalNetworkUsageDescription`, since they open their own LAN connections.
+  - **Advertisement.** After connecting, a node that announces the `device.endpoints` capability is asked for its
+    addresses (`EndpointAdvertisementSource`); an answer naming another `node_id` is ignored, candidates are validated
+    and capped at 32.
+  - **Pairing links.** `vaulthalla://pair?node=&spki=&endpoints=` (registered URL scheme, §1.2) is untrusted input:
+    `VHNodes.PairLink` refuses anything malformed, the Add Node sheet probes the link's endpoints (accepted when the
+    server presents the link's key) and is prefilled with the best one, and `PairingClient` pins every pairing
+    connection to the link's key from the start (`PairingFailure.unexpectedServerIdentity` otherwise). The code
+    (docs/pairing.md) stays authoritative.
+  - **Status view.** The node Overview's Connection panel shows the route class (Localhost, LAN, VPN, Direct WAN,
+    Passthrough), endpoint, address reached, the verified key (current or next), the RTT, transfer throughput, part
+    size, parts in flight and auto-tuning (`VHCore.TransferStats` through `TransferStatsBoard`, "—" while nothing
+    reports), and why a better class wasn't used, per candidate in plain words with a technical disclosure. Test
+    Connection runs `AppModel.connectionTest` (a fresh selection by default). No credentials or session material.
 - **Credential ownership: one owner, every other process a consumer** (desktop#3). A rotation in one process would
   strand every other process presenting the old key, because the daemon clears `previous_spki_sha256` on the first
   handshake with the new key (`docs/pairing.md` §4). So exactly one process on the Mac, the *owner*, creates, rotates

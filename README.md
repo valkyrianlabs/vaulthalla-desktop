@@ -91,6 +91,16 @@ VH_NOTARY_PROFILE=<notarytool profile> tools/release/build.sh   # also notarized
 VH_SPARKLE_KEY_FILE=<key file> tools/release/build.sh            # also appcast.xml (generate_keys -x exports the key)
 ```
 
+## Connecting to nodes
+
+Desktop reaches each node over the best address that proves the node's pinned server key: this Mac, the local
+network, a VPN, then the internet (the node advertises its addresses; Bonjour is the last resort). The node's
+Overview shows the route in use, its round trip, transfer throughput and, when a better route wasn't used, why;
+Test Connection checks every address again. The web console's "Pair a device" dialog offers a
+`vaulthalla://pair?…` link: opening it fills in Add Node with an address that answers with the server's key, and
+pairing then refuses any other server. You still approve with the six-digit code. Design:
+[`docs/architecture.md`](docs/architecture.md) §3, "Endpoints and route selection".
+
 ## AI agents (MCP)
 
 Vaulthalla Desktop bundles `vaulthalla-mcp`, a stdio MCP server that gives an agent (Claude Code, Codex) the tools of
