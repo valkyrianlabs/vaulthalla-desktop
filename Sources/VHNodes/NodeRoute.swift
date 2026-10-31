@@ -142,7 +142,7 @@ public actor RouteCache {
         inFlight[id] = task
         let selection = await task.value
         inFlight[id] = nil
-        schedule.recordSelection(at: clock.now)
+        schedule.recordSelection(at: clock.now, verified: selection.chosen != nil)
         schedules[id] = schedule
         entries[id] = (selection, clock.now)
         return selection

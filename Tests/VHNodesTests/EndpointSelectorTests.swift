@@ -303,6 +303,21 @@ final class FakeProber: EndpointProbing {
         #expect(schedule.earliest(for: .dropped(consecutive: 5), activeClass: nil, now: now) == now)
     }
 
+    @Test func dropsBackOffWhileNothingIsFound() {
+        var schedule = RouteSchedule()
+        let now = ContinuousClock.now
+        schedule.recordSelection(at: now, verified: false)
+        #expect(schedule.earliest(for: .dropped(consecutive: 3), activeClass: nil, now: now) == now + .seconds(10))
+        schedule.recordSelection(at: now, verified: false)
+        #expect(schedule.earliest(for: .dropped(consecutive: 4), activeClass: nil, now: now) == now + .seconds(20))
+        for _ in 0..<10 { schedule.recordSelection(at: now, verified: false) }
+        #expect(schedule.earliest(for: .dropped(consecutive: 9), activeClass: nil, now: now) == now + .seconds(300))
+        // A path change still looks at once (after the 5 s floor), and a success resets the backoff.
+        #expect(schedule.earliest(for: .pathChanged, activeClass: nil, now: now) == now + .seconds(5))
+        schedule.recordSelection(at: now, verified: true)
+        #expect(schedule.earliest(for: .dropped(consecutive: 2), activeClass: nil, now: now) == now + .seconds(5))
+    }
+
     @Test func upgradesEveryThirtyMinutesOnlyBelowLAN() {
         var schedule = RouteSchedule()
         let now = ContinuousClock.now
@@ -345,6 +360,17 @@ final class FakeProber: EndpointProbing {
         ])
         #expect(advertisement.candidates[3].kind == .passthrough)
         #expect(advertisement.candidates[4].kind == nil)
+
+        // The contract's own shape decodes the same way.
+        let typed = Ws.Device.Endpoints.Response(
+            nodeID: "node-1", port: 36972, remote: true, listening: true, generatedAt: 1_793_453_809,
+            candidates: [.init(host: "10.0.0.11", port: 36972, kind: Ws.Device.Endpoints.Response.Candidate.Kind.lan,
+                               source: "interface", interface: "enp3s0")])
+        let encoded = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(typed))
+        #expect(EndpointAdvertisement(json: encoded).candidates == [
+            AdvertisedEndpoint(host: "10.0.0.11", port: 36972, kind: .lan, source: "interface", interface: "enp3s0"),
+        ])
+        #expect(WsEndpointAdvertisementSource.command == WsCommand.deviceEndpoints.rawValue)
 
         let many = JSONValue.array((0..<100).map { ["host": .string("10.0.0.\($0)"), "port": 36972] })
         #expect(EndpointAdvertisement(json: ["candidates": many]).candidates.count == EndpointAdvertisement.maxCandidates)

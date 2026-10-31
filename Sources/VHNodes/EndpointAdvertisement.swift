@@ -3,9 +3,10 @@ public import VHContract
 public import VHCore
 public import VHTransport
 
-/// A node's `device.endpoints` answer (the server's transfer protocol §1.1), decoded by hand: the vendored contract
-/// doesn't type the command yet (`WsCapability.awaitingContract`). Untrusted input: every candidate is validated and
-/// the list is capped, and nothing here is used before the selector proved the pinned key at that address.
+/// A node's `device.endpoints` answer (the server's transfer protocol §1.1; `Ws.Device.Endpoints` in the contract),
+/// read leniently from the raw JSON rather than through the generated type, so one malformed or unknown candidate
+/// drops only itself instead of the whole answer. Untrusted input: every candidate is validated and the list is
+/// capped, and nothing here is used before the selector proved the pinned key at that address.
 public struct EndpointAdvertisement: Hashable, Sendable {
     /// The server's install id (`device.pair.status` `node_id`); an answer naming another node is ignored.
     public var nodeID: String?
@@ -86,9 +87,9 @@ public protocol EndpointAdvertisementSource: Sendable {
     func advertisement(on client: WsClient, timeout: Duration) async throws(WsError) -> EndpointAdvertisement
 }
 
-/// `device.endpoints {}` on the Device session (raw: the vendored contract doesn't have the command yet).
+/// `device.endpoints` on the Device session, read leniently (``EndpointAdvertisement/init(json:)``).
 public struct WsEndpointAdvertisementSource: EndpointAdvertisementSource {
-    public static let command = "device.endpoints"
+    public static let command = WsCommand.deviceEndpoints.rawValue
 
     public init() {}
 

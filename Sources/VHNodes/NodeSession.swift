@@ -555,7 +555,7 @@ public actor NodeSession {
             task.cancel()
         }
         if selectionTask == task { selectionTask = nil }
-        schedule.recordSelection(at: .now)
+        schedule.recordSelection(at: .now, verified: result.chosen != nil)
         selection = (result, pinsToProbe(pin))
         if let chosen = result.chosen {
             log.info("""

@@ -1,9 +1,9 @@
 {
-  "server_version": "1.18.0",
-  "server_commit": "5787f2d6",
-  "server_branch": "main",
+  "server_version": "1.19.0",
+  "server_commit": "af17f426",
+  "server_branch": "feat/direct-transport",
   "source": "web/src/util/generated/wsContract.json",
   "contract_version": 3,
-  "ws_hash": "b4a6c4e186b5ff132cb86abcbd04f974c005567d32fb20177b96c3cf27958416",
-  "models_hash": "00cc5309cf6f162bb2881d6ab73e6273170a560d30e0dc588694c81dfe1f57da"
+  "ws_hash": "b3fcd2e1864f74d701ee8242448e96280c4828cf901d999f84bcecce3e98dd53",
+  "models_hash": "d309c9252a3e52b5e75d37ccc25cb4abdfc0f4e5633f7a329c6cb49e3a00beaf"
 }

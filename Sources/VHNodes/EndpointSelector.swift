@@ -386,8 +386,13 @@ public struct RouteSchedule: Hashable, Sendable {
     public var minimumInterval: Duration = .seconds(5)
     public var upgradeInterval: Duration = .seconds(30 * 60)
     public var dropsBeforeReselect = 2
+    /// The longest wait between drop-triggered selections while none finds a route (a node that is simply down
+    /// isn't probed every 5 s for hours): the wait doubles from ``minimumInterval`` per selection that found nothing.
+    public var dropBackoffCap: Duration = .seconds(5 * 60)
     /// When the last selection ran.
     public private(set) var lastSelection: ContinuousClock.Instant?
+    /// Selections in a row that verified no endpoint.
+    public private(set) var fruitlessSelections = 0
 
     public init() {}
 
@@ -396,16 +401,20 @@ public struct RouteSchedule: Hashable, Sendable {
     public func earliest(for trigger: Trigger, activeClass: EndpointClass?, now: ContinuousClock.Instant)
         -> ContinuousClock.Instant?
     {
+        var interval = minimumInterval
         switch trigger {
         case .dropped(let count):
             guard count >= dropsBeforeReselect else { return nil }
+            if fruitlessSelections > 0 {
+                interval = min(dropBackoffCap, minimumInterval * (1 << min(fruitlessSelections, 16)))
+            }
         case .upgrade:
             guard let activeClass, activeClass > .lan else { return nil }
         case .connect, .pathChanged, .laneFailure, .manual:
             break
         }
         guard let lastSelection else { return now }
-        return max(now, lastSelection + minimumInterval)
+        return max(now, lastSelection + interval)
     }
 
     /// Whether the last selection is recent enough to reuse instead of probing again (within the minimum interval).
@@ -419,7 +428,9 @@ public struct RouteSchedule: Hashable, Sendable {
         return lastSelection + upgradeInterval
     }
 
-    public mutating func recordSelection(at instant: ContinuousClock.Instant) {
+    /// Records a selection; `verified` says whether it found an endpoint that proved the pin.
+    public mutating func recordSelection(at instant: ContinuousClock.Instant, verified: Bool = true) {
         lastSelection = instant
+        fruitlessSelections = verified ? 0 : fruitlessSelections + 1
     }
 }

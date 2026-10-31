@@ -186,8 +186,10 @@ docs/                   this plan, the pairing protocol, release notes
   - **Capabilities Desktop reads** (`WsCapability`, checked against the vendored contract's list):
     `device.lanes.preview|download|upload` (a 404 on a lane the node doesn't announce is the missing lane, not a
     missing item), `device.mcp` (the MCP bridge asks it over its own `meta.hello` when `/mcp` answers 404),
-    `device.server.identity`, `errors.unknown_command_code`, `fs.entry.metadata_version`. Command presence always
-    comes from `commands`.
+    `device.server.identity`, `errors.unknown_command_code`, `fs.entry.metadata_version`, `device.endpoints` (the
+    session asks for the node's addresses, "Endpoints and route selection" below), `device.lanes.transfer` and
+    `http.upload.resumable` (the transfer work). A capability the spec defines before the vendored contract declares
+    it sits in `WsCapability.awaitingContract`. Command presence always comes from `commands`.
   - **UI.** The node overview shows "Vaulthalla 1.19.0 · protocol 1" (legacy: "Vaulthalla 1.18 or earlier") and the
     contract identity from the hello; an incompatible node gets a sidebar badge, an "Incompatible" header badge and,
     where its sections would be, the message saying which side to update.
