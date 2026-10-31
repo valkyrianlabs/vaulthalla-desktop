@@ -62,11 +62,14 @@ public actor NodeLink: ReplicaLink {
     private var failure: FinderError?
     /// The lanes, for the identity and the endpoint they were made with (a new selection may move the endpoint).
     private var lanes: (client: VaultLanes, deviceID: String, endpoint: NodeEndpoint)?
+    /// Transfer tuning for this node, kept for the extension's lifetime.
+    private let monitor: TransferMonitor
 
     public init(nodeID: NodeID, reader: CredentialReader, configuration: Configuration = Configuration()) {
         self.nodeID = nodeID
         self.reader = reader
         self.configuration = configuration
+        monitor = TransferMonitor(node: nodeID.rawValue)
     }
 
     /// Why the link fails closed, if it does.
@@ -201,8 +204,9 @@ public actor NodeLink: ReplicaLink {
             // The lanes belong to a protocol this build doesn't speak with the node either: nothing is sent.
             throw FinderError(TransferError.protocolUnsupported(mismatch.message), during: operation)
         }
+        let features = await laneFeatures()
         do throws(TransferError) {
-            return try await body(first.client)
+            return try await body(equipped(first.client, features))
         } catch .forbidden {
             // The owner may have rotated the key since the lanes were made: reload, and try once more.
         } catch {
@@ -211,7 +215,7 @@ public actor NodeLink: ReplicaLink {
         }
         let fresh = try await reloadedLanes(refusing: first.deviceID)
         do throws(TransferError) {
-            return try await body(fresh.lanes)
+            return try await body(equipped(fresh.lanes, features))
         } catch .forbidden {
             switch await reader.check(fresh.credentials) {
             case .refused:
@@ -223,6 +227,23 @@ public actor NodeLink: ReplicaLink {
         } catch {
             throw FinderError(error, during: operation)
         }
+    }
+
+    /// What the node announced beyond the base lanes: resumable uploads (`http.upload.resumable`) and the calibration
+    /// lanes. Unknown (a legacy node) is no: the old lanes stay in use.
+    private func laneFeatures() async -> VaultLanes.Features {
+        guard let session else { return VaultLanes.Features() }
+        return VaultLanes.Features(
+            resumableUploads: await session.supports(capability: .resumableUpload) == .yes,
+            transferLanes: await session.supports(capability: .transferLane) == .yes)
+    }
+
+    /// `lanes` with the node's features and this link's transfer tuning.
+    private func equipped(_ lanes: VaultLanes, _ features: VaultLanes.Features) -> VaultLanes {
+        var lanes = lanes
+        lanes.features = features
+        lanes.monitor = monitor
+        return lanes
     }
 
     /// The lanes for the identity the session presents now.

@@ -32,10 +32,26 @@ public enum TransferError: Error, Hashable, Sendable {
     case laneUnavailable(Lane)
     /// The node and this build share no protocol version; nothing was sent.
     case protocolUnsupported(String)
+    /// A conditional write's precondition failed (412 `precondition_failed`): the file changed since that version, or
+    /// something is already at the path on create. `currentVersion` is the file's version now, when the node said.
+    case preconditionFailed(currentVersion: String?)
+    /// The bytes the node stored aren't the bytes this Mac sent (a part's SHA-256 differs, or the node's integrity
+    /// check failed): the file wasn't kept.
+    case integrity(String)
+    /// The file is larger than the node accepts (413 `file_too_large`).
+    case fileTooLarge
+    /// The vault's key changed before the file was committed (`key_rotated`); uploading it again works.
+    case keyRotated
+    /// The resumable upload session is gone on the node (404: expired, cancelled, or never this device's).
+    case uploadExpired
+    /// The local file changed while it was uploading, so the parts already sent no longer match it.
+    case sourceChanged(String)
 
     /// The device listener's HTTP lanes, each announced by a capability.
     public enum Lane: String, Hashable, Sendable, CaseIterable {
         case preview, download, upload
+        /// The calibration routes (`/transfer/*`).
+        case transfer
 
         /// The `meta.hello` capability that says the node serves it.
         public var capability: WsCapability {
@@ -43,6 +59,7 @@ public enum TransferError: Error, Hashable, Sendable {
             case .preview: .previewLane
             case .download: .downloadLane
             case .upload: .uploadLane
+            case .transfer: .transferLane
             }
         }
 
@@ -51,6 +68,7 @@ public enum TransferError: Error, Hashable, Sendable {
             case .preview: "previews"
             case .download: "downloads"
             case .upload: "uploads"
+            case .transfer: "connection tests"
             }
         }
     }
@@ -74,6 +92,13 @@ public enum TransferError: Error, Hashable, Sendable {
         case .laneUnavailable(let lane):
             "This node's Vaulthalla doesn't serve \(lane.noun) to Desktop. Update Vaulthalla on the node."
         case .protocolUnsupported(let message): message
+        case .preconditionFailed: "The file changed on the server since this version."
+        case .integrity(let name):
+            "The server didn't receive \(name) exactly as it was sent, so it wasn't saved. Upload it again."
+        case .fileTooLarge: "This file is larger than the server accepts."
+        case .keyRotated: "The vault's key changed while the file was uploading. Upload it again."
+        case .uploadExpired: "The upload expired on the server before it finished. Upload it again."
+        case .sourceChanged(let name): "\(name) changed on this Mac while it was uploading."
         }
     }
 
@@ -105,6 +130,41 @@ public enum TransferError: Error, Hashable, Sendable {
         switch self {
         case .notFound, .status(404, _), .status(405, _), .status(501, _): return .laneUnavailable(lane)
         default: return self
+        }
+    }
+
+    /// Maps a non-2xx answer of the resumable upload and transfer routes (`/upload/sessions`, `/transfer/*`), which
+    /// always carry `{error: {code, message}}` (the server's docs/reference/transfer-protocol.md §3.7): by the code,
+    /// never by the words. A body without a code falls back to the status alone.
+    static func coded(status: Int, body: Data, etag: String? = nil) -> TransferError {
+        let error = ServerErrorBody.decode(body)
+        return coded(status: status, code: error?.code, message: error?.message, etag: error?.etag ?? etag)
+    }
+
+    /// One `{code, message}` (an answer's, or a file's `error` in a session status) as a transfer error.
+    static func coded(status: Int?, code: String?, message: String?, etag: String? = nil) -> TransferError {
+        let words = message.map { $0.count < 400 ? $0 : "" } ?? ""
+        switch code {
+        case "forbidden": return .forbidden
+        case "not_found": return status == 404 ? .uploadExpired : .notFound
+        case "already_exists", "conflict": return .alreadyExists
+        case "precondition_failed": return .preconditionFailed(currentVersion: etag)
+        case "quota_exceeded", "insufficient_storage": return .quotaExceeded
+        case "file_too_large": return .fileTooLarge
+        case "key_rotated": return .keyRotated
+        case "integrity", "digest_mismatch": return .integrity(words.isEmpty ? "the file" : words)
+        case "busy", "too_many_parts_in_flight", "too_many_requests": return .busy
+        default: break
+        }
+        switch status {
+        case 403: return .forbidden
+        case 404: return .uploadExpired
+        case 412: return .preconditionFailed(currentVersion: etag)
+        case 413: return .fileTooLarge
+        case 429, 503: return .busy
+        case 507: return .quotaExceeded
+        case let status?: return .status(status, words)
+        case nil: return .status(500, words.isEmpty ? "The server couldn't save the file." : words)
         }
     }
 
@@ -141,5 +201,20 @@ public enum TransferError: Error, Hashable, Sendable {
         }
         let text = String(decoding: body, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
         return text.count < 400 ? text : ""
+    }
+}
+
+/// The JSON error body of the resumable routes: `{"error": {"code": "...", "message": "...", "etag": "..."}}`.
+struct ServerErrorBody: Decodable, Sendable {
+    struct Detail: Decodable, Sendable {
+        var code: String?
+        var message: String?
+        var etag: String?
+    }
+    var error: Detail?
+
+    static func decode(_ body: Data) -> Detail? {
+        guard !body.isEmpty, body.count < 65536 else { return nil }
+        return (try? JSONDecoder().decode(ServerErrorBody.self, from: body))?.error
     }
 }

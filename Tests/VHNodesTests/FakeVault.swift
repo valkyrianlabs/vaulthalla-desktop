@@ -40,6 +40,17 @@ final class FakeVault: Sendable {
     }
 
     let state = Mutex(State())
+    /// `/upload/sessions` (resumable uploads), committing into this vault with each file's precondition.
+    let uploads = FakeUploadServer()
+
+    init() {
+        uploads.state.withLock { state in
+            state.commit = { [weak self] request in
+                self?.commit(request) ?? .failed(code: "internal", message: "gone", etag: nil)
+            }
+            state.createCheck = { [weak self] files in self?.checkCreate(files) }
+        }
+    }
 
     // MARK: Building
 
@@ -217,7 +228,13 @@ final class FakeVault: Sendable {
 
     // MARK: HTTP
 
+    /// Streams resumable parts to ``uploads``; everything else is buffered for ``handle(_:)``.
+    func route(_ request: HTTPTestServer.Request) -> HTTPTestServer.Plan {
+        FakeUploadServer.serves(request) ? uploads.route(request) : .buffer
+    }
+
     func handle(_ request: HTTPTestServer.Request) -> HTTPTestServer.Response {
+        if FakeUploadServer.serves(request) { return uploads.handle(request) }
         let components = URLComponents(string: "https://vault\(request.target)")
         let query = Dictionary((components?.queryItems ?? []).map { ($0.name, $0.value ?? "") }, uniquingKeysWith: { a, _ in a })
         switch (request.method, components?.path) {
@@ -305,6 +322,66 @@ final class FakeVault: Sendable {
             let etag = "\"g\(entry.id)-\(entry.generation)\""
             return Self.json(created ? 201 : 200, ["created": .bool(created), "entry": Self.json(entry, in: state)],
                              etag: etag)
+        }
+    }
+
+    /// `if_none_match: "*"` is checked at create too (412 when something is there).
+    private func checkCreate(_ files: [FakeUploadServer.File]) -> (Int, String, String?)? {
+        state.withLock { state in
+            for file in files where file.ifNoneMatch == "*" {
+                if let existing = Self.lookup(file.path, in: state), existing.type == "file" {
+                    return (412, "precondition_failed", "\"g\(existing.id)-\(existing.generation)\"")
+                }
+            }
+            return nil
+        }
+    }
+
+    /// A resumable file's commit: `PUT /upload/content`'s rules (vaulthalla/server#258), at commit time.
+    private func commit(_ request: FakeUploadServer.CommitRequest) -> FakeUploadServer.CommitResult {
+        state.withLock { state in
+            state.puts.append((request.path, request.ifMatch, request.ifNoneMatch))
+            if let race = state.beforePut {
+                state.beforePut = nil
+                race(&state)
+            }
+            let path = request.path
+            let parentPath = (path as NSString).deletingLastPathComponent
+            if state.readOnly.contains(parentPath) || state.readOnly.contains(path) {
+                return .failed(code: "forbidden", message: "Forbidden", etag: nil)
+            }
+            let existing = Self.lookup(path, in: state)
+            if let existing, existing.type != "file" {
+                return .failed(code: "conflict", message: "Something that is not a file exists at that path", etag: nil)
+            }
+            let data = request.data ?? Data()
+            var id: Int64
+            if let ifMatch = request.ifMatch {
+                guard let existing else { return .failed(code: "conflict", message: "Not found", etag: nil) }
+                let current = "\"g\(existing.id)-\(existing.generation)\""
+                guard ifMatch == current else {
+                    return .failed(code: "precondition_failed", message: "The file changed", etag: current)
+                }
+                id = existing.id
+                state.entries[id]!.data = data
+                state.entries[id]!.generation += 1
+                state.entries[id]!.revision += 1
+            } else {
+                if let existing {
+                    let current = "\"g\(existing.id)-\(existing.generation)\""
+                    return request.ifNoneMatch == "*"
+                        ? .failed(code: "precondition_failed", message: "The file already exists", etag: current)
+                        : .failed(code: "already_exists", message: "The file already exists", etag: nil)
+                }
+                guard let parent = Self.lookup(parentPath, in: state) else {
+                    return .failed(code: "conflict", message: "No such folder", etag: nil)
+                }
+                id = state.nextID
+                state.nextID += 1
+                state.entries[id] = Entry(id: id, parent: parent.id, name: (path as NSString).lastPathComponent,
+                                          type: "file", data: data)
+            }
+            return .committed(try? JSONEncoder().encode(Self.json(state.entries[id]!, in: state)))
         }
     }
 
