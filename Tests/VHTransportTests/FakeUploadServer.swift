@@ -9,7 +9,7 @@ import VHTransport
 /// overlap/conflict, `max_in_flight` with 429, `Server-Timing`, files committing on their own after their last gap,
 /// finish answering 409/202/200, cancel. Faults are injected per part (``Fault``).
 ///
-/// Shared verbatim by VHTransportTests and VHNodesTests (keep the two copies identical).
+/// VHNodesTests links this file (a symlink), as it does ``HTTPTestServer``.
 final class FakeUploadServer: Sendable {
     /// Something to do to one part request.
     enum Fault: Sendable {
