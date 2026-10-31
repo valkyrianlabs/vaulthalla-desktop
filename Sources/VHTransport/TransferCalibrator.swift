@@ -120,10 +120,18 @@ public struct TransferCalibrator: Sendable {
             best = Double(size) / wire
             // Grow while there is time for a transfer four times as long.
             let remaining = deadline - Self.now()
-            guard remaining > elapsed * 4 else { break }
-            size *= 4
+            guard remaining > elapsed * 4, let next = Self.nextSize(after: size, used: total, budget: budget.maxBytes)
+            else { break }
+            size = next
         }
         return (best, total)
+    }
+
+    /// The next body: four times the last, or what is left of the byte budget when that is smaller (so the largest
+    /// sample uses the budget instead of stopping at a quarter of it); nil below 1 MiB.
+    static func nextSize(after size: Int64, used: Int64, budget: Int64) -> Int64? {
+        let next = min(size * 4, budget - used)
+        return next >= 1 << 20 ? next : nil
     }
 
     /// Download throughput the same way.
@@ -142,8 +150,9 @@ public struct TransferCalibrator: Sendable {
             total += Int64(data.count)
             best = Double(data.count) / max(elapsed - (rtt ?? 0), 0.001)
             let remaining = deadline - Self.now()
-            guard remaining > elapsed * 4 else { break }
-            size *= 4
+            guard remaining > elapsed * 4, let next = Self.nextSize(after: size, used: total, budget: budget.maxBytes)
+            else { break }
+            size = next
         }
         return (best, total)
     }

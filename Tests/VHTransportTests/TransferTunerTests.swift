@@ -65,6 +65,15 @@ import VHCore
     static let lan = Link(capacity: 117e6, perStream: 80e6, rtt: 0.001)           // 1 Gbit/s, one stream ~80 MB/s
     static let wide = Link(capacity: 400e6, perStream: 40e6, rtt: 0.010)          // parallel parts pay
 
+    @Test func calibrationBodiesGrowIntoTheWholeBudget() {
+        let mib: Int64 = 1 << 20
+        // 16 MiB budget: 1, 4, then the 11 MiB left (not a 16 MiB step that can never fit), then nothing.
+        #expect(TransferCalibrator.nextSize(after: mib, used: mib, budget: 16 * mib) == 4 * mib)
+        #expect(TransferCalibrator.nextSize(after: 4 * mib, used: 5 * mib, budget: 16 * mib) == 11 * mib)
+        #expect(TransferCalibrator.nextSize(after: 11 * mib, used: 16 * mib, budget: 16 * mib) == nil)
+        #expect(TransferCalibrator.nextSize(after: mib, used: 15 * mib + 1, budget: 16 * mib) == nil)
+    }
+
     @Test func aSlowHighLatencyLinkGetsSmallPartsAndNoExtraConcurrency() {
         var tuner = TransferTuner()
         #expect(tuner.partBytes == 64 * Self.mib && tuner.concurrency == 2)
