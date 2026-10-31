@@ -189,9 +189,12 @@ import VHCore
     }
 
     @Test func cancellingADownloadStopsIt() async throws {
+        // The answer is held for 30 s: a download that ignored the cancellation would wait it out, far past any
+        // scheduling delay, so the bound below can be loose.
         let server = try await Self.start { request in
-            Thread.sleep(forTimeInterval: 1.5)
-            return Self.serve(request)
+            var response = Self.serve(request)
+            response.delay = .seconds(30)
+            return response
         }
         defer { server.stop() }
         let lanes = try Self.lanes(port: server.port)
@@ -207,162 +210,11 @@ import VHCore
         let started = ContinuousClock.now
         task.cancel()
         await #expect(throws: TransferError.cancelled) { try await task.value }
-        #expect(ContinuousClock.now - started < .seconds(1))
+        #expect(ContinuousClock.now - started < .seconds(10))
         #expect(!FileManager.default.fileExists(atPath: destination.path))
     }
 
     // MARK: Uploads
-
-    /// The web's flow: open a session listing every file, PUT each body, finish. Sessions are split by the policy;
-    /// an empty file is complete when its session opens and gets no PUT.
-    @Test func uploadsThroughSessions() async throws {
-        let sessions = Mutex(0)
-        let server = try await Self.start { request in
-            switch (request.method, request.target) {
-            case ("POST", "/upload/session"):
-                let id = sessions.withLock { count in count += 1; return "up-\(count)" }
-                return .init(status: 200, headers: ["Content-Type": "application/json"],
-                             body: Data(#"{"upload_id":"\#(id)","files":[]}"#.utf8))
-            case ("PUT", let target) where target.hasPrefix("/upload/up-"):
-                return .init(status: 200, headers: ["Content-Type": "application/json"], body: Data("{}".utf8))
-            case ("POST", let target) where target.hasSuffix("/finish"):
-                return .init(status: 200, headers: ["Content-Type": "application/json"],
-                             body: Data(#"{"complete":true}"#.utf8))
-            default:
-                return .init(status: 404)
-            }
-        }
-        defer { server.stop() }
-        var policy = Self.fastPolicy
-        policy.sessionMaxFiles = 2
-        let lanes = try Self.lanes(port: server.port, policy: policy)
-        defer { lanes.invalidate() }
-        let folder = try Self.scratch()
-        defer { try? FileManager.default.removeItem(at: folder) }
-
-        let a = folder.appending(path: "a.txt")
-        let b = folder.appending(path: "b.jpg")
-        let empty = folder.appending(path: "empty")
-        try Data("alpha".utf8).write(to: a)
-        try Self.blob.write(to: b)
-        try Data().write(to: empty)
-        let files: [VaultLanes.UploadFile] = [
-            .init(source: a, relativePath: "a.txt", size: 5, mimeType: "text/plain"),
-            .init(source: b, relativePath: "pics/2026/b.jpg", size: Int64(Self.blob.count), mimeType: "image/jpeg"),
-            .init(source: empty, relativePath: "empty", size: 0),
-        ]
-        let last = Mutex(VaultLanes.UploadProgress(bytes: 0, files: 0))
-        let touched = try await lanes.upload(files, vaultID: 9, into: "/Inbox/") { progress in
-            last.withLock { $0 = progress }
-        }
-        #expect(touched == ["/Inbox", "/Inbox/pics/2026"])
-        #expect(last.withLock { $0 } == .init(bytes: Int64(5 + Self.blob.count), files: 3))
-
-        let requests = server.requests
-        #expect(requests.map { "\($0.method) \($0.target)" } == [
-            "POST /upload/session", "PUT /upload/up-1/files/f0", "PUT /upload/up-1/files/f1", "POST /upload/up-1/finish",
-            "POST /upload/session", "POST /upload/up-2/finish",
-        ] || requests.map { "\($0.method) \($0.target)" } == [
-            "POST /upload/session", "PUT /upload/up-1/files/f1", "PUT /upload/up-1/files/f0", "POST /upload/up-1/finish",
-            "POST /upload/session", "POST /upload/up-2/finish",
-        ])
-        let opened = try #require(JSONSerialization.jsonObject(with: requests[0].body) as? [String: Any])
-        #expect(opened["vault_id"] as? Int == 9)
-        let listed = try #require(opened["files"] as? [[String: Any]])
-        #expect(listed.map { $0["path"] as? String } == ["/Inbox/a.txt", "/Inbox/pics/2026/b.jpg"])
-        #expect(listed.map { $0["file_id"] as? String } == ["f0", "f1"])
-        #expect(listed.map { $0["duplicate_policy"] as? String } == ["reject", "reject"])
-        #expect(listed.map { $0["size"] as? Int } == [5, Self.blob.count])
-        let jpeg = try #require(requests.first { $0.target == "/upload/up-1/files/f1" })
-        #expect(jpeg.body == Self.blob)
-        #expect(jpeg.header("Content-Type") == "image/jpeg")
-    }
-
-    /// A node fault: the session is discarded on the node and the whole session is sent again.
-    @Test func retriesAFailedSessionFromTheStart() async throws {
-        let failures = Mutex(1)
-        let server = try await Self.start { request in
-            switch (request.method, request.target) {
-            case ("POST", "/upload/session"):
-                return .init(status: 200, body: Data(#"{"upload_id":"u1"}"#.utf8))
-            case ("PUT", _):
-                let fail = failures.withLock { count in defer { count -= 1 }; return count > 0 }
-                return fail ? .init(status: 503, body: Data("busy".utf8)) : .init(status: 200)
-            case ("POST", "/upload/u1/finish"), ("DELETE", "/upload/u1"):
-                return .init(status: 200, body: Data("{}".utf8))
-            default:
-                return .init(status: 404)
-            }
-        }
-        defer { server.stop() }
-        let lanes = try Self.lanes(port: server.port)
-        defer { lanes.invalidate() }
-        let folder = try Self.scratch()
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let file = folder.appending(path: "a.txt")
-        try Data("alpha".utf8).write(to: file)
-
-        try await lanes.upload([.init(source: file, relativePath: "a.txt", size: 5)], vaultID: 1, into: "/") { _ in }
-        let lines = server.requests.map { "\($0.method) \($0.target)" }
-        #expect(lines.filter { $0 == "POST /upload/session" }.count == 2)
-        #expect(lines.contains("DELETE /upload/u1"))
-        #expect(lines.last == "POST /upload/u1/finish" || lines.last == "DELETE /upload/u1")
-    }
-
-    @Test func refusalsAreNotRetried() async throws {
-        let server = try await Self.start { request in
-            .init(status: 400, body: Data("Upload target already exists".utf8))
-        }
-        defer { server.stop() }
-        let lanes = try Self.lanes(port: server.port)
-        defer { lanes.invalidate() }
-        let folder = try Self.scratch()
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let file = folder.appending(path: "a.txt")
-        try Data("alpha".utf8).write(to: file)
-
-        await #expect(throws: TransferError.alreadyExists) {
-            try await lanes.upload([.init(source: file, relativePath: "a.txt", size: 5)], vaultID: 1, into: "/") { _ in }
-        }
-        #expect(server.requests.count == 1)
-    }
-
-    /// Cancelling stops the PUT and discards the session on the node.
-    @Test func cancellingAnUploadDiscardsTheSession() async throws {
-        let server = try await Self.start { request in
-            switch (request.method, request.target) {
-            case ("POST", "/upload/session"): return .init(status: 200, body: Data(#"{"upload_id":"u7"}"#.utf8))
-            case ("PUT", _):
-                Thread.sleep(forTimeInterval: 1.0)
-                return .init(status: 200)
-            default: return .init(status: 200, body: Data("{}".utf8))
-            }
-        }
-        defer { server.stop() }
-        let lanes = try Self.lanes(port: server.port)
-        defer { lanes.invalidate() }
-        let folder = try Self.scratch()
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let file = folder.appending(path: "big.bin")
-        try Self.blob.write(to: file)
-
-        let task = Task {
-            try await lanes.upload([.init(source: file, relativePath: "big.bin", size: Int64(Self.blob.count))],
-                                   vaultID: 1, into: "/") { _ in }
-        }
-        // Cancel once the session exists and a PUT is under way (not after a fixed delay: on a loaded machine the
-        // session might not be open yet, and then there is nothing to discard).
-        while !server.requests.contains(where: { $0.method == "PUT" }) {
-            try await Task.sleep(for: .milliseconds(20))
-        }
-        task.cancel()
-        await #expect(throws: TransferError.cancelled) { try await task.value }
-        for _ in 0..<50 where !server.requests.contains(where: { $0.method == "DELETE" }) {
-            try await Task.sleep(for: .milliseconds(100))
-        }
-        #expect(server.requests.contains { $0.method == "DELETE" && $0.target == "/upload/u7" })
-        #expect(!server.requests.contains { $0.target.hasSuffix("/finish") })
-    }
 
     @Test func splitsLargeDropsIntoSessions() {
         func file(_ size: Int64) -> VaultLanes.UploadFile {

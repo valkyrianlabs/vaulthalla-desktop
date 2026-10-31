@@ -310,8 +310,9 @@ public struct EndpointSelector: Sendable {
                 let now = clock.now
                 let bestSoFar = best()
                 // Launch what may start now, in priority order. With a success in hand, only what could beat it.
+                // Nothing new once cancelled: the probes the cancellation ends would otherwise free their slots.
                 while inFlight.count < configuration.maxInFlight, now >= nextLaunch, let next = pending.first,
-                      bestSoFar.map({ estimated[next] < $0 }) ?? true, now < deadline {
+                      bestSoFar.map({ estimated[next] < $0 }) ?? true, now < deadline, !Task.isCancelled {
                     pending.removeFirst()
                     inFlight.insert(next)
                     launched[next] = now - start

@@ -21,7 +21,6 @@ business logic: every action is an operation the daemon authorizes.
 | `App/Extensions/FileProvider/` | the File Provider extension (`sh.vaulthalla.app.fileprovider`, embedded in `Contents/PlugIns`): Finder integration: browse, read (whole and ranges), create, edit with conflict copies, rename, move, delete, thumbnails ([`docs/architecture.md`](docs/architecture.md) §7) |
 | `contract/` | `wsContract.json` vendored from the server (`SOURCE.json` records the version) and `compat-baseline.json`, the oldest supported server's contract (1.17.0); `tools/gen-contract.py` turns them into Swift ([`docs/architecture.md`](docs/architecture.md) §3, "Protocol negotiation") |
 | `tools/interop/` | `vh-instance.sh`: a private daemon test instance for the opt-in live suite `Tests/VHNodesLiveTests` ([`docs/interop-testing.md`](docs/interop-testing.md)) |
-| `tools/bench/` | `transfer-bench.sh`: the fake-server upload benchmark (legacy PUT vs fixed vs tuned parts behind an emulated link; [`docs/architecture.md`](docs/architecture.md) §3) |
 | `tools/keychain-proof/` | `run.sh <TEAM_ID>`: a team-signed proof that device identities work in the data protection keychain (Secure Enclave create, find, rotate, delete), which unsigned `swift test` and CI can't reach |
 | `docs/` | architecture and protocol documents |
 
@@ -43,6 +42,22 @@ switches on the App Group (`<TEAM>.sh.vaulthalla.app`) and the shared keychain g
 Provider extension share the node registry and device keys; the registry moves into the group container on first
 launch, keeping the old file as a backup. Without a team the app is signed to run locally and keeps its registry in
 Application Support ([`docs/architecture.md`](docs/architecture.md) §3, "Signing and the shared container").
+
+### What the tests cover
+
+The server owns the protocol: `core/usage/protocol` defines every command, the server's contract tests keep it from
+drifting, and `contract/` vendors it here with its `ws_hash`. Desktop's tests stay on what Desktop owns:
+
+- **The contract:** `VHContractTests` round-trips the server's generated samples for every command and model.
+- **Wire mechanics** against fixtures that know no commands: ws framing, answer correlation, timeouts, reconnects,
+  error envelopes, TLS 1.3 with mutual auth and SPKI pinning, HTTP ranges and status mapping.
+- **Client logic** with no network or fed scripted answers in memory: endpoint selection, the transfer tuner, upload
+  part arithmetic, the query cache, the credential lease, Finder mapping, the MCP bridge.
+
+No test re-implements a server transaction (pairing, rotation, revocation, upload sessions, conditional writes, vault
+key export) in Swift. Those run against a real daemon in the opt-in live suite before a release
+([`docs/interop-testing.md`](docs/interop-testing.md)). A bug found in real use gets a regression test at the lowest of
+these levels that reproduces it.
 
 The data protection keychain (Secure Enclave device keys) needs a team-signed process, so `swift test` covers it
 only through the pure query tests (`KeychainQueriesTests`). After changing `Sources/VHIdentity`'s Keychain code, run

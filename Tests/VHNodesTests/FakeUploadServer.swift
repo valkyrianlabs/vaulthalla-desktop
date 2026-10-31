@@ -1,1 +1,0 @@
-../VHTransportTests/FakeUploadServer.swift
