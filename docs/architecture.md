@@ -141,64 +141,9 @@ docs/                   this plan, the pairing protocol, release notes
 - **Files:** a virtualized `Table`/grid backed by `fs.*`. Downloads and uploads use the HTTP lanes on the device
   listener (URLSession with the same identity). Quick Look previews come from `/preview`, and drag-and-drop works
   with Finder.
-- **Resumable uploads and tuning** (the server's `docs/reference/transfer-protocol.md` §3 and §4; `VHTransport`).
-  - **Gate.** A node announcing `http.upload.resumable` gets resumable uploads; otherwise (`no`, or a legacy node's
-    `unknown`) the `/upload/session` flow and `PUT /upload/content` run exactly as before. `device.lanes.transfer`
-    gates calibration (both in `WsCapability.used`; `http.upload.resumable` waits in `awaitingContract`).
-  - **Sessions** (`ResumableUploader`). `POST /upload/sessions` with up to 500 files, each with its precondition
-    (`duplicate_policy: "reject"` for the Files browser, `if_none_match` / `if_match` for the File Provider). Each file
-    goes as byte ranges, `PUT /upload/sessions/<id>/files/<f>?offset=n`, carved left to right so no piece below the
-    server's `part.min_bytes` is ever left in front of a stored range.
-  - **Streaming.** A part is streamed from disk through a bound stream pair (`uploadTask(withStreamedRequest:)`): a
-    thread `pread`s the range into one 256 KiB buffer, hashes it and writes it into the pair's 256 KiB buffer, so a
-    part never sits in memory whatever its size (no temporary copy either). The SHA-256 must equal the answer's
-    `sha256`; a mismatch cancels the session at once (`DELETE`, before the file's last gap can close and commit) and
-    the file starts over (`TransferError.integrity` once its restarts are spent). Before a part's last chunk the
-    source's identity (size, mtime, inode, device) is checked again: a file edited mid-part abandons the request
-    before its body completes, so the node never records it, and the file starts over.
-  - **Retries.** A failed part goes again as exactly the same range, after a backoff (800 ms doubling to 30 s) or
-    `Retry-After` on 429/503, at most 5 times; a resend after a lost answer carries `Content-Digest` of the bytes sent
-    the first time, and the node acknowledges identical bytes again (200). 409 `part_overlap`/`file_state` re-sync
-    from `GET /upload/sessions/<id>`; `part_conflict` means the local file isn't what was sent, and it starts over.
-    Errors are mapped by the JSON `{error: {code}}` (`TransferError.coded`), never by their words.
-  - **Resume.** When parts run out of retries the session isn't deleted: the session-level loop backs off and resumes
-    from the node's status (its `ranges` are the durable truth), sending only the gaps, up to 5 times (progress resets
-    the count). Progress is persisted per upload (`ResumableStore`: Application Support/Vaulthalla/Uploads/<node>/
-    <id>.json, 0600, at most once a second): the session id, each file's identity and acknowledged ranges. The
-    Transfers panel's Retry resumes the same upload instead of starting from 0; quitting suspends running uploads
-    (`UploadControl.suspend()`, nothing is deleted); opening the node's Files section on the next launch queues what
-    didn't finish, and a file changed since is started over in a new session. Cancel, and clearing a failed upload,
-    delete the session. `finish` is polled while it answers 202; a file the node fails (`already_exists`,
-    `precondition_failed`, `key_rotated`, …) is reported per file while the others stand (`key_rotated` starts over).
-  - **Tuning** (`TransferTuner`, pure; `TransferMonitor` shares one per node). Aggregate throughput is bytes over time
-    times the time-weighted parallelism of the recent parts (an EWMA of that); answer latency (a part's last byte to
-    its answer, less `Server-Timing` sync) is compared only with its own recent minimum. Part size = per-stream
-    throughput × 2 s rounded to MiB, held inside soft speed bounds (slow links 8–32 MiB, typical 32–128, fast LANs
-    128–512), the client's bounds, the server's `part.min_bytes`/`max_bytes` and a 1 GiB in-flight budget; it starts
-    at 64 MiB, changes by ≥ 25 % and only after measured parts, never from latency alone, and only parts not yet
-    started take it. Concurrency is AIMD in `[1, min(4, part.max_in_flight)]` from 2: one more part after a steady
-    epoch, kept only for ≥ 10 % more throughput (a failed probe holds 30 s, doubling); halved on 429/503 and on
-    bursts of timeouts or drops; one fewer when answer latency rises and the part it added doesn't pay; never more
-    while `Server-Timing` shows the server's write and sync taking most of each part. Tuning can be switched off
-    (`TransferMonitor.setTuningEnabled(false)`: 64 MiB × 2 within the server's limits).
-  - **Estimates** (`TransferEstimateCache`, Application Support/Vaulthalla/transfer-estimates.json): the last estimate
-    per node and endpoint class (loopback, lan, vpn, wan, passthrough), 24 h; another class drops it. A new upload
-    starts from it.
-  - **Calibration** (`TransferCalibrator`). `GET /transfer/probe` (RTT), `POST /transfer/sink` and
-    `GET /transfer/source` from 1 MiB up, at most 16 MiB and 3 s each way. It runs only before an upload of 256 MiB
-    or more with no fresh estimate (never on a reconnect), and the first real parts replace what it guessed.
-    `VaultLanes.testConnection()` ("Test Connection") runs it on demand and returns RTT, MB/s each way and the part
-    size and concurrency uploads would start with; nothing is written on the node.
-  - **Stats.** `TransferMonitor.updates()` streams `TransferTuningSnapshot` (up/down bytes/s over 3 s, part size,
-    concurrency allowed and parts in flight, tuning on/off, the estimate, RTT, its source, server-bound, endpoint
-    class), at most ~4 a second while something moves; `snapshot` reads it once. Downloads feed the down meter.
-  - **Proof.** `swift test` drives the uploader against `FakeUploadServer` (the protocol from the spec, with injected
-    busy answers, dropped bodies, lost answers, wrong digests, overlaps, slow commits) and the tuner through
-    simulated links. `tools/bench/transfer-bench.sh` compares the legacy PUT, fixed 64 MiB × 2 and tuned parts
-    against the in-process fake behind an emulated link (fake-server numbers only).
 - **Persistence:** node records (id, name, configured endpoint, advertised endpoints and the last good one, pinned
-  server SPKI, device id) in `nodes.json`: in the App Group
-  container for signed builds, in Application Support otherwise (see "Signing and the shared container" below).
+  server SPKI, device id) in `nodes.json`: in the App Group container for signed builds, in Application Support
+  otherwise (see "Signing and the shared container" below).
   Device keys live in the Keychain and Secure Enclave. Nothing secret goes in `UserDefaults` or in logs.
   - `Logger` uses `.private` for everything user-derived.
   - Key material is held in a `SecretBytes` type that zeroes on deinit and has no `description`.
@@ -243,8 +188,9 @@ docs/                   this plan, the pairing protocol, release notes
     missing item), `device.mcp` (the MCP bridge asks it over its own `meta.hello` when `/mcp` answers 404),
     `device.server.identity`, `errors.unknown_command_code`, `fs.entry.metadata_version`, `device.endpoints` (the
     session asks for the node's addresses, "Endpoints and route selection" below), `device.lanes.transfer` and
-    `http.upload.resumable` ("Resumable uploads and tuning" above). A capability the spec defines before the vendored contract declares
-    it sits in `WsCapability.awaitingContract`. Command presence always comes from `commands`.
+    `http.upload.resumable` ("Resumable uploads and tuning" below). A capability the spec defines before the vendored
+    contract declares it sits in `WsCapability.awaitingContract` (now `http.upload.resumable`). Command presence
+    always comes from `commands`.
   - **UI.** The node overview shows "Vaulthalla 1.19.0 · protocol 1" (legacy: "Vaulthalla 1.18 or earlier") and the
     contract identity from the hello; an incompatible node gets a sidebar badge, an "Incompatible" header badge and,
     where its sections would be, the message saying which side to update.
@@ -279,9 +225,17 @@ docs/                   this plan, the pairing protocol, release notes
     or off a route whose probe failed, so there are no reconnect storms. A selected endpoint that later presents
     another key is selected away from, not re-paired.
   - **Lanes** follow the route: `NodeSession.laneConfiguration` uses `activeEndpoint`; the app's `NodeFileLanes` and
-    the extension's `NodeLink` key cached clients by identity and endpoint; the MCP bridge selects per node through a
-    read-only `RouteCache` (reused 5 min, dropped after a failure). The extension's and the helper's Info.plists carry
+    the extension's `NodeLink` key cached clients by identity and endpoint (a client whose endpoint moved is left to
+    finish what it carries; a rotated identity cancels it); the MCP bridge selects per node through a read-only
+    `RouteCache` (reused 5 min, dropped after a failure). The extension's and the helper's Info.plists carry
     `NSBonjourServices` and `NSLocalNetworkUsageDescription`, since they open their own LAN connections.
+  - **Route changes** (§2: "requests in flight are retried on the new endpoint"). A lane's connection-class failure
+    calls `NodeSession.rerouteLanes(awayFrom:)`: `laneConnectionFailed()` (a throttled re-selection), then up to 15 s
+    for the lanes to move. Once they did, a download or a session-flow upload runs once more there (previews and Test
+    Connection don't wait), and a resumable upload resumes its session from `GET /upload/sessions/<id>` on the new
+    endpoint (session ids are the node's, not the endpoint's; at most 3 moves per upload). A request cancelled because
+    its client was replaced counts as a dropped connection, never as the user's cancel. Without another route the
+    usual retries apply.
   - **Advertisement.** After connecting, a node that announces the `device.endpoints` capability is asked for its
     addresses (`EndpointAdvertisementSource`); an answer naming another `node_id` is ignored, candidates are validated
     and capped at 32.
@@ -290,11 +244,86 @@ docs/                   this plan, the pairing protocol, release notes
     server presents the link's key) and is prefilled with the best one, and `PairingClient` pins every pairing
     connection to the link's key from the start (`PairingFailure.unexpectedServerIdentity` otherwise). The code
     (docs/pairing.md) stays authoritative.
-  - **Status view.** The node Overview's Connection panel shows the route class (Localhost, LAN, VPN, Direct WAN,
-    Passthrough), endpoint, address reached, the verified key (current or next), the RTT, transfer throughput, part
-    size, parts in flight and auto-tuning (`VHCore.TransferStats` through `TransferStatsBoard`, "—" while nothing
-    reports), and why a better class wasn't used, per candidate in plain words with a technical disclosure. Test
-    Connection runs `AppModel.connectionTest` (a fresh selection by default). No credentials or session material.
+- **Resumable uploads and tuning** (the server's `docs/reference/transfer-protocol.md` §3 and §4; `VHTransport`). They
+  run over the route the session selected ("Endpoints and route selection" above).
+  - **Gate.** A node announcing `http.upload.resumable` gets resumable uploads; otherwise (`no`, or a legacy node's
+    `unknown`) the `/upload/session` flow and `PUT /upload/content` run exactly as before. `device.lanes.transfer`
+    gates calibration (both in `WsCapability.used`; `http.upload.resumable` waits in `awaitingContract`).
+  - **Sessions** (`ResumableUploader`). `POST /upload/sessions` with up to 500 files, each with its precondition
+    (`duplicate_policy: "reject"` for the Files browser, `if_none_match` / `if_match` for the File Provider). Each file
+    goes as byte ranges, `PUT /upload/sessions/<id>/files/<f>?offset=n`, carved left to right so no piece below the
+    server's `part.min_bytes` is ever left in front of a stored range.
+  - **Streaming.** A part is streamed from disk through a bound stream pair (`uploadTask(withStreamedRequest:)`): a
+    thread `pread`s the range into one 256 KiB buffer, hashes it and writes it into the pair's 256 KiB buffer, so a
+    part never sits in memory whatever its size (no temporary copy either). The SHA-256 must equal the answer's
+    `sha256`; a mismatch cancels the session at once (`DELETE`, before the file's last gap can close and commit) and
+    the file starts over (`TransferError.integrity` once its restarts are spent). Before a part's last chunk the
+    source's identity (size, mtime, inode, device) is checked again: a file edited mid-part abandons the request
+    before its body completes, so the node never records it, and the file starts over.
+  - **Retries.** A failed part goes again as exactly the same range, after a backoff (800 ms doubling to 30 s) or
+    `Retry-After` on 429/503, at most 5 times; a resend after a lost answer carries `Content-Digest` of the bytes sent
+    the first time, and the node acknowledges identical bytes again (200). 409 `part_overlap`/`file_state` re-sync
+    from `GET /upload/sessions/<id>`; `part_conflict` means the local file isn't what was sent, and it starts over.
+    Errors are mapped by the JSON `{error: {code}}` (`TransferError.coded`), never by their words.
+  - **Resume.** When parts run out of retries the session isn't deleted: the session-level loop backs off and resumes
+    from the node's status (its `ranges` are the durable truth), sending only the gaps, up to 5 times (progress resets
+    the count). A dropped connection doesn't wait for that: with another route possible the session run stops at once
+    and asks for one (`VaultLanes.reroute`, see "Route changes" above), and the same session resumes from its status
+    on the new endpoint. Progress is persisted per upload (`ResumableStore`: Application
+    Support/Vaulthalla/Uploads/<node>/ <id>.json, 0600, at most once a second): the session id, each file's identity
+    and acknowledged ranges. The Transfers panel's Retry resumes the same upload instead of starting from 0; quitting
+    suspends running uploads (`UploadControl.suspend()`, nothing is deleted); opening the node's Files section on the
+    next launch queues what didn't finish, and a file changed since is started over in a new session. Cancel, and
+    clearing a failed upload, delete the session. `finish` is polled while it answers 202; a file the node fails
+    (`already_exists`, `precondition_failed`, `key_rotated`, …) is reported per file while the others stand
+    (`key_rotated` starts over).
+  - **Tuning** (`TransferTuner`, pure; `TransferMonitor` shares one per node). Aggregate throughput is bytes over time
+    times the time-weighted parallelism of the recent parts (an EWMA of that); answer latency (a part's last byte to
+    its answer, less `Server-Timing` sync) is compared only with its own recent minimum. Part size = per-stream
+    throughput × 2 s rounded to MiB, held inside soft speed bounds (slow links 8–32 MiB, typical 32–128, fast LANs
+    128–512), the client's bounds, the server's `part.min_bytes`/`max_bytes` and a 1 GiB in-flight budget; it starts
+    at 64 MiB, changes by ≥ 25 % and only after measured parts, never from latency alone, and only parts not yet
+    started take it. Concurrency is AIMD in `[1, min(4, part.max_in_flight)]` from 2: one more part after a steady
+    epoch, kept only for ≥ 10 % more throughput (a failed probe holds 30 s, doubling); halved on 429/503 and on
+    bursts of timeouts or drops; one fewer when answer latency rises and the part it added doesn't pay; never more
+    while `Server-Timing` shows the server's write and sync taking most of each part. Tuning can be switched off per
+    node (the Connection panel's Automatic tuning switch, `TransferMonitor.setTuningEnabled(false)`: 64 MiB × 2 within
+    the server's limits); the nodes with it off are kept in UserDefaults (`transfers.automaticTuningOff`, node ids
+    only) and applied when the app makes the node's lanes. The File Provider extension always tunes.
+  - **Estimates** (`TransferEstimateCache`, Application Support/Vaulthalla/transfer-estimates.json): the last estimate
+    per node and endpoint class (loopback, lan, vpn, wan, passthrough), 24 h. The class is the selected route's
+    (`TransferEndpointClass(endpoint:route:)` from `NodeRoute.transportClass`, set at lane creation and on every
+    `.route` event); the literal-address heuristic `TransferEndpointClass(host:)` is only the fallback without a route
+    for that endpoint. A move to another class resets the tuner and drops the estimate. A new upload starts from it.
+  - **Calibration** (`TransferCalibrator`). `GET /transfer/probe` (RTT), `POST /transfer/sink` and
+    `GET /transfer/source` from 1 MiB up, at most 16 MiB and 3 s each way. It runs only before an upload of 256 MiB
+    or more with no fresh estimate (never on a reconnect), and the first real parts replace what it guessed.
+    `VaultLanes.testConnection()` runs it on demand (Test Connection, see "Connection panel" below) and returns RTT,
+    MB/s each way and the part size and concurrency uploads would start with; nothing is written on the node.
+  - **Stats.** `TransferMonitor.updates()` streams `TransferTuningSnapshot` (up/down bytes/s over 3 s, part size,
+    concurrency allowed and parts in flight, tuning on/off, the estimate, RTT, its source, server-bound, endpoint
+    class), at most ~4 a second while something moves; `snapshot` reads it once. Downloads feed the down meter. The
+    app's `TransferStatsFeed` turns them into `VHCore.TransferStats` on `TransferStatsBoard` (nil once idle) for the
+    Connection panel.
+  - **Proof.** `swift test` drives the uploader against `FakeUploadServer` (the protocol from the spec, with injected
+    busy answers, dropped bodies, lost answers, wrong digests, overlaps, slow commits, and a route that dies
+    mid-upload with a second endpoint to resume on) and the tuner through simulated links.
+    `tools/bench/transfer-bench.sh` compares the legacy PUT, fixed 64 MiB × 2 and tuned parts against the in-process
+    fake behind an emulated link (fake-server numbers only).
+- **Connection panel** (node Overview; `ConnectionPanel`). How this Mac reaches the node now, with nothing secret in
+  it (no keys or session material): the route class (Localhost, LAN, VPN, Direct WAN, Passthrough), endpoint, address
+  reached, the verified key (current or next) and the handshake RTT; throughput each way, part size, parts in flight
+  of those allowed, what the tuning works from (defaults, the cached estimate, a calibration, this transfer) and
+  whether the server's disk or the network limits it (`TransferStats`, "—" while nothing reports); the Automatic
+  tuning switch; and why a better class wasn't used, per candidate in plain words with a technical disclosure.
+  - **Test Connection** runs `AppModel.connectionTest`, `ConnectionTests.calibrating` for live sessions: a fresh
+    selection (`NodeSession.testRoute()`, the connection moves if a better route answers), then, where the node
+    announces `device.lanes.transfer`, the node lanes' `testConnection()` over the route it settled on. Measured
+    bytes/s fill the Upload and Download tiles until transfers report, and the note says what uploads would start
+    with; a calibration that fails leaves the route result with the reason in plain words. Previews run the route
+    test only.
+  - **Lanes.** `AppModel` owns each node's `NodeFileLanes` (made on first use, shared by Files and the panel); making
+    them applies the node's tuning switch and route class and starts its `TransferStatsFeed`.
 - **Credential ownership: one owner, every other process a consumer** (desktop#3). A rotation in one process would
   strand every other process presenting the old key, because the daemon clears `previous_spki_sha256` on the first
   handshake with the new key (`docs/pairing.md` §4). So exactly one process on the Mac, the *owner*, creates, rotates
@@ -649,8 +678,8 @@ Epic desktop#1 (Stages A to D). The MVP is desktop#4. Spike findings are on desk
     (§3, "Resumable uploads and tuning") carrying the same precondition: `if_none_match: "*"` to create, `if_match`
     to replace. A precondition failing at create (412) or at commit (`precondition_failed` + `etag`) is the same
     conflict as a 412 from `PUT /upload/content`, so conflict copies work unchanged. Parts are retried within the
-    operation and a dropped connection resumes from the session's status; a write that can't complete deletes its
-    session. Smaller files stay one `PUT` (nothing to resume, one request instead of three), and so does everything
+    operation and a dropped connection resumes from the session's status, on a new endpoint when the extension's
+    session selected another route (§3, "Route changes"); a write that can't complete deletes its session. Smaller files stay one `PUT` (nothing to resume, one request instead of three), and so does everything
     on a node without the capability. The extension doesn't persist sessions across its own relaunch: the system
     retries the write, which starts a new session (an abandoned one expires on the node after 24 h idle).
   - **Conflicts: never an overwrite.** The server's version is checked before the upload, and the upload itself is
