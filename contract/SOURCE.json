@@ -1,10 +1,10 @@
 {
   "server_version": "1.19.0",
-  "server_commit": "372b5bdb",
-  "server_branch": "feat/direct-transport",
+  "server_commit": "acda76bc",
+  "server_branch": "HEAD",
   "source": "web/src/util/generated/wsContract.json",
   "contract_version": 3,
   "ws_hash": "056cfd712b9e8341a251678acac0ae408f236bfb5b2b042eba62f1f1c8fe3c5e",
   "models_hash": "90e903c4b40419ac7c469d4461938664799af1b82168f8db763ef46d1bdc6b81",
-  "note": "server feat/direct-transport 372b5bdb (device.endpoints, device.lanes.transfer, http.upload.resumable)"
+  "note": "server main (valkyrianlabs/vaulthalla-server#287 merged)"
 }
