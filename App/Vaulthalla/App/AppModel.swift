@@ -130,9 +130,19 @@ final class AppModel {
         return node
     }
 
-    /// The saved node already reachable at `endpoint`, if any; used to stop the same server being added twice.
-    func existingNode(at endpoint: NodeEndpoint) -> Node? {
-        nodes.first { $0.endpoint.host.caseInsensitiveCompare(endpoint.host) == .orderedSame && $0.endpoint.port == endpoint.port }
+    /// The saved node that already is this server, if any; used to stop the same server being added twice. It matches
+    /// the address (the configured one, or one the node advertised other than loopback, which every node has) or,
+    /// where both are known, the server's install id (`serverNodeID`, from Bonjour's TXT `node_id` or a pairing link).
+    func existingNode(at endpoint: NodeEndpoint?, serverNodeID: String? = nil) -> Node? {
+        if let serverNodeID, let match = nodes.first(where: { $0.serverNodeID == serverNodeID }) { return match }
+        guard let endpoint else { return nil }
+        func same(_ other: NodeEndpoint) -> Bool {
+            other.host.caseInsensitiveCompare(endpoint.host) == .orderedSame && other.port == endpoint.port
+        }
+        if let match = nodes.first(where: { same($0.endpoint) }) { return match }
+        return nodes.first { node in
+            node.endpoints.contains { $0.kind != .loopback && !TransportSecurity.isLoopback($0.host) && same($0.endpoint) }
+        }
     }
 
     func rename(_ id: NodeID, to name: String) {

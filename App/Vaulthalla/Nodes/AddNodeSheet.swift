@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 import VHCore
+import VHNodes
 
 /// Adds a node (discovered on the network or typed in), then explains pairing. Opening it for an existing node
 /// goes straight to the pairing step.
@@ -59,7 +60,7 @@ struct AddNodeSheet: View {
 
             Form {
                 Section {
-                    DiscoveredServerList(browser: browser, pickedID: pickedServerID, existingNode: existingNode(at:)) { server in
+                    DiscoveredServerList(browser: browser, pickedID: pickedServerID, existingNode: existingNode(for:)) { server in
                         pick(server)
                     }
                 } header: {
@@ -142,8 +143,9 @@ struct AddNodeSheet: View {
         }
     }
 
-    private func existingNode(at endpoint: NodeEndpoint?) -> Node? {
-        endpoint.flatMap(model.existingNode(at:))
+    /// The saved node a discovered server already is: same address, or the same server install id (TXT `node_id`).
+    private func existingNode(for server: DiscoveredServer) -> Node? {
+        model.existingNode(at: server.endpoint, serverNodeID: server.nodeID)
     }
 
     private var validation: (endpoint: NodeEndpoint?, error: String?) {
@@ -152,7 +154,7 @@ struct AddNodeSheet: View {
         guard let endpoint = NodeEndpoint(parsing: text), !endpoint.host.contains(where: \.isWhitespace) else {
             return (nil, "Enter a host name or IP address, optionally with a port, like vh-storage.local:36972.")
         }
-        if let existing = model.existingNode(at: endpoint) {
+        if let existing = model.existingNode(at: endpoint, serverNodeID: pickedServer?.nodeID) {
             return (nil, "This Mac already has \(endpoint.description) as “\(existing.displayName)”.")
         }
         return (endpoint, nil)
@@ -174,7 +176,7 @@ struct AddNodeSheet: View {
 private struct DiscoveredServerList: View {
     var browser: BonjourBrowser
     var pickedID: DiscoveredServer.ID?
-    var existingNode: (NodeEndpoint?) -> Node?
+    var existingNode: (DiscoveredServer) -> Node?
     var pick: (DiscoveredServer) -> Void
 
     var body: some View {
@@ -222,7 +224,7 @@ private struct DiscoveredServerList: View {
     }
 
     private func row(_ server: DiscoveredServer) -> some View {
-        let existing = existingNode(server.endpoint)
+        let existing = existingNode(server)
         return Button {
             pick(server)
         } label: {
