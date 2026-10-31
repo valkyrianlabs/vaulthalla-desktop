@@ -206,12 +206,16 @@ struct OnePasswordHelperTests {
     }
 
     @Test func timesOutAndStartsAFreshHelper() async throws {
-        let helper = try FakeHelper.helper(timeout: .milliseconds(400))
+        // Only the request meant to hang gets a short timeout: the fresh helper's first request includes launching a
+        // process, which on a busy machine can take longer than 400 ms by itself.
+        let helper = try FakeHelper.helper()
         defer { Task { await helper.close() } }
         try await helper.checkAccount("Cooper")
         let pid = try #require(await helper.processIdentifier)
         await #expect(throws: OnePasswordHelperError.timeout(op: "fake.sleep")) {
-            _ = try await helper.send(op: "fake.sleep", as: Slept.self) { w in w.field("ms", 10_000) }
+            _ = try await helper.send(op: "fake.sleep", as: Slept.self, timeout: .milliseconds(400)) { w in
+                w.field("ms", 10_000)
+            }
         }
         #expect(await eventually { !processExists(pid) }, "the stuck helper is terminated")
         let slept = try await helper.send(op: "fake.sleep", as: Slept.self) { w in w.field("ms", 10) }
