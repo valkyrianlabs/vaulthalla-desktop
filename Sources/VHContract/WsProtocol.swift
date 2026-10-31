@@ -54,8 +54,16 @@ public struct WsCapability: RawRepresentable, Hashable, Sendable, ExpressibleByS
     public static let deviceMCP: WsCapability = "device.mcp"
     /// `device.server.identity` answers the server key's SPKI hash on device sessions.
     public static let serverIdentity: WsCapability = "device.server.identity"
+    /// `/upload/sessions`: resumable uploads in parts (the server's docs/reference/transfer-protocol.md §3).
+    public static let httpUploadResumable: WsCapability = "http.upload.resumable"
+    /// The device listener's calibration routes `/transfer/probe`, `/transfer/sink`, `/transfer/source` (§4).
+    public static let deviceLanesTransfer: WsCapability = "device.lanes.transfer"
+    /// ws `device.endpoints` on Device sessions, and `endpoints` in `device.pairing.open` (§1).
+    public static let deviceEndpoints: WsCapability = "device.endpoints"
 
     /// The capabilities this build looks for (each one is in the vendored contract's `WsContract.capabilities`).
+    /// The transfer-protocol ones (`http.upload.resumable`, `device.lanes.transfer`, `device.endpoints`) join this list
+    /// once the vendored contract comes from a server that declares them (1.20).
     public static let used: [WsCapability] = [
         .unknownCommandCode, .fsEntryMetadataVersion, .previewLane, .downloadLane, .uploadLane, .deviceMCP,
         .serverIdentity,

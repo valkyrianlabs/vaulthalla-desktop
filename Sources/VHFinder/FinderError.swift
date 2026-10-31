@@ -128,7 +128,11 @@ public enum FinderError: Error, Hashable, Sendable, CustomStringConvertible {
         case .cancelled: self = .cancelled
         case .disk(let detail): self = .transient(detail)
         case .unexpectedAnswer(let detail): self = .transient(detail)
-        case .laneUnavailable, .protocolUnsupported: self = .cannotSynchronize(error.message)
+        case .laneUnavailable, .protocolUnsupported, .fileTooLarge: self = .cannotSynchronize(error.message)
+        // A precondition that reaches here wasn't the replica's own check (which reads it as a conflict).
+        case .preconditionFailed: self = .filenameCollision
+        // Sending the file again works: the system retries.
+        case .integrity, .keyRotated, .uploadExpired, .sourceChanged: self = .transient(error.message)
         case .status(let code, let text):
             if code >= 500 || code == 408 {
                 self = .transient(error.message)
