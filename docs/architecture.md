@@ -305,11 +305,9 @@ docs/                   this plan, the pairing protocol, release notes
     class), at most ~4 a second while something moves; `snapshot` reads it once. Downloads feed the down meter. The
     app's `TransferStatsFeed` turns them into `VHCore.TransferStats` on `TransferStatsBoard` (nil once idle) for the
     Connection panel.
-  - **Proof.** `swift test` drives the uploader against `FakeUploadServer` (the protocol from the spec, with injected
-    busy answers, dropped bodies, lost answers, wrong digests, overlaps, slow commits, and a route that dies
-    mid-upload with a second endpoint to resume on) and the tuner through simulated links.
-    `tools/bench/transfer-bench.sh` compares the legacy PUT, fixed 64 MiB × 2 and tuned parts against the in-process
-    fake behind an emulated link (fake-server numbers only).
+  - **Proof.** `swift test` covers the uploader's own arithmetic (part carving, stored ranges, error codes, headers)
+    and the tuner through simulated links. The session exchange runs against a real daemon: `LiveTransferBenchmarks`
+    in the live suite ([`interop-testing.md`](interop-testing.md)).
 - **Connection panel** (node Overview; `ConnectionPanel`). How this Mac reaches the node now, with nothing secret in
   it (no keys or session material): the route class (Localhost, LAN, VPN, Direct WAN, Passthrough), endpoint, address
   reached, the verified key (current or next) and the handshake RTT; throughput each way, part size, parts in flight
@@ -641,8 +639,8 @@ Epic desktop#1 (Stages A to D). The MVP is desktop#4. Spike findings are on desk
     the provider is on where it can, and offers "remove and add again" for a domain stuck in `needsUserApproval`
     while another domain of the provider is enabled.
 - **As built (the MVP, desktop#4).** The extension (`App/Extensions/FileProvider`) is a thin adapter: every call goes to
-  the domain's `VaultReplica` (`Sources/VHFinder`, tested by `swift test` against the mock daemon and the lanes test
-  server), which maps and caches. The server decides; Swift holds no storage, encryption, RBAC or sealing logic.
+  the domain's `VaultReplica` (`Sources/VHFinder`; its mapping and store are tested by `swift test`, the whole path by
+  `tools/interop/finder-e2e.py` against a real daemon), which maps and caches. The server decides; Swift holds no storage, encryption, RBAC or sealing logic.
   - **Identity.** `NodeLink` is a read-only credential consumer (§3): a consumer `NodeSession` for ws (it reloads the
     credentials after `device_unknown` and reports `.revoked` when the refusal survives), and `VaultLanes` for the
     identity that session presents, made again when it changes. A lane 403 reloads and retries once; a 403 that survives

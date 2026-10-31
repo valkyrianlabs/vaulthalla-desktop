@@ -79,8 +79,7 @@ let package = Package(
         ),
         .testTarget(
             name: "VHNodesTests",
-            dependencies: ["VHNodes", "VHCore", "VHContract", "VHTransport", "VHIdentity", "VHKeyBackup", "VHOnePassword",
-                           "VHFinder"],
+            dependencies: ["VHNodes", "VHCore", "VHContract", "VHTransport", "VHIdentity"],
             swiftSettings: strict
         ),
         .testTarget(

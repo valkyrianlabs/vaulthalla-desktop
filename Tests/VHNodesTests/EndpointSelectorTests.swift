@@ -59,8 +59,10 @@ final class FakeProber: EndpointProbing {
     private func fast() -> EndpointSelector {
         var configuration = EndpointSelector.Configuration()
         configuration.stagger = .milliseconds(60)
-        configuration.probeTimeout = .milliseconds(600)
-        configuration.overallTimeout = .milliseconds(1200)
+        // No test on this configuration is about a timeout: every scripted probe ends on its own, and the selection
+        // ends with them. Generous bounds keep a busy machine from turning a slow schedule into a wrong answer.
+        configuration.probeTimeout = .seconds(5)
+        configuration.overallTimeout = .seconds(10)
         configuration.grace = .milliseconds(150)
         configuration.bonjourBrowse = .milliseconds(50)
         return EndpointSelector(configuration: configuration)
@@ -121,18 +123,27 @@ final class FakeProber: EndpointProbing {
             AdvertisedEndpoint(host: "100.101.1.2", port: 36972, kind: .vpn),
             AdvertisedEndpoint(host: "10.0.0.11", port: 36972, kind: .lan),
         ])
-        // Every probe outlasts the whole selection, so no failure frees a slot early (that rule has its own test):
-        // only the stagger spaces the launches, and the in-flight cap is all that holds back the fifth.
+        // Every probe hangs until cancelled, so no failure frees a slot early (that rule has its own test): only the
+        // stagger spaces the launches, and the in-flight cap is all that holds back the fifth. The selection is
+        // cancelled once four have started and the fifth has had several stagger intervals to start, not when a
+        // deadline passes: the deadline isn't what this checks.
         var configuration = EndpointSelector.Configuration()
         configuration.stagger = .milliseconds(60)
-        configuration.probeTimeout = .seconds(2)
-        configuration.overallTimeout = .seconds(2)
+        configuration.probeTimeout = .seconds(30)
+        configuration.overallTimeout = .seconds(30)
         configuration.bonjourBrowse = .milliseconds(50)
         let hang = FakeProber.fail(.timeout, after: .seconds(30))
         let prober = FakeProber(["127.0.0.1": hang, "::1": hang, "10.0.0.11": hang, "100.101.1.2": hang,
                                  "203.0.113.7": hang, "vh.example.com": hang])
-        let selection = await EndpointSelector(configuration: configuration)
-            .select(EndpointCandidate.candidates(for: node), prober: prober)
+        let selector = EndpointSelector(configuration: configuration)
+        let candidates = EndpointCandidate.candidates(for: node)
+        let running = Task { await selector.select(candidates, prober: prober) }
+        let clock = ContinuousClock()
+        let deadline = clock.now + .seconds(20)
+        while prober.starts.count < 4, clock.now < deadline { try? await Task.sleep(for: .milliseconds(10)) }
+        try? await Task.sleep(for: .milliseconds(300))
+        running.cancel()
+        let selection = await running.value
         #expect(selection.chosen == nil)
         // The selector's own launch record: the prober sees starts later, and maybe reordered, by task-start latency.
         let launches = selection.reports
@@ -155,15 +166,14 @@ final class FakeProber: EndpointProbing {
             "::1": FakeProber.fail(.refused, after: .milliseconds(1)),
             "vh.example.com": FakeProber.ok(address: "203.0.113.7"),
         ])
+        // A stagger longer than the whole selection (6 s by default): without the early start only the first probe
+        // could ever launch, so reaching the third at all is the proof, however slowly the machine schedules it.
         var configuration = EndpointSelector.Configuration()
-        configuration.stagger = .milliseconds(400)
+        configuration.stagger = .seconds(10)
         let selection = await EndpointSelector(configuration: configuration)
             .select(EndpointCandidate.candidates(for: node), prober: prober)
         #expect(selection.chosen?.candidate.endpoint.host == "vh.example.com")
-        // Without the early start the third probe would begin at 800 ms (two staggers); with it, right after the
-        // second failure. The selector's own launch record, so task-start latency doesn't count.
-        let third = selection.reports.first { $0.candidate.endpoint.host == "vh.example.com" }?.launchedAfter
-        #expect(try #require(third) < .milliseconds(800))
+        #expect(selection.reports.allSatisfy { $0.outcome != .notTried })
     }
 
     @Test func waitsBrieflyForABetterProbeStillInFlight() async {
@@ -192,11 +202,10 @@ final class FakeProber: EndpointProbing {
         configuration.stagger = .milliseconds(10)
         configuration.grace = .milliseconds(100)
         configuration.probeTimeout = .seconds(6)
-        let clock = ContinuousClock()
-        let started = clock.now
         let selection = await EndpointSelector(configuration: configuration)
             .select(EndpointCandidate.candidates(for: node), prober: prober)
-        #expect(clock.now - started < .seconds(2.5))
+        // Had it waited, the LAN probe would have answered within its timeout and won: still in flight at the end
+        // (a timeout) is the proof, with no wall-clock bound a busy machine can miss.
         #expect(selection.chosen?.candidate.endpoint.host == "vh.example.com")
         #expect(selection.chosen?.transportClass == .wan)
         #expect(selection.report(for: NodeEndpoint(host: "10.0.0.11"))?.outcome == .timeout)

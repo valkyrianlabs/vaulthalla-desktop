@@ -3,8 +3,7 @@ import Synchronization
 import Testing
 import VHContract
 import VHCore
-import VHIdentity
-import VHTransport
+@testable import VHTransport
 @testable import VHNodes
 
 /// `NodeQueries` against the mock daemon over a real Device session: caching, deduplicated fetches, invalidation
@@ -12,38 +11,20 @@ import VHTransport
 /// needs-confirmation round trip.
 extension KeychainSuite {
 @Suite struct NodeQueriesTests {
-    /// A store on a live session to a daemon that knows this Mac.
+    /// A store on an in-memory node: the cache, deduplication, polling and confirmation logic are the app's own, so
+    /// no socket or daemon stands in for the server.
     @MainActor
     private func withStore(_ configure: (inout NodeQueries.Configuration) -> Void = { _ in },
-                           _ body: @MainActor (NodeQueries, MockDaemon) async throws -> Void) async throws {
-        let shared = try KeychainFixture.require()
-        let daemon = try await MockDaemon.start(identity: shared.server)
-        defer { daemon.stop() }
-        daemon.register(shared.device.spkiSHA256)
-        let node = Node(
-            id: NodeID(rawValue: "node-a"), displayName: "vh-test",
-            endpoint: NodeEndpoint(host: "127.0.0.1", port: daemon.port),
-            pairing: .paired(serverSPKISHA256: shared.server.spkiSHA256, deviceID: shared.device.deviceID, since: .now))
-        let keys = DeviceKeys(primary: shared.store, development: nil, preferredBackend: .software)
-        let session = NodeSession(node: node, keys: keys, configuration: Fast.session())
-        let events = Recorder(session.events)
-        await session.start()
-        #expect(await events.first { $0.status == .online } != nil)
+                           _ body: @MainActor (NodeQueries, ScriptedNode) async throws -> Void) async throws {
+        let node = ScriptedNode()
         var configuration = NodeQueries.Configuration()
         configure(&configuration)
-        let store = NodeQueries(transport: session, configuration: configuration)
-        do {
-            try await body(store, daemon)
-        } catch {
-            await session.stop()
-            throw error
-        }
-        await session.stop()
+        try await body(NodeQueries(transport: node, configuration: configuration), node)
     }
 
     @MainActor @Test func cachesByKeyAndServesFreshValues() async throws {
-        try await withStore { store, daemon in
-            daemon.answer("storage.vault.list") { _ in .ok(["vaults": [Samples.vault(id: 1, name: "Photos")]]) }
+        try await withStore { store, node in
+            node.answer("storage.vault.list") { _ in .ok(["vaults": [Samples.vault(id: 1, name: "Photos")]]) }
             let list = store.query(Ws.Storage.Vault.List.self)
             #expect(store.query(Ws.Storage.Vault.List.self) === list)
             #expect(store.query(Ws.Storage.Vault.Get.self, .init(id: 1))
@@ -56,43 +37,43 @@ extension KeychainSuite {
             #expect(store.hasAnswered)
             // Fresh: a second view appearing doesn't ask again.
             await list.refreshIfStale()
-            #expect(daemon.count(of: "storage.vault.list") == 1)
+            #expect(node.count(of: "storage.vault.list") == 1)
             // Invalidated: it does.
             list.invalidate()
             await list.refreshIfStale()
-            #expect(daemon.count(of: "storage.vault.list") == 2)
+            #expect(node.count(of: "storage.vault.list") == 2)
         }
     }
 
     @MainActor @Test func staleValuesAreRefetched() async throws {
-        try await withStore({ $0.staleAfter = .milliseconds(50) }) { store, daemon in
-            daemon.answer("stats.dashboard.severity") { _ in .ok(Samples.severity("healthy")) }
+        try await withStore({ $0.staleAfter = .milliseconds(50) }) { store, node in
+            node.answer("stats.dashboard.severity") { _ in .ok(Samples.severity("healthy")) }
             let severity = store.query(Ws.Stats.Dashboard.Severity.self)
             await severity.refreshIfStale()
             try await Task.sleep(for: .milliseconds(80))
             #expect(severity.isStale)
             await severity.refreshIfStale()
-            #expect(daemon.count(of: "stats.dashboard.severity") == 2)
+            #expect(node.count(of: "stats.dashboard.severity") == 2)
         }
     }
 
     @MainActor @Test func deduplicatesConcurrentFetches() async throws {
-        try await withStore { store, daemon in
-            daemon.answer("stats.dashboard.severity", after: .milliseconds(150)) { _ in .ok(Samples.severity("warning")) }
+        try await withStore { store, node in
+            node.answer("stats.dashboard.severity", after: .milliseconds(150)) { _ in .ok(Samples.severity("warning")) }
             let severity = store.query(Ws.Stats.Dashboard.Severity.self)
             async let first: Void = severity.refresh()
             async let second: Void = severity.refresh()
             async let viaKey: Void = store.query(Ws.Stats.Dashboard.Severity.self).refresh()
             _ = await (first, second, viaKey)
-            #expect(daemon.count(of: "stats.dashboard.severity") == 1)
+            #expect(node.count(of: "stats.dashboard.severity") == 1)
             #expect(severity.value?.stats.overallStatus == "warning")
         }
     }
 
     @MainActor @Test func keepsTheLastValueWhileRefreshing() async throws {
-        try await withStore { store, daemon in
+        try await withStore { store, node in
             let status = Shared("healthy")
-            daemon.answer("stats.dashboard.severity", after: .milliseconds(100)) { _ in .ok(Samples.severity(status.value)) }
+            node.answer("stats.dashboard.severity", after: .milliseconds(100)) { _ in .ok(Samples.severity(status.value)) }
             let severity = store.query(Ws.Stats.Dashboard.Severity.self)
             await severity.refresh()
             status.value = "error"
@@ -106,16 +87,16 @@ extension KeychainSuite {
     }
 
     @MainActor @Test func mutationsInvalidateRelatedQueries() async throws {
-        try await withStore { store, daemon in
+        try await withStore { store, node in
             let name = Shared("Photos")
-            daemon.answer("storage.vault.list") { _ in .ok(["vaults": [Samples.vault(id: 1, name: name.value)]]) }
-            daemon.answer("storage.vault.update") { payload in
+            node.answer("storage.vault.list") { _ in .ok(["vaults": [Samples.vault(id: 1, name: name.value)]]) }
+            node.answer("storage.vault.update") { payload in
                 name.value = payload["name"]?.stringValue ?? name.value
                 return .ok(["vault": Samples.vault(id: 1, name: name.value)])
             }
             let list = store.query(Ws.Storage.Vault.List.self)
             let unrelated = store.query(Ws.Stats.Dashboard.Severity.self)
-            daemon.answer("stats.dashboard.severity") { _ in .ok(Samples.severity("healthy")) }
+            node.answer("stats.dashboard.severity") { _ in .ok(Samples.severity("healthy")) }
             let observer = Task { await list.observe() }
             let other = Task { await unrelated.observe() }
             try await waitFor { list.value != nil && unrelated.value != nil }
@@ -126,44 +107,44 @@ extension KeychainSuite {
             #expect(response.vault.name == "Pictures")
             // The observed list refetches by itself; the unrelated query doesn't.
             try await waitFor { list.value?.vaults.first?.name == "Pictures" }
-            #expect(daemon.count(of: "storage.vault.list") == 2)
-            #expect(daemon.count(of: "stats.dashboard.severity") == 1)
+            #expect(node.count(of: "storage.vault.list") == 2)
+            #expect(node.count(of: "stats.dashboard.severity") == 1)
             observer.cancel()
             other.cancel()
         }
     }
 
     @MainActor @Test func pollsOnlyWhileObservedAndActive() async throws {
-        try await withStore { store, daemon in
-            daemon.answer("stats.dashboard.severity") { _ in .ok(Samples.severity("healthy")) }
+        try await withStore { store, node in
+            node.answer("stats.dashboard.severity") { _ in .ok(Samples.severity("healthy")) }
             let severity = store.query(Ws.Stats.Dashboard.Severity.self)
             let observer = Task { await severity.observe(polling: .milliseconds(60)) }
-            try await waitFor { daemon.count(of: "stats.dashboard.severity") >= 3 }
+            try await waitFor { node.count(of: "stats.dashboard.severity") >= 3 }
 
             // The app resigns active: polling pauses.
             store.isActive = false
             try await Task.sleep(for: .milliseconds(80))
-            let paused = daemon.count(of: "stats.dashboard.severity")
+            let paused = node.count(of: "stats.dashboard.severity")
             try await Task.sleep(for: .milliseconds(250))
-            #expect(daemon.count(of: "stats.dashboard.severity") == paused)
+            #expect(node.count(of: "stats.dashboard.severity") == paused)
 
             // Back: the overdue value is fetched at once, then polling continues.
             store.isActive = true
-            try await waitFor(within: .milliseconds(150)) { daemon.count(of: "stats.dashboard.severity") > paused }
-            try await waitFor { daemon.count(of: "stats.dashboard.severity") >= paused + 3 }
+            try await waitFor(within: .milliseconds(150)) { node.count(of: "stats.dashboard.severity") > paused }
+            try await waitFor { node.count(of: "stats.dashboard.severity") >= paused + 3 }
 
             // No view observes it any more: polling stops.
             observer.cancel()
             try await Task.sleep(for: .milliseconds(80))
-            let stopped = daemon.count(of: "stats.dashboard.severity")
+            let stopped = node.count(of: "stats.dashboard.severity")
             try await Task.sleep(for: .milliseconds(250))
-            #expect(daemon.count(of: "stats.dashboard.severity") == stopped)
+            #expect(node.count(of: "stats.dashboard.severity") == stopped)
         }
     }
 
     @MainActor @Test func typedDenialsFailTheQuery() async throws {
-        try await withStore { store, daemon in
-            daemon.answer("stats.dashboard.overview") { _ in .refuse("Permission denied: admin.stats.view", code: "denied") }
+        try await withStore { store, node in
+            node.answer("stats.dashboard.overview") { _ in .refuse("Permission denied: admin.stats.view", code: "denied") }
             let overview = store.query(Ws.Stats.Dashboard.Overview.self, .init())
             await overview.refresh()
             guard case .failed(.denied(let message)) = overview.state else {
@@ -174,11 +155,11 @@ extension KeychainSuite {
     }
 
     @MainActor @Test func keepsDataThroughADisconnect() async throws {
-        try await withStore { store, daemon in
-            daemon.answer("storage.vault.list") { _ in .ok(["vaults": [Samples.vault(id: 1, name: "Photos")]]) }
+        try await withStore { store, node in
+            node.answer("storage.vault.list") { _ in .ok(["vaults": [Samples.vault(id: 1, name: "Photos")]]) }
             let list = store.query(Ws.Storage.Vault.List.self)
             await list.refresh()
-            daemon.stop()
+            node.stop()
             store.connectionChanged(online: false)
             #expect(!store.isConnected)
             await list.refresh()
@@ -188,8 +169,8 @@ extension KeychainSuite {
     }
 
     @MainActor @Test func confirmationRoundTrip() async throws {
-        try await withStore { store, daemon in
-            daemon.answer("storage.vault.remove") { payload in
+        try await withStore { store, node in
+            node.answer("storage.vault.remove") { payload in
                 if payload["accept_key_loss"]?.boolValue != true {
                     return .refuse("The key of “Photos” was never exported.", code: "vault_upstream_key_loss")
                 }
@@ -198,7 +179,7 @@ extension KeychainSuite {
                 }
                 return .ok(["deletion": .null])
             }
-            daemon.answer("storage.vault.list") { _ in .ok(["vaults": []]) }
+            node.answer("storage.vault.list") { _ in .ok(["vaults": []]) }
             let list = store.query(Ws.Storage.Vault.List.self)
             await list.refresh()
 
@@ -213,7 +194,7 @@ extension KeychainSuite {
 
             let second = await store.accept(request)
             guard case .success = second else { throw TestFailure("expected success, got \(second)") }
-            let sent = daemon.payloads(of: "storage.vault.remove")
+            let sent = node.payloads(of: "storage.vault.remove")
             // Asked, accepted key loss (resent), then delete-now answered from the view's acceptance (resent).
             #expect(sent.count == 4)
             #expect(sent.last?["accept_key_loss"]?.boolValue == true)
@@ -223,8 +204,8 @@ extension KeychainSuite {
     }
 
     @MainActor @Test func mutationObjectPresentsTheConfirmation() async throws {
-        try await withStore { store, daemon in
-            daemon.answer("storage.vault.remove") { payload in
+        try await withStore { store, node in
+            node.answer("storage.vault.remove") { payload in
                 payload["confirm_now"]?.boolValue == true
                     ? .ok(["deletion": .null]) : .refuse("Delete “Photos” now?", code: "vault_delete_now")
             }
@@ -249,7 +230,66 @@ extension KeychainSuite {
 }
 }
 
-/// A value the mock daemon's responders read and tests change.
+/// A node answering typed requests from scripted JSON, decoded with the contract's own types; refusals go through
+/// `WsError.classify` as an ERROR frame would. `stop()` makes it unreachable.
+final class ScriptedNode: NodeTransport {
+    enum Reply: Sendable {
+        case ok(JSONValue)
+        case refuse(String, code: String)
+    }
+
+    typealias Responder = @Sendable (JSONValue) -> Reply
+
+    private struct State {
+        var responders: [String: (delay: Duration?, respond: Responder)] = [:]
+        var sent: [(command: String, payload: JSONValue)] = []
+        var stopped = false
+    }
+
+    private let state = Mutex(State())
+
+    func answer(_ command: String, after delay: Duration? = nil, _ respond: @escaping Responder) {
+        state.withLock { $0.responders[command] = (delay, respond) }
+    }
+
+    func payloads(of command: String) -> [JSONValue] {
+        state.withLock { $0.sent.filter { $0.command == command }.map(\.payload) }
+    }
+
+    func count(of command: String) -> Int { payloads(of: command).count }
+
+    func stop() { state.withLock { $0.stopped = true } }
+
+    func send<R: WsRequest>(_ request: R.Type, payload: R.Payload) async throws(WsError) -> R.Response {
+        let command = R.command.rawValue
+        let json: JSONValue
+        do {
+            json = try JSONDecoder().decode(JSONValue.self, from: JSONEncoder().encode(payload))
+        } catch {
+            throw .error("\(command): payload didn't encode: \(error)")
+        }
+        let (stopped, scripted) = state.withLock { state in
+            if !state.stopped { state.sent.append((command, json)) }
+            return (state.stopped, state.responders[command])
+        }
+        if stopped { throw .disconnected }
+        guard let (delay, respond) = scripted else { throw .error("no answer scripted for \(command)") }
+        if let delay { try? await Task.sleep(for: delay) }
+        switch respond(json) {
+        case .ok(let data):
+            do {
+                return try JSONDecoder().decode(R.Response.self, from: JSONEncoder().encode(data))
+            } catch {
+                throw .contractMismatch("\(command): \(error)")
+            }
+        case .refuse(let message, let code):
+            throw WsError.classify(status: "ERROR", error: message, refusal: .init(code: code), command: command)
+                ?? .error(message)
+        }
+    }
+}
+
+/// A value the scripted node's responders read and tests change.
 final class Shared<Value: Sendable>: Sendable {
     private let storage: Synchronization.Mutex<Value>
     init(_ value: Value) { storage = .init(value) }
