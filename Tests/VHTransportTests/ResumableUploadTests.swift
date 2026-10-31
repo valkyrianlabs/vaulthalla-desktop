@@ -324,8 +324,8 @@ import VHCore
         let first = try Self.lanes(port: fixture.server.port, store: store)
         let control = UploadControl()
         let task = Task { try await first.uploadResumable(record, control: control) { _ in } }
-        // Wait until a few parts are durable, then quit.
-        while (fixture.fake.state.withLock { $0.sessions["up1"]?.files.first?.stored.byteCount ?? 0 }) < Int64(3 * Self.mib) {
+        // Wait until a few parts are acknowledged and recorded on this side (the node may hold more by then), then quit.
+        while (store.all().first?.files.first?.stored.byteCount ?? 0) < Int64(3 * Self.mib) {
             try await Task.sleep(for: .milliseconds(20))
         }
         control.suspend()
@@ -449,19 +449,27 @@ import VHCore
         let handler: HTTPTestServer.Handler = { request in
             FakeUploadServer.serves(request) ? fake.handle(request) : .init(status: 404)
         }
-        // Endpoint A stops listening (and drops its connections) as its third part arrives.
+        // Endpoint A dies as its third part arrives: from then on it drops every request mid-body (so the outcome
+        // doesn't depend on how fast the listener goes away on a loaded machine), and it stops listening.
         let first = Mutex<HTTPTestServer?>(nil)
         let partsOnFirst = Mutex(0)
+        let dead = Mutex(false)
+        let dropping = HTTPTestServer.BodySink(chunk: { _ in .drop }, end: { .init(status: 503) })
         let dying = try await HTTPTestServer.start(
             tls: try WsClientTLSTests.serverTLS(clientSPKI: Recorded()),
             router: { request in
+                if dead.withLock({ $0 }) { return .stream(dropping) }
                 guard FakeUploadServer.serves(request) else { return .buffer }
                 if request.method == "PUT", request.path.hasPrefix("/upload/sessions/") {
                     let count = partsOnFirst.withLock { count in
                         count += 1
                         return count
                     }
-                    if count == 3 { DispatchQueue.global().async { first.withLock { $0 }?.stop() } }
+                    if count >= 3 {
+                        dead.withLock { $0 = true }
+                        DispatchQueue.global().async { first.withLock { $0 }?.stop() }
+                        return .stream(dropping)
+                    }
                 }
                 return fake.route(request)
             }, handler: handler)
