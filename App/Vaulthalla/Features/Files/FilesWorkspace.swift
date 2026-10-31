@@ -132,16 +132,14 @@ enum FilesWorkspaces {
         if let existing = byNode[node.id] { return existing }
         let lanes: any FileLaneService
         #if DEBUG
-        if model.sessions == nil {
-            lanes = PreviewFileLanes()
-        } else {
-            lanes = NodeFileLanes { [weak model] in model?.sessions?.session(for: node.id) }
-        }
+        lanes = model.sessions == nil ? PreviewFileLanes() : model.fileLanes(for: node.id)
         #else
-        lanes = NodeFileLanes { [weak model] in model?.sessions?.session(for: node.id) }
+        lanes = model.fileLanes(for: node.id)
         #endif
         let made = FilesWorkspace(nodeID: node.id, lanes: lanes)
         byNode[node.id] = made
+        // Uploads the last run didn't finish carry on where the node left them.
+        made.transfers.restorePending()
         observeTermination()
         return made
     }
@@ -154,7 +152,8 @@ enum FilesWorkspaces {
         ) { _ in
             MainActor.assumeIsolated {
                 for workspace in byNode.values {
-                    workspace.transfers.cancelAll()
+                    // Uploads are suspended, not given up: they resume on the next launch.
+                    workspace.transfers.suspendAll()
                     workspace.quickLook.discardCopies()
                 }
                 QuickLookController.removeAllCopies()

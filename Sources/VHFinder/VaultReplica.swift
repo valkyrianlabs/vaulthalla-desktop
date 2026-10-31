@@ -9,7 +9,9 @@ import os
 ///
 /// It maps and caches; the server decides. Listings come from `fs.dir.list` (filtered by the server to what the
 /// account may Lookup, vaulthalla/server#255), bytes from `/download/content`, writes go to `PUT /upload/content`
-/// (create with `If-None-Match: *`, replace with `If-Match`, vaulthalla/server#258) and the `fs.*` commands, which the
+/// (create with `If-None-Match: *`, replace with `If-Match`, vaulthalla/server#258) or, on a node with
+/// `http.upload.resumable`, for files over 8 MiB, a single-file resumable session carrying the same precondition
+/// (``VaultLanes/putContent(vaultID:path:from:precondition:mimeType:progress:)``), and the `fs.*` commands, which the
 /// server authorizes (move and rename into another folder included, vaulthalla/server#256). Nothing here decides
 /// whether an account may do something: refusals are mapped (``FinderError``).
 ///

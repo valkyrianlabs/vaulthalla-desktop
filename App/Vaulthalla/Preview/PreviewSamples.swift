@@ -33,6 +33,43 @@ enum PreviewSamples {
         ),
     ]
 
+    /// PREVIEW DATA: "Home lab" reached over the VPN while its LAN address doesn't answer from here.
+    static let homeLabRoute: NodeRoute = {
+        let configured = EndpointCandidate(endpoint: NodeEndpoint(host: "10.0.0.33", port: 4443), sources: [.configured],
+                                           order: 1)
+        let vpn = EndpointCandidate(endpoint: NodeEndpoint(host: "100.101.1.2", port: 4443), sources: [.advertised],
+                                    advertisedKind: .vpn, interface: "tailscale0", order: 3)
+        let loopback = EndpointCandidate(endpoint: NodeEndpoint(host: "127.0.0.1", port: 4443), sources: [.loopback])
+        let chosen = EndpointSelection.Report(candidate: vpn, outcome: .ok, transportClass: .vpn,
+                                              rtt: .milliseconds(23), remoteAddress: "100.101.1.2",
+                                              interfaceName: "utun4", matchedPin: Data(repeating: 0xAB, count: 32))
+        let selection = EndpointSelection(reports: [
+            EndpointSelection.Report(candidate: loopback, outcome: .refused, transportClass: .loopback),
+            EndpointSelection.Report(candidate: configured, outcome: .timeout, transportClass: .lan),
+            chosen,
+        ], chosen: chosen, startedAt: .now.addingTimeInterval(-90))
+        return NodeRoute(endpoint: vpn.endpoint, transportClass: .vpn, rtt: .milliseconds(23),
+                         remoteAddress: "100.101.1.2", interfaceName: "utun4", verifiedKey: .current, isConnected: true,
+                         selection: selection)
+    }()
+
+    /// PREVIEW DATA: "Studio" on the LAN, where another Vaulthalla answers on this Mac's loopback; nothing reports
+    /// transfer stats.
+    static let studioRoute: NodeRoute = {
+        let lan = EndpointCandidate(endpoint: NodeEndpoint(host: "studio.local"), sources: [.configured], order: 2)
+        let loopback = EndpointCandidate(endpoint: NodeEndpoint(host: "127.0.0.1"), sources: [.loopback, .advertised],
+                                         advertisedKind: .loopback)
+        let chosen = EndpointSelection.Report(candidate: lan, outcome: .ok, transportClass: .lan, rtt: .microseconds(1800),
+                                              remoteAddress: "192.168.1.40", interfaceName: "en0")
+        let selection = EndpointSelection(reports: [
+            EndpointSelection.Report(candidate: loopback, outcome: .identityMismatch, transportClass: .loopback),
+            chosen,
+        ], chosen: chosen, startedAt: .now.addingTimeInterval(-20))
+        return NodeRoute(endpoint: lan.endpoint, transportClass: .lan, rtt: .microseconds(1800),
+                         remoteAddress: "192.168.1.40", interfaceName: "en0", verifiedKey: .next, isConnected: true,
+                         selection: selection)
+    }()
+
     static func model(nodes: [Node] = PreviewSamples.nodes, selecting id: NodeID? = nil) -> AppModel {
         let url = FileManager.default.temporaryDirectory
             .appending(path: "VaulthallaPreview-\(UUID().uuidString)/nodes.json")
@@ -59,6 +96,11 @@ enum PreviewSamples {
         let model = model(selecting: id)
         model.usePreviewData(for: nodes[1].id, transport: PreviewTransport(.full), negotiated: negotiated)
         model.usePreviewData(for: nodes[3].id, transport: PreviewTransport(.restricted), negotiated: .legacy)
+        model.usePreviewRoute(homeLabRoute, stats: TransferStats(
+            throughputUp: 41_200_000, throughputDown: 87_500_000, partBytes: 64 << 20, partsInFlight: 3, tuning: true,
+            concurrency: 4, serverBound: false, source: .measured),
+            for: nodes[1].id)
+        model.usePreviewRoute(studioRoute, stats: nil, for: nodes[3].id)
         RecoveryKeysPreviewData.install(on: model)
         return model
     }

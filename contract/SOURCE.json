@@ -1,9 +1,10 @@
 {
-  "server_version": "1.18.0",
-  "server_commit": "5787f2d6",
-  "server_branch": "main",
+  "server_version": "1.19.0",
+  "server_commit": "acda76bc",
+  "server_branch": "HEAD",
   "source": "web/src/util/generated/wsContract.json",
   "contract_version": 3,
-  "ws_hash": "b4a6c4e186b5ff132cb86abcbd04f974c005567d32fb20177b96c3cf27958416",
-  "models_hash": "00cc5309cf6f162bb2881d6ab73e6273170a560d30e0dc588694c81dfe1f57da"
+  "ws_hash": "056cfd712b9e8341a251678acac0ae408f236bfb5b2b042eba62f1f1c8fe3c5e",
+  "models_hash": "90e903c4b40419ac7c469d4461938664799af1b82168f8db763ef46d1bdc6b81",
+  "note": "server main (valkyrianlabs/vaulthalla-server#287 merged)"
 }

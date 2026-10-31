@@ -350,10 +350,15 @@ import VHCore
             try await lanes.upload([.init(source: file, relativePath: "big.bin", size: Int64(Self.blob.count))],
                                    vaultID: 1, into: "/") { _ in }
         }
-        try await Task.sleep(for: .milliseconds(400))
+        // Cancel once the session exists and a PUT is under way (not after a fixed delay: on a loaded machine the
+        // session might not be open yet, and then there is nothing to discard).
+        while !server.requests.contains(where: { $0.method == "PUT" }) {
+            try await Task.sleep(for: .milliseconds(20))
+        }
         task.cancel()
         await #expect(throws: TransferError.cancelled) { try await task.value }
-        for _ in 0..<50 where !server.requests.contains(where: { $0.method == "DELETE" }) {
+        // The DELETE queues behind the 1 s PUTs on the test server: allow a loaded CI runner up to 30 s.
+        for _ in 0..<300 where !server.requests.contains(where: { $0.method == "DELETE" }) {
             try await Task.sleep(for: .milliseconds(100))
         }
         #expect(server.requests.contains { $0.method == "DELETE" && $0.target == "/upload/u7" })

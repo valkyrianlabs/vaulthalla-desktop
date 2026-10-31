@@ -9,12 +9,18 @@
 #
 #   sudo vh-instance.sh up <build-dir> [device-port] [actor-account]   start, seed, enable remote device connections
 #   sudo vh-instance.sh status                                           what is running (JSON; also in status.json)
+#   sudo vh-instance.sh restart [--kill]                                 stop the daemon (SIGTERM, or SIGKILL as a crash)
+#                                                                        and start it again on the same DB and run dir
 #   /tmp/vhi_interop/vh <args>                                           vh as the seeded user (non-interactive)
 #   /tmp/vhi_interop/vh-admin <args>                                     vh as the super admin
 #   sudo vh-instance.sh down                                             stop the daemon, drop the DB, remove the run dir
+#
+# `sudo VHI_RUN=/tmp/<name> vh-instance.sh ...` runs another instance beside the default one (its own run dir, DB and
+# port); the run dir must be directly under /tmp/ (the daemon's test mode refuses anything else).
 set -euo pipefail
 
-RUN=/tmp/vhi_interop
+RUN=${VHI_RUN:-/tmp/vhi_interop}
+[[ $RUN =~ ^/tmp/[A-Za-z0-9._-]+$ ]] || { echo "vh-instance: VHI_RUN must be /tmp/<name>" >&2; exit 64; }
 STATE=$RUN/state.env
 DB_ENV=/var/lib/vaulthalla-harness/db.env
 SEED_USER=interop
@@ -32,6 +38,88 @@ ours() {
     [[ "$(readlink -f "/proc/$pid/exe")" == "$(readlink -f "$server")" ]] || return 1
     tr '\0' '\n' < "/proc/$pid/environ" | grep -qx 'VH_TEST_MODE=1' || return 1
     tr '\0' '\n' < "/proc/$pid/environ" | grep -qx "VH_TEST_DB_NAME=$db"
+}
+
+# The harness role's settings, into the caller's VH_TEST_DB_* (declare them local first): for the daemon's
+# environment only, never printed, never in argv.
+load_db_env() {
+    local key value
+    while IFS='=' read -r key value; do
+        case $key in
+            VH_TEST_DB_USER) VH_TEST_DB_USER=$value ;;
+            VH_TEST_DB_PASS) VH_TEST_DB_PASS=$value ;;
+            VH_TEST_DB_HOST) VH_TEST_DB_HOST=$value ;;
+            VH_TEST_DB_PORT) VH_TEST_DB_PORT=$value ;;
+        esac
+    done < "$DB_ENV"
+    [[ -n $VH_TEST_DB_USER && -n $VH_TEST_DB_PASS && -n $VH_TEST_DB_HOST && -n $VH_TEST_DB_PORT ]] \
+        || die "$DB_ENV lacks a VH_TEST_DB_* setting"
+}
+
+# Starts the daemon on our run dir and database and waits until it serves; its pid replaces PID= in state.env.
+launch() {
+    local server=$1 db=$2 port=$3
+    local VH_TEST_DB_USER="" VH_TEST_DB_PASS="" VH_TEST_DB_HOST="" VH_TEST_DB_PORT=""
+    load_db_env
+    # Not a group leader (no job control), so setsid doesn't fork and $! is the daemon's pid.
+    setsid env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME="$RUN" TMPDIR="$RUN" VH_TEST_MODE=1 \
+        VH_TEST_DB_NAME="$db" VH_TEST_DB_USER="$VH_TEST_DB_USER" VH_TEST_DB_PASS="$VH_TEST_DB_PASS" \
+        VH_TEST_DB_HOST="$VH_TEST_DB_HOST" VH_TEST_DB_PORT="$VH_TEST_DB_PORT" \
+        VH_TEST_BACKING_PATH="$RUN/backing" VH_TEST_MOUNT_PATH="$RUN/mnt" VH_TEST_LOG_PATH="$RUN/log" \
+        VH_PATH_TO_SUPERADMIN_UID="$RUN/run" VH_PATH_TO_CONFIG="$RUN/config.yaml" VH_TEST_CLI_SOCKET="$RUN/cli.sock" \
+        "$server" < /dev/null >> "$RUN/log/daemon.log" 2>&1 &
+    local pid=$!
+    sed -i '/^PID=/d' "$STATE"
+    echo "PID=$pid" >> "$STATE"
+
+    local deadline=$((SECONDS + 90))
+    until [[ -S $RUN/cli.sock ]] && listening "$port"; do
+        kill -0 "$pid" 2>/dev/null || { tail -30 "$RUN/log/daemon.log" >&2; die "the daemon exited during startup"; }
+        (( SECONDS < deadline )) || { tail -30 "$RUN/log/daemon.log" >&2; die "the daemon is not ready after 90 s"; }
+        sleep 0.3
+    done
+    ours "$pid" "$server" "$db" || die "pid $pid is not the instance we started"
+    # Like the packaged daemon's socket: the vaulthalla group may connect, the peer uid decides who the caller is.
+    chgrp vaulthalla "$RUN/cli.sock"
+}
+
+# Stops our daemon, and only it: SIGTERM with a 20 s grace (then SIGKILL), or SIGKILL at once with `kill` (a crash).
+stop_daemon() {
+    local how=${1:-term}
+    [[ -n ${PID:-} ]] && ours "$PID" "$SERVER" "$DB" || return 0
+    if [[ $how == kill ]]; then kill -KILL "$PID"; else kill -TERM "$PID"; fi
+    local deadline=$((SECONDS + 20))
+    while kill -0 "$PID" 2>/dev/null && (( SECONDS < deadline )); do sleep 0.3; done
+    if kill -0 "$PID" 2>/dev/null; then
+        echo "vh-instance: daemon $PID ignored SIGTERM for 20 s; sending SIGKILL" >&2
+        kill -KILL "$PID"
+        while kill -0 "$PID" 2>/dev/null; do sleep 0.1; done
+    fi
+    # The daemon unmounts on a clean stop; after a kill the mount may remain (lazy unmount of our own path only).
+    if grep -q " $RUN/mnt " /proc/self/mountinfo; then umount -l "$RUN/mnt" || true; fi
+}
+
+# Stops the daemon and starts it again on the same database, run dir and port (the seeded state and every open
+# upload session survive; the device listener's key too).
+cmd_restart() {
+    [[ $EUID -eq 0 ]] || die "run as root (sudo)"
+    [[ -r $STATE ]] || die "no instance ($RUN/state.env missing)"
+    local how=term
+    [[ ${1:-} == --kill ]] && how=kill
+    # shellcheck disable=SC1090
+    . "$STATE"
+    ours "$PID" "$SERVER" "$DB" || die "pid $PID is not our running instance"
+    stop_daemon "$how"
+    rm -f "$RUN/cli.sock"
+    local deadline=$((SECONDS + 30))
+    while listening "$PORT"; do
+        (( SECONDS < deadline )) || die "port $PORT is still in use after the stop"
+        sleep 0.2
+    done
+    launch "$SERVER" "$DB" "$PORT"
+    cmd_status > "$RUN/status.json"
+    chmod 644 "$RUN/status.json"
+    cat "$RUN/status.json"
 }
 
 as_admin() { "$RUN/vh-admin" "$@"; }
@@ -70,18 +158,8 @@ EOF
 
     local db
     db=vh_harness_interop_$(date +%s)
-    # The harness role's settings go to the daemon's environment only (never printed, never in argv).
-    local VH_TEST_DB_USER="" VH_TEST_DB_PASS="" VH_TEST_DB_HOST="" VH_TEST_DB_PORT="" key value
-    while IFS='=' read -r key value; do
-        case $key in
-            VH_TEST_DB_USER) VH_TEST_DB_USER=$value ;;
-            VH_TEST_DB_PASS) VH_TEST_DB_PASS=$value ;;
-            VH_TEST_DB_HOST) VH_TEST_DB_HOST=$value ;;
-            VH_TEST_DB_PORT) VH_TEST_DB_PORT=$value ;;
-        esac
-    done < "$DB_ENV"
-    [[ -n $VH_TEST_DB_USER && -n $VH_TEST_DB_PASS && -n $VH_TEST_DB_HOST && -n $VH_TEST_DB_PORT ]] \
-        || die "$DB_ENV lacks a VH_TEST_DB_* setting"
+    local VH_TEST_DB_USER="" VH_TEST_DB_PASS="" VH_TEST_DB_HOST="" VH_TEST_DB_PORT=""
+    load_db_env
     runuser -u postgres -- createdb -O "$VH_TEST_DB_USER" "$db"
 
     cat > "$STATE" <<EOF
@@ -94,26 +172,7 @@ ACTOR_UID=$actor_uid
 ADMIN_UID=$admin_uid
 EOF
 
-    # Not a group leader (no job control), so setsid doesn't fork and $! is the daemon's pid.
-    setsid env -i PATH=/usr/sbin:/usr/bin:/sbin:/bin HOME="$RUN" TMPDIR="$RUN" VH_TEST_MODE=1 \
-        VH_TEST_DB_NAME="$db" VH_TEST_DB_USER="$VH_TEST_DB_USER" VH_TEST_DB_PASS="$VH_TEST_DB_PASS" \
-        VH_TEST_DB_HOST="$VH_TEST_DB_HOST" VH_TEST_DB_PORT="$VH_TEST_DB_PORT" \
-        VH_TEST_BACKING_PATH="$RUN/backing" VH_TEST_MOUNT_PATH="$RUN/mnt" VH_TEST_LOG_PATH="$RUN/log" \
-        VH_PATH_TO_SUPERADMIN_UID="$RUN/run" VH_PATH_TO_CONFIG="$RUN/config.yaml" VH_TEST_CLI_SOCKET="$RUN/cli.sock" \
-        "$server" < /dev/null > "$RUN/log/daemon.log" 2>&1 &
-    local pid=$!
-    echo "PID=$pid" >> "$STATE"
-
-    local deadline=$((SECONDS + 90))
-    until [[ -S $RUN/cli.sock ]] && listening "$port"; do
-        kill -0 "$pid" 2>/dev/null || { tail -30 "$RUN/log/daemon.log" >&2; die "the daemon exited during startup"; }
-        (( SECONDS < deadline )) || { tail -30 "$RUN/log/daemon.log" >&2; die "the daemon is not ready after 90 s"; }
-        sleep 0.3
-    done
-    ours "$pid" "$server" "$db" || die "pid $pid is not the instance we started"
-    # Like the packaged daemon's socket: the vaulthalla group may connect, the peer uid decides who the caller is.
-    chgrp vaulthalla "$RUN/cli.sock"
-
+    launch "$server" "$db" "$port"
     write_wrappers
     seed
     as_admin device remote enable > /dev/null
@@ -183,17 +242,7 @@ cmd_down() {
     [[ -r $STATE ]] || { [[ -e $RUN ]] && die "$RUN exists without state.env: inspect it by hand"; echo "nothing to stop"; return; }
     # shellcheck disable=SC1090
     . "$STATE"
-    if [[ -n ${PID:-} ]] && ours "$PID" "$SERVER" "$DB"; then
-        kill -TERM "$PID"
-        local deadline=$((SECONDS + 20))
-        while kill -0 "$PID" 2>/dev/null && (( SECONDS < deadline )); do sleep 0.3; done
-        if kill -0 "$PID" 2>/dev/null; then
-            echo "vh-instance: daemon $PID ignored SIGTERM for 20 s; sending SIGKILL" >&2
-            kill -KILL "$PID"
-        fi
-    fi
-    # The daemon unmounts on a clean stop; after a kill the mount may remain (lazy unmount of our own path only).
-    if grep -q " $RUN/mnt " /proc/self/mountinfo; then umount -l "$RUN/mnt" || true; fi
+    stop_daemon term
     runuser -u postgres -- dropdb --if-exists "$DB"
     rm -rf "$RUN"
     echo "stopped; dropped $DB; removed $RUN"
@@ -202,6 +251,7 @@ cmd_down() {
 case ${1:-} in
     up) shift; cmd_up "$@" ;;
     status) cmd_status ;;
+    restart) shift; cmd_restart "$@" ;;
     down) cmd_down ;;
-    *) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 64 ;;
+    *) sed -n '2,20p' "$0" | sed 's/^# \{0,1\}//'; exit 64 ;;
 esac

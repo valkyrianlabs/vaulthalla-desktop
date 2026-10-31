@@ -60,12 +60,16 @@ public actor NodeLink: ReplicaLink {
     private var epoch = 0
     /// Set once the node can't be acted for: every later call fails closed with it.
     private var failure: FinderError?
-    private var lanes: (client: VaultLanes, deviceID: String)?
+    /// The lanes, for the identity and the endpoint they were made with (a new selection may move the endpoint).
+    private var lanes: (client: VaultLanes, deviceID: String, endpoint: NodeEndpoint)?
+    /// Transfer tuning for this node, kept for the extension's lifetime.
+    private let monitor: TransferMonitor
 
     public init(nodeID: NodeID, reader: CredentialReader, configuration: Configuration = Configuration()) {
         self.nodeID = nodeID
         self.reader = reader
         self.configuration = configuration
+        monitor = TransferMonitor(node: nodeID.rawValue)
     }
 
     /// Why the link fails closed, if it does.
@@ -174,7 +178,8 @@ public actor NodeLink: ReplicaLink {
         case .pairingRequired:
             let reason = if case .offline(let why) = status { why } else { "Pair this Mac with the node again." }
             _ = fail(.notAuthenticated(reason))
-        case .identity, .recordChanged, .protocolNegotiated:
+        case .identity, .recordChanged, .protocolNegotiated, .route, .endpointsChanged:
+            // A consumer: routes are the session's to choose and never saved from here.
             // ws calls on an incompatible node are refused by the session itself; lanes check it in `withLanes`.
             break
         }
@@ -199,16 +204,18 @@ public actor NodeLink: ReplicaLink {
             // The lanes belong to a protocol this build doesn't speak with the node either: nothing is sent.
             throw FinderError(TransferError.protocolUnsupported(mismatch.message), during: operation)
         }
+        let features = await laneFeatures()
         do throws(TransferError) {
-            return try await body(first.client)
+            return try await body(equipped(first.client, features, endpoint: first.endpoint))
         } catch .forbidden {
             // The owner may have rotated the key since the lanes were made: reload, and try once more.
         } catch {
+            if case .connection = error { await session?.laneConnectionFailed() }
             throw FinderError(error, during: operation)
         }
         let fresh = try await reloadedLanes(refusing: first.deviceID)
         do throws(TransferError) {
-            return try await body(fresh.lanes)
+            return try await body(equipped(fresh.lanes, features, endpoint: fresh.endpoint))
         } catch .forbidden {
             switch await reader.check(fresh.credentials) {
             case .refused:
@@ -222,22 +229,56 @@ public actor NodeLink: ReplicaLink {
         }
     }
 
-    /// The lanes for the identity the session presents now.
-    private func currentLanes() async throws(FinderError) -> (client: VaultLanes, deviceID: String) {
+    /// What the node announced beyond the base lanes: resumable uploads (`http.upload.resumable`) and the calibration
+    /// lanes. Unknown (a legacy node) is no: the old lanes stay in use.
+    private func laneFeatures() async -> VaultLanes.Features {
+        guard let session else { return VaultLanes.Features() }
+        return VaultLanes.Features(
+            resumableUploads: await session.supports(capability: .resumableUpload) == .yes,
+            transferLanes: await session.supports(capability: .transferLane) == .yes)
+    }
+
+    /// `lanes` with the node's features, this link's transfer tuning, and a move to a new route for a resumable
+    /// write whose connection dropped on `endpoint` (the session's endpoint the lanes were made for).
+    private func equipped(_ lanes: VaultLanes, _ features: VaultLanes.Features, endpoint: NodeEndpoint) -> VaultLanes {
+        var lanes = lanes
+        lanes.features = features
+        lanes.monitor = monitor
+        lanes.reroute = { [weak self] in await self?.rerouted(from: endpoint) }
+        return lanes
+    }
+
+    /// After a dropped connection on `endpoint`: the session selects again (read-only: nothing is saved from here);
+    /// once its lanes moved, the transfer client there.
+    private func rerouted(from endpoint: NodeEndpoint) async -> DeviceTransferClient? {
+        guard let session, await session.rerouteLanes(awayFrom: endpoint, timeout: configuration.laneTimeout) != nil,
+              let moved = try? await currentLanes(), moved.endpoint != endpoint
+        else { return nil }
+        return moved.client.transfers
+    }
+
+    /// The lanes for the identity the session presents now, and the session endpoint they were made for.
+    private func currentLanes() async throws(FinderError)
+        -> (client: VaultLanes, deviceID: String, endpoint: NodeEndpoint)
+    {
         let session = try await online()
         guard let deviceID = await session.laneIdentityID,
               let configuration = await session.laneConfiguration(timeout: self.configuration.laneTimeout)
         else { throw .serverUnreachable("The node's session has no identity yet.") }
-        if let lanes, lanes.deviceID == deviceID { return lanes }
+        monitor.setEndpointClass(TransferEndpointClass(endpoint: configuration.endpoint, route: await session.route))
+        if let lanes, lanes.deviceID == deviceID, lanes.endpoint == configuration.endpoint {
+            return (lanes.client, deviceID, configuration.endpoint)
+        }
         let made = try makeLanes(configuration)
-        lanes?.client.invalidate()
-        lanes = (made, deviceID)
-        return (made, deviceID)
+        // A moved endpoint leaves the old client to finish what it carries; a new identity cancels it.
+        if lanes?.deviceID != deviceID { lanes?.client.invalidate() }
+        lanes = (made, deviceID, configuration.endpoint)
+        return (made, deviceID, configuration.endpoint)
     }
 
     /// Lanes made from the credentials as saved now, past the key the node refused.
     private func reloadedLanes(refusing deviceID: String) async throws(FinderError)
-        -> (lanes: VaultLanes, credentials: NodeCredentials)
+        -> (lanes: VaultLanes, credentials: NodeCredentials, endpoint: NodeEndpoint)
     {
         let record: Node
         do throws(CredentialFailure) {
@@ -246,16 +287,19 @@ public actor NodeLink: ReplicaLink {
         } catch {
             throw fail(FinderError(error))
         }
-        let credentials: NodeCredentials
+        var credentials: NodeCredentials
         do throws(CredentialFailure) {
             credentials = try await reader.reload(record, refusing: deviceID)
         } catch {
             throw fail(FinderError(error))
         }
-        let made = try makeLanes(credentials.laneConfiguration(timeout: configuration.laneTimeout))
+        // The endpoint the session selected (read-only: the extension never saves routes).
+        credentials = credentials.routed(to: await session?.activeEndpoint)
+        let lane = credentials.laneConfiguration(timeout: configuration.laneTimeout)
+        let made = try makeLanes(lane)
         lanes?.client.invalidate()
-        lanes = (made, credentials.identity.deviceID)
-        return (made, credentials)
+        lanes = (made, credentials.identity.deviceID, lane.endpoint)
+        return (made, credentials, lane.endpoint)
     }
 
     private func makeLanes(_ lane: DeviceHTTPClient.Configuration) throws(FinderError) -> VaultLanes {

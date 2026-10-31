@@ -4,8 +4,9 @@ import VHCore
 import VHIdentity
 import VHNodes
 
-/// The node's health once it's connected (`HealthOverview`), and what Desktop itself knows about it. Without
-/// access to stats, the health part shows a calm denied state; the node's identity still shows.
+/// The node's health once it's connected (`HealthOverview`), how this Mac reaches it (`ConnectionPanel`), and what
+/// Desktop itself knows about it. Without access to stats, the health part shows a calm denied state; the node's
+/// identity still shows.
 struct NodeOverviewView: View {
     var node: Node
 
@@ -19,6 +20,9 @@ struct NodeOverviewView: View {
                     .environment(queries)
             } else {
                 NodeUnavailablePanel(node: node, section: .overview)
+            }
+            if node.pairing.isPaired {
+                ConnectionPanel(node: node)
             }
             NodeIdentityPanel(node: node, queries: queries)
         }

@@ -246,8 +246,8 @@ nonisolated struct PreviewFileLanes: FileLaneService {
         return Int64(text.count)
     }
 
-    func upload(_ files: [VaultLanes.UploadFile], vaultID: Int64, into directory: String,
-                progress: @escaping @Sendable (VaultLanes.UploadProgress) -> Void)
+    func upload(_ files: [VaultLanes.UploadFile], vaultID: Int64, into directory: String, id: UUID,
+                control: UploadControl, progress: @escaping @Sendable (VaultLanes.UploadProgress) -> Void)
         async throws(TransferError) -> Set<String>
     {
         let total = files.reduce(Int64(0)) { $0 + $1.size }

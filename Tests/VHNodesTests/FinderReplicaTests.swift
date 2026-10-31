@@ -38,16 +38,25 @@ extension KeychainSuite {
     static let moment = Date(timeIntervalSince1970: 1_792_850_400)
     static let pattern = Data((0..<65536).map { UInt8((7 * $0 + 3) % 256) })
 
-    private func withReplica(onlineTimeout: Duration = .seconds(5), _ body: (Fixture) async throws -> Void)
-        async throws
+    /// `capabilities`: what the node's `meta.hello` announces (nil: a legacy node, which answers no hello).
+    private func withReplica(onlineTimeout: Duration = .seconds(5), capabilities: [String]? = nil,
+                             _ body: (Fixture) async throws -> Void) async throws
     {
         let shared = try KeychainFixture.require()
         let daemon = try await MockDaemon.start(identity: shared.server)
         defer { daemon.stop() }
         daemon.register(shared.device.spkiSHA256)
+        if let capabilities {
+            let hello = NodeSessionTests.hello(capabilities: capabilities, commands: [
+                "device.server.identity", "meta.hello", "fs.dir.list", "fs.entry.get", "fs.dir.create", "fs.entry.rename",
+                "fs.entry.move", "fs.entry.delete",
+            ])
+            daemon.answer("meta.hello") { _ in .ok(hello) }
+        }
         let vault = FakeVault()
         vault.serve(on: daemon)
-        let lanes = try await HTTPTestServer.start(tls: FakeVault.tls(server: shared.server)) { vault.handle($0) }
+        let lanes = try await HTTPTestServer.start(tls: FakeVault.tls(server: shared.server),
+                                                   router: { vault.route($0) }) { vault.handle($0) }
         defer { lanes.stop() }
         let scratch = FileManager.default.temporaryDirectory.appending(path: "vh-replica-test-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)
@@ -320,6 +329,75 @@ extension KeychainSuite {
             #expect(done.fetchContents && done.item.contentVersion == fixture.vault.contentVersion("/hello.txt"))
             let puts = fixture.vault.state.withLock { $0.puts }
             #expect(puts.first?.ifMatch == hello.contentVersion && puts.first?.path == "/hello.txt")
+        }
+    }
+
+    /// A node with `http.upload.resumable`: a write larger than 8 MiB goes as a single-file resumable session
+    /// carrying the precondition (`if_none_match: "*"` to create, `if_match` to replace); a failed precondition at
+    /// commit is still a conflict copy. Small writes stay one `PUT /upload/content`.
+    @Test func largeWritesGoAsResumableSessions() async throws {
+        let capabilities = ["device.lanes.download", "device.lanes.upload", "device.server.identity",
+                            "http.upload.resumable"]
+        try await withReplica(capabilities: capabilities) { fixture in
+            try await fixture.listRoot()
+            let big = Data((0..<(9 << 20 + 123)).map { UInt8(truncatingIfNeeded: $0 &* 13 &+ 5) })
+            let bigURL = fixture.scratch.appending(path: "big")
+            try big.write(to: bigURL)
+
+            let made = try await fixture.replica.create(.init(name: "big.bin", parent: .root, kind: .file),
+                                                        contents: bigURL)
+            #expect(fixture.vault.data("/big.bin") == big)
+            #expect(made.contentVersion == fixture.vault.contentVersion("/big.bin"))
+            let first = try #require(fixture.vault.uploads.state.withLock { $0.sessions["up1"] })
+            #expect(first.files.first?.ifNoneMatch == "*" && first.files.first?.duplicatePolicy == nil)
+            #expect(fixture.vault.uploads.partRequests.count >= 1)
+
+            // An edit replaces the version it was based on.
+            let edited = big + Data("and a tail".utf8)
+            let editedURL = fixture.scratch.appending(path: "edited")
+            try edited.write(to: editedURL)
+            let done = try await fixture.replica.modify(.entry(made.entryID), base: made.version,
+                                                        changes: .init(contents: editedURL))
+            #expect(fixture.vault.data("/big.bin") == edited)
+            #expect(!done.fetchContents && done.item.contentVersion == fixture.vault.contentVersion("/big.bin"))
+            #expect(fixture.vault.uploads.state.withLock { $0.sessions["up2"]?.files.first?.ifMatch } == made.contentVersion)
+
+            // A competing write lands before the commit: the precondition fails there, and the edit becomes a copy.
+            let id = try #require(fixture.vault.id("/big.bin"))
+            fixture.vault.state.withLock { state in
+                state.beforePut = { state in
+                    state.entries[id]!.data = Data("raced".utf8)
+                    state.entries[id]!.generation += 1
+                    state.entries[id]!.revision += 1
+                }
+            }
+            let current = try await fixture.item("/big.bin")
+            let raced = try await fixture.replica.modify(.entry(current.entryID), base: current.version,
+                                                         changes: .init(contents: bigURL))
+            let copyName = ConflictName.make(for: "big.bin", macName: "Test Mac", date: Self.moment)
+            #expect(fixture.vault.data("/big.bin") == Data("raced".utf8))
+            #expect(fixture.vault.data("/\(copyName)") == big)
+            #expect(raced.fetchContents && raced.conflictCopy?.name == copyName)
+
+            // Small writes: one PUT /upload/content, as before.
+            let sessions = fixture.vault.uploads.state.withLock { $0.sessions.count }
+            _ = try await fixture.replica.create(.init(name: "small.txt", parent: .root, kind: .file),
+                                                 contents: try write("small", in: fixture))
+            #expect(fixture.vault.data("/small.txt") == Data("small".utf8))
+            #expect(fixture.vault.uploads.state.withLock { $0.sessions.count } == sessions)
+        }
+    }
+
+    /// Without the capability (a legacy node), even a large write is one `PUT /upload/content`.
+    @Test func largeWritesStayOnePutWithoutTheCapability() async throws {
+        try await withReplica { fixture in
+            try await fixture.listRoot()
+            let big = Data(repeating: 7, count: 9 << 20)
+            let url = fixture.scratch.appending(path: "big")
+            try big.write(to: url)
+            _ = try await fixture.replica.create(.init(name: "big.bin", parent: .root, kind: .file), contents: url)
+            #expect(fixture.vault.data("/big.bin") == big)
+            #expect(fixture.vault.uploads.state.withLock { $0.sessions.isEmpty })
         }
     }
 

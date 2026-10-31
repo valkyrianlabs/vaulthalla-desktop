@@ -47,15 +47,22 @@ extension VaultLanes {
         case conflict(currentVersion: String?)
     }
 
-    /// Sends `file` as the new content of `path` (`PUT /upload/content`), only under `precondition`. Never retried
-    /// here: whether a write whose answer was lost committed is for the caller to find out. A 409 (something that is
-    /// not a file is at the path) throws ``TransferError/alreadyExists``; a 413 for room in the vault
-    /// ``TransferError/quotaExceeded``; other refusals ``TransferError/status(_:_:)`` or the shared mappings.
+    /// Sends `file` as the new content of `path`, only under `precondition`. On a node with resumable uploads
+    /// (``VaultLanes/Features/resumableUploads``) a file larger than ``VaultLanes/Policy/resumableThreshold`` goes as a
+    /// single-file resumable session carrying the precondition (`if_none_match: "*"` or `if_match`), whose parts are
+    /// retried within this call; anything else is one `PUT /upload/content`, never retried here: whether a write whose
+    /// answer was lost committed is for the caller to find out. A 409 (something that is not a file is at the path)
+    /// throws ``TransferError/alreadyExists``; a 413 for room in the vault ``TransferError/quotaExceeded``; other
+    /// refusals ``TransferError/status(_:_:)`` or the shared mappings.
     public func putContent(vaultID: Int64, path: String, from file: URL, precondition: ContentPrecondition,
                            mimeType: String? = nil,
                            progress: @escaping @Sendable (_ sent: Int64, _ total: Int64) -> Void = { _, _ in })
         async throws(TransferError) -> ContentWrite
     {
+        if features.resumableUploads, let size = SourceIdentity.of(file)?.size, size > policy.resumableThreshold {
+            return try await putResumable(vaultID: vaultID, path: path, from: file, size: size,
+                                          precondition: precondition, mimeType: mimeType, progress: progress)
+        }
         var request = URLRequest(url: try url("/upload/content", [
             .init(name: "vault_id", value: String(vaultID)), .init(name: "path", value: path),
         ]))
@@ -68,6 +75,44 @@ extension VaultLanes {
         let (body, response) = try await transfers.upload(request, fromFile: file, progress: progress)
         return try Self.contentWrite(status: response.statusCode, body: body,
                                      etag: response.value(forHTTPHeaderField: "ETag"))
+    }
+
+    /// ``putContent(vaultID:path:from:precondition:mimeType:progress:)`` as a single-file resumable session. A
+    /// precondition that fails at create (412) or at commit (`precondition_failed`) is ``ContentWrite/conflict(currentVersion:)``,
+    /// as on `PUT /upload/content`. The session is deleted when the write can't complete; its parts are retried within
+    /// the call, and the whole session resumes from the node's status after a dropped connection.
+    private func putResumable(vaultID: Int64, path: String, from file: URL, size: Int64,
+                              precondition: ContentPrecondition, mimeType: String?,
+                              progress: @escaping @Sendable (_ sent: Int64, _ total: Int64) -> Void)
+        async throws(TransferError) -> ContentWrite
+    {
+        let precondition: UploadPrecondition = switch precondition {
+        case .create: .createOnly
+        case .replace(let version): .replace(version)
+        }
+        let target = VaultPathString.normalize(path)
+        var entry = ResumableUploadRecord.File(source: file, relativePath: file.lastPathComponent, path: target,
+                                               size: size, mimeType: mimeType, precondition: precondition)
+        // A replica write changes one file: no restart may turn it into another version's write.
+        entry.restarts = 0
+        let record = ResumableUploadRecord(vaultID: vaultID, directory: VaultPathString.parent(of: target), files: [entry])
+        var uploader = resumableUploader
+        uploader.policy.fileRestarts = 1
+        let outcome: ResumableUploader.Outcome
+        do throws(TransferError) {
+            var single = ResumableUploader(transfers: uploader.transfers, monitor: uploader.monitor, store: nil,
+                                           policy: uploader.policy)
+            single.reroute = uploader.reroute
+            outcome = try await single.upload(record, progress: { progress($0.bytes, size) })
+        } catch .preconditionFailed(let version) {
+            return .conflict(currentVersion: version)
+        }
+        if let failure = outcome.failed.first {
+            if case .preconditionFailed(let version) = failure.error { return .conflict(currentVersion: version) }
+            throw failure.error
+        }
+        let committed = outcome.committed[target] ?? nil
+        return .committed(created: precondition == .createOnly, entry: committed, etag: committed?.contentVersion)
     }
 
     /// Reads a `PUT /upload/content` answer.

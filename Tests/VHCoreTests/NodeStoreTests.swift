@@ -165,3 +165,75 @@ import VHCore
         #expect(decoded == node)
     }
 }
+
+/// The routing members (`endpoints`, `lastGood`, `lastAdvertisedAt`, the server's transfer protocol §2): optional on
+/// disk, lenient, and never a reason to lose a record.
+@Suite struct NodeRoutingRecordTests {
+    private static let older = """
+        {"id":"local-1","displayName":"vh","endpoint":{"host":"vh.local","port":36972},"pairing":{"unpaired":{}}}
+        """
+
+    private func decode(_ json: String) throws -> Node {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(Node.self, from: Data(json.utf8))
+    }
+
+    @Test func recordsWithoutRoutesStillLoad() throws {
+        let node = try decode(Self.older)
+        #expect(node.endpoints.isEmpty && node.lastGood == nil && node.lastAdvertisedAt == nil)
+    }
+
+    @Test func roundTripsAndLeavesEmptyRoutesOut() throws {
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = .sortedKeys
+        var node = try decode(Self.older)
+        let bare = String(decoding: try encoder.encode(node), as: UTF8.self)
+        #expect(!bare.contains("endpoints") && !bare.contains("lastGood"))
+
+        node.endpoints = [AdvertisedEndpoint(host: "10.0.0.11", port: 36972, kind: .lan, source: "interface",
+                                             interface: "enp3s0")]
+        node.lastGood = LastGoodEndpoint(endpoint: NodeEndpoint(host: "10.0.0.11"),
+                                         at: Date(timeIntervalSince1970: 1_800_000_000), transportClass: .lan)
+        node.lastAdvertisedAt = Date(timeIntervalSince1970: 1_800_000_100)
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        #expect(try decoder.decode(Node.self, from: encoder.encode(node)) == node)
+    }
+
+    @Test func malformedRoutesAreDroppedNotFatal() throws {
+        let json = """
+            {"id":"local-1","displayName":"vh","endpoint":{"host":"vh.local","port":36972},"pairing":{"unpaired":{}},
+             "endpoints":[{"host":"10.0.0.11","port":36972,"kind":"lan"},{"host":"bad","port":99999},
+                          {"port":1},{"host":"x.example","port":443,"kind":"quantum"}],
+             "lastGood":{"endpoint":"nope"},"lastAdvertisedAt":"yesterday"}
+            """
+        let node = try decode(json)
+        #expect(node.endpoints.map(\.host) == ["10.0.0.11", "x.example"])
+        #expect(node.endpoints.last?.kind == nil)
+        #expect(node.lastGood == nil && node.lastAdvertisedAt == nil)
+    }
+
+    @Test func classesOrderBestFirst() {
+        #expect(EndpointClass.allCases.sorted() == [.loopback, .lan, .vpn, .wan, .passthrough])
+        #expect(EndpointClass.wan.displayName == "Direct WAN")
+    }
+}
+
+@Suite struct TransferStatsBoardTests {
+    @Test func reportsLatestAndStreamsChanges() async {
+        let board = TransferStatsBoard()
+        let node = NodeID(rawValue: "n")
+        #expect(board.stats(for: node) == nil)
+        let updates = board.updates()
+        board.report(TransferStats(throughputUp: 1e6, partBytes: 64 << 20, partsInFlight: 4, tuning: true), for: node)
+        board.report(nil, for: node)
+        var iterator = updates.makeAsyncIterator()
+        let first = await iterator.next()
+        #expect(first?.0 == node && first?.1?.partsInFlight == 4 && first?.1?.throughputDown == nil)
+        let second = await iterator.next()
+        #expect(second?.0 == node && second?.1 == nil)
+        #expect(board.stats(for: node) == nil)
+    }
+}

@@ -10,6 +10,10 @@ import VHTransport
 /// in plain words. Bytes go over the device listener's HTTP lanes (``FileLaneService``), never ws.
 ///
 /// Main-actor state; each transfer runs in its own task. At most ``concurrency`` run at once, the rest wait.
+///
+/// On a node with resumable uploads each upload keeps an id its progress is persisted under: Retry resumes it from
+/// what the node holds, quitting suspends it (``suspendAll()``) and the next launch carries on
+/// (``restorePending()``); Cancel and clearing a failed upload give it up on the node.
 @Observable
 final class TransferCenter {
     enum Kind { case download, upload }
@@ -51,6 +55,8 @@ final class TransferCenter {
     @ObservationIgnored let concurrency = 3
     @ObservationIgnored private let lanes: any FileLaneService
     @ObservationIgnored private var tasks: [UUID: Task<Void, Never>] = [:]
+    /// How a running upload's cancel is meant: give up, or suspend for the next launch.
+    @ObservationIgnored private var controls: [UUID: UploadControl] = [:]
     /// What each transfer does, kept so a failed or cancelled one can run again.
     @ObservationIgnored private var jobs: [UUID: Job] = [:]
     /// Callers waiting for a transfer to settle (a Finder drop's file promise).
@@ -60,7 +66,8 @@ final class TransferCenter {
 
     private enum Job {
         case download(vaultID: Int64, path: String, isDirectory: Bool, to: URL)
-        case upload(files: [VaultLanes.UploadFile], vaultID: Int64, into: String)
+        /// `upload`: the id the upload's progress is persisted under (resumable nodes).
+        case upload(files: [VaultLanes.UploadFile], vaultID: Int64, into: String, upload: UUID)
     }
 
     init(lanes: any FileLaneService) {
@@ -107,10 +114,37 @@ final class TransferCenter {
         guard !files.isEmpty else { return }
         let total = files.reduce(Int64(0)) { $0 + $1.size }
         let title = files.count == 1 ? (files[0].relativePath as NSString).lastPathComponent : "\(files.count) files"
-        let id = enqueue(.upload(files: files, vaultID: vaultID, into: folder.rawValue), kind: .upload,
+        let id = enqueue(.upload(files: files, vaultID: vaultID, into: folder.rawValue, upload: UUID()), kind: .upload,
                          title: title, detail: "to \(folderName)", total: total)
         update(id) { $0.filesTotal = files.count }
         isPanelShown = true
+    }
+
+    /// Queues the uploads an earlier run persisted and didn't finish; each resumes from what the node holds.
+    func restorePending() {
+        let lanes = lanes
+        Task { [weak self] in
+            let records = await lanes.pendingUploads()
+            guard let self else { return }
+            let known = Set(jobs.values.compactMap { job -> UUID? in
+                if case .upload(_, _, _, let upload) = job { upload } else { nil }
+            })
+            for record in records where !known.contains(record.id) {
+                let files = record.files.map {
+                    VaultLanes.UploadFile(source: $0.source, relativePath: $0.relativePath, size: $0.size,
+                                          mimeType: $0.mimeType)
+                }
+                let title = files.count == 1 ? (files[0].relativePath as NSString).lastPathComponent : "\(files.count) files"
+                let folder = VaultPath(normalizing: record.directory)
+                let id = enqueue(.upload(files: files, vaultID: record.vaultID, into: record.directory, upload: record.id),
+                                 kind: .upload, title: title,
+                                 detail: "to \(folder.isRoot ? "the vault" : folder.name) (resumed)", total: record.totalBytes)
+                update(id) {
+                    $0.filesTotal = files.count
+                    $0.bytesDone = record.storedBytes
+                }
+            }
+        }
     }
 
     @discardableResult
@@ -147,6 +181,19 @@ final class TransferCenter {
         for item in items where item.status.isActive { cancel(item.id) }
     }
 
+    /// Stops everything because the app quits: downloads are cancelled, uploads suspended (their sessions and
+    /// persisted progress stay, and the next launch resumes them).
+    func suspendAll() {
+        for item in items where item.status.isActive {
+            if item.kind == .upload, item.status == .running { controls[item.id]?.suspend() }
+            if item.kind == .upload, item.status == .queued {
+                // Not started in this run: its record (if any) stays for the next one.
+                continue
+            }
+            cancel(item.id)
+        }
+    }
+
     func retry(_ id: UUID) {
         guard let index = items.firstIndex(where: { $0.id == id }), !items[index].status.isActive,
               jobs[id] != nil
@@ -161,7 +208,16 @@ final class TransferCenter {
     func clearFinished() {
         let finished = items.filter { !$0.status.isActive }.map(\.id)
         items.removeAll { !$0.status.isActive }
-        for id in finished { jobs[id] = nil }
+        for id in finished { forget(id) }
+    }
+
+    /// Drops a finished transfer's job; an upload kept for resuming is given up on the node.
+    private func forget(_ id: UUID) {
+        if case .upload(_, _, _, let upload)? = jobs[id] {
+            let lanes = lanes
+            Task { await lanes.discardUpload(upload) }
+        }
+        jobs[id] = nil
     }
 
     func showInFinder(_ id: UUID) {
@@ -171,7 +227,8 @@ final class TransferCenter {
         NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
-    /// Whether quitting would interrupt something (asked by the app before it terminates).
+    /// Whether an upload is running or waiting. Quitting suspends them (``suspendAll()``): on a node with resumable
+    /// uploads they carry on at the next launch, elsewhere they start over when retried.
     var hasActiveUploads: Bool {
         items.contains { $0.kind == .upload && $0.status.isActive }
     }
@@ -192,6 +249,8 @@ final class TransferCenter {
         update(id) { $0.status = .running }
         let throttle = ProgressThrottle()
         let lanes = lanes
+        let control = UploadControl()
+        controls[id] = control
         tasks[id] = Task { [weak self] in
             let outcome: Result<Set<String>, TransferError>
             switch job {
@@ -217,9 +276,10 @@ final class TransferCenter {
                 } catch {
                     outcome = .failure(error)
                 }
-            case .upload(let files, let vaultID, let folder):
+            case .upload(let files, let vaultID, let folder, let upload):
                 do throws(TransferError) {
-                    let touched = try await lanes.upload(files, vaultID: vaultID, into: folder) { progress in
+                    let touched = try await lanes.upload(files, vaultID: vaultID, into: folder, id: upload,
+                                                         control: control) { progress in
                         guard throttle.allow() || progress.files == files.count else { return }
                         Task { @MainActor in
                             self?.update(id) {
@@ -242,6 +302,7 @@ final class TransferCenter {
 
     private func finish(_ id: UUID, _ outcome: Result<Set<String>, TransferError>) {
         tasks[id] = nil
+        controls[id] = nil
         update(id) { item in
             item.finishedAt = .now
             switch outcome {
@@ -268,7 +329,7 @@ final class TransferCenter {
     /// Keeps the 50 most recent, dropping finished ones first.
     private func trim() {
         while items.count > 50, let index = items.lastIndex(where: { !$0.status.isActive }) {
-            jobs[items[index].id] = nil
+            forget(items[index].id)
             items.remove(at: index)
         }
     }

@@ -18,10 +18,19 @@ public struct Node: Identifiable, Codable, Hashable, Sendable {
     /// The server key the daemon announced it will switch to (docs/pairing.md §5), accepted as a second pin until
     /// the switch, then promoted.
     public var nextServerSPKISHA256: Data?
+    /// The addresses the node advertised for its device listener (`device.endpoints`, the server's transfer protocol
+    /// §1.1), as the credential owner last saved them. `endpoint` stays the address the operator entered; the
+    /// selector (`VHNodes.EndpointSelector`) probes these too and connects to the best one that proves the pinned key.
+    public var endpoints: [AdvertisedEndpoint]
+    /// The endpoint a Device session last came up on.
+    public var lastGood: LastGoodEndpoint?
+    /// When the advertised list last changed: the `device.endpoints` answer's `generated_at`, else when it was saved.
+    public var lastAdvertisedAt: Date?
 
     public init(
         id: NodeID, displayName: String, endpoint: NodeEndpoint, pairing: PairingState = .unpaired,
-        isNamedByUser: Bool = false, serverNodeID: String? = nil, nextServerSPKISHA256: Data? = nil
+        isNamedByUser: Bool = false, serverNodeID: String? = nil, nextServerSPKISHA256: Data? = nil,
+        endpoints: [AdvertisedEndpoint] = [], lastGood: LastGoodEndpoint? = nil, lastAdvertisedAt: Date? = nil
     ) {
         self.id = id
         self.displayName = displayName
@@ -30,11 +39,15 @@ public struct Node: Identifiable, Codable, Hashable, Sendable {
         self.isNamedByUser = isNamedByUser
         self.serverNodeID = serverNodeID
         self.nextServerSPKISHA256 = nextServerSPKISHA256
+        self.endpoints = endpoints
+        self.lastGood = lastGood
+        self.lastAdvertisedAt = lastAdvertisedAt
     }
 
     // Spelled out so records written before a member existed still load: the newer members are optional on disk.
     private enum CodingKeys: String, CodingKey {
         case id, displayName, endpoint, pairing, isNamedByUser, serverNodeID, nextServerSPKISHA256
+        case endpoints, lastGood, lastAdvertisedAt
     }
 
     public init(from decoder: any Decoder) throws {
@@ -46,6 +59,26 @@ public struct Node: Identifiable, Codable, Hashable, Sendable {
         isNamedByUser = try container.decodeIfPresent(Bool.self, forKey: .isNamedByUser) ?? false
         serverNodeID = try container.decodeIfPresent(String.self, forKey: .serverNodeID)
         nextServerSPKISHA256 = try container.decodeIfPresent(Data.self, forKey: .nextServerSPKISHA256)
+        // Routing hints, never worth losing the record over: a malformed entry is dropped, not fatal.
+        endpoints = (try? container.decodeIfPresent(LossyArray<AdvertisedEndpoint>.self, forKey: .endpoints))?
+            .elements ?? []
+        lastGood = try? container.decodeIfPresent(LastGoodEndpoint.self, forKey: .lastGood)
+        lastAdvertisedAt = try? container.decodeIfPresent(Date.self, forKey: .lastAdvertisedAt)
+    }
+
+    public func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(displayName, forKey: .displayName)
+        try container.encode(endpoint, forKey: .endpoint)
+        try container.encode(pairing, forKey: .pairing)
+        try container.encode(isNamedByUser, forKey: .isNamedByUser)
+        try container.encodeIfPresent(serverNodeID, forKey: .serverNodeID)
+        try container.encodeIfPresent(nextServerSPKISHA256, forKey: .nextServerSPKISHA256)
+        // Left out while empty, so records without routing hints stay as they were.
+        if !endpoints.isEmpty { try container.encode(endpoints, forKey: .endpoints) }
+        try container.encodeIfPresent(lastGood, forKey: .lastGood)
+        try container.encodeIfPresent(lastAdvertisedAt, forKey: .lastAdvertisedAt)
     }
 }
 

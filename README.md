@@ -21,6 +21,7 @@ business logic: every action is an operation the daemon authorizes.
 | `App/Extensions/FileProvider/` | the File Provider extension (`sh.vaulthalla.app.fileprovider`, embedded in `Contents/PlugIns`): Finder integration: browse, read (whole and ranges), create, edit with conflict copies, rename, move, delete, thumbnails ([`docs/architecture.md`](docs/architecture.md) §7) |
 | `contract/` | `wsContract.json` vendored from the server (`SOURCE.json` records the version) and `compat-baseline.json`, the oldest supported server's contract (1.17.0); `tools/gen-contract.py` turns them into Swift ([`docs/architecture.md`](docs/architecture.md) §3, "Protocol negotiation") |
 | `tools/interop/` | `vh-instance.sh`: a private daemon test instance for the opt-in live suite `Tests/VHNodesLiveTests` ([`docs/interop-testing.md`](docs/interop-testing.md)) |
+| `tools/bench/` | `transfer-bench.sh`: the fake-server upload benchmark (legacy PUT vs fixed vs tuned parts behind an emulated link; [`docs/architecture.md`](docs/architecture.md) §3) |
 | `tools/keychain-proof/` | `run.sh <TEAM_ID>`: a team-signed proof that device identities work in the data protection keychain (Secure Enclave create, find, rotate, delete), which unsigned `swift test` and CI can't reach |
 | `docs/` | architecture and protocol documents |
 
@@ -90,6 +91,22 @@ tools/release/build.sh                                      # signed DMG in buil
 VH_NOTARY_PROFILE=<notarytool profile> tools/release/build.sh   # also notarized and stapled
 VH_SPARKLE_KEY_FILE=<key file> tools/release/build.sh            # also appcast.xml (generate_keys -x exports the key)
 ```
+
+## Connecting to nodes
+
+Desktop reaches each node over the best address that proves the node's pinned server key: this Mac, the local
+network, a VPN, then the internet (the node advertises its addresses; Bonjour is the last resort). When a route
+drops, Desktop selects again and carries transfers over to the new one. The web console's "Pair a device" dialog
+offers a `vaulthalla://pair?…` link: opening it fills in Add Node with an address that answers with the server's
+key, and pairing then refuses any other server. You still approve with the six-digit code.
+
+On a node that supports them (server 1.20), uploads go in resumable parts: Retry, a dropped route or quitting the app
+picks an upload up where the node left it, and the part size and parts in flight adapt to the link. The node's
+Overview has a Connection panel: the route in use, its round trip, live throughput and tuning, an Automatic tuning
+switch (off: fixed 64 MiB parts, two at a time) and, when a better route wasn't used, why. Test Connection checks
+every address again and, where the node serves the calibration lanes, measures throughput both ways. Design:
+[`docs/architecture.md`](docs/architecture.md) §3, "Endpoints and route selection", "Resumable uploads and tuning"
+and "Connection panel".
 
 ## AI agents (MCP)
 

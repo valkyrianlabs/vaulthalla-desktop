@@ -52,6 +52,28 @@ extension KeychainSuite {
         }
     }
 
+    @Test func aPairingLinksKeyPinsTheFirstConnection() async throws {
+        try await withDaemon { daemon, _, identity, _ in
+            let fixture = try KeychainFixture.require()
+            // The link names another server's key: refused at the handshake, nothing is sent.
+            var configuration = Fast.pairing(port: daemon.port)
+            configuration.expectedServerSPKI = fixture.otherServer.spkiSHA256
+            let impostorLink = PairingClient(identity: identity, configuration: configuration)
+            let refused = Recorder(impostorLink.start())
+            #expect(await finalState(refused) == .failed(.unexpectedServerIdentity))
+            #expect(daemon.commands.isEmpty)
+
+            // The link's key is the server's: it pairs as usual, and the code still decides.
+            configuration.expectedServerSPKI = daemon.serverSPKI
+            let client = PairingClient(identity: identity, configuration: configuration)
+            let states = Recorder(client.start())
+            let request = try #require(await daemon.confirmedRequest())
+            daemon.decide(request.id, .approved)
+            #expect(await finalState(states) == .approved(nodeID: MockDaemon.nodeID, nodeName: MockDaemon.nodeName,
+                                                          deviceID: identity.deviceID, serverSPKI: daemon.serverSPKI))
+        }
+    }
+
     @Test(arguments: [MockDaemon.Decision.denied, .expired])
     func ownerDecidesAgainst(_ decision: MockDaemon.Decision) async throws {
         try await withDaemon { daemon, _, identity, _ in

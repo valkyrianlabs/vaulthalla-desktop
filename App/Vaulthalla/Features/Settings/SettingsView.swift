@@ -43,8 +43,10 @@ private struct GeneralSettingsView: View {
                 LabeledContent("Count", value: model.nodes.count.formatted())
             }
             UpdateSettingsSection()
-            Section {
-                Text("Connection, notification and backup settings arrive with pairing.")
+            Section("Connections") {
+                Text("Each node is reached over the best address that proves its server key: this Mac, the local "
+                     + "network, a VPN, then the internet. A node's Overview shows the route in use and why a better "
+                     + "one wasn't.")
                     .foregroundStyle(.secondary)
             }
         }

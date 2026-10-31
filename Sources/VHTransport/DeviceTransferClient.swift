@@ -1,4 +1,5 @@
 public import Foundation
+import CryptoKit
 import Synchronization
 
 /// Streams bytes over the device listener's HTTP lanes with the device's trust (``DeviceHTTPClient``'s TLS, identity
@@ -201,6 +202,66 @@ public final class DeviceTransferClient: Sendable {
         }
     }
 
+    // MARK: - Parts
+
+    /// What a part's PUT got.
+    public struct PartAnswer: Sendable {
+        public var response: HTTPURLResponse
+        /// The answer's body (at most 64 KiB kept).
+        public var body: Data
+        /// SHA-256 (lowercase hex) of exactly the bytes sent, when the whole range was sent.
+        public var sha256: String?
+        /// Seconds from the last body byte to the answer's head, when both were seen.
+        public var ackLatency: Double?
+    }
+
+    /// Sends `range` of `file` as the body of `request` (a PUT with that `Content-Length`), streamed from disk in
+    /// 256 KiB chunks through a bound stream pair, hashing what it sends; memory stays bounded whatever the part's
+    /// size. `unchanged` is asked before the last chunk: when it says the file changed, the request is abandoned before
+    /// the body completes, so the node never records the part (``TransferError/sourceChanged(_:)``). `progress` gets
+    /// the part's bytes sent.
+    /// `hashed` gets the SHA-256 once the whole range was handed over, before the answer (kept by the caller for a
+    /// resend whose answer may be lost).
+    public func uploadPart(_ request: URLRequest, file: URL, range: Range<Int64>,
+                           unchanged: @escaping @Sendable () -> Bool = { true },
+                           hashed: @escaping @Sendable (String) -> Void = { _ in },
+                           progress: @escaping @Sendable (_ sent: Int64) -> Void = { _ in })
+        async throws(TransferError) -> PartAnswer
+    {
+        var request = request
+        request.httpMethod = "PUT"
+        request.setValue(String(range.count), forHTTPHeaderField: "Content-Length")
+        if request.value(forHTTPHeaderField: "Content-Type") == nil {
+            request.setValue("application/octet-stream", forHTTPHeaderField: "Content-Type")
+        }
+        let task = session.uploadTask(withStreamedRequest: request)
+        let producer = PartProducer(file: file, range: range, unchanged: unchanged, hashed: hashed,
+                                    abort: { [task] in task.cancel() })
+        let body = Mutex(Data())
+        let times = Mutex<(sent: UInt64?, answered: UInt64?)>((nil, nil))
+        let length = Int64(range.count)
+        let result = await run(task, handler: StreamingDelegate.Handler(
+            response: { _ in times.withLock { $0.answered = $0.answered ?? DispatchTime.now().uptimeNanoseconds } },
+            data: { chunk in body.withLock { if $0.count < 65536 { $0.append(chunk) } } },
+            sent: { sent, _ in
+                if sent >= length { times.withLock { $0.sent = $0.sent ?? DispatchTime.now().uptimeNanoseconds } }
+                progress(sent)
+            },
+            complete: { _ in },
+            bodyStream: { producer.makeStream() }))
+        producer.stop()
+        if let failure = producer.failure { throw failure }
+        switch result {
+        case .failure(let error):
+            throw error
+        case .success(let response):
+            let (sent, answered) = times.withLock { $0 }
+            let latency = sent.flatMap { sent in answered.map { Double(Int64($0) - Int64(sent)) / 1e9 } }
+            return PartAnswer(response: response, body: body.withLock { $0 }, sha256: producer.digest,
+                              ackLatency: latency.flatMap { $0 >= 0 ? $0 : nil })
+        }
+    }
+
     // MARK: - Running tasks
 
     private func run(_ task: URLSessionTask, handler: StreamingDelegate.Handler)
@@ -229,6 +290,127 @@ public final class DeviceTransferClient: Sendable {
             box.task.cancel()
         }
     }
+}
+
+/// Feeds one part's bytes to URLSession: a thread reads the file range with `pread` into one 256 KiB buffer, hashes
+/// it and writes it into the output half of a bound stream pair (256 KiB of buffer), whose input half is the request
+/// body. A write blocks while URLSession hasn't taken the previous bytes, so at most ~512 KiB of a part is in memory.
+/// URLSession may ask for the body again (a resend on a fresh connection): each stream starts from the range's first
+/// byte with a fresh hash, and the previous producer stops.
+private final class PartProducer: @unchecked Sendable {
+    private let file: URL
+    private let range: Range<Int64>
+    private let unchanged: @Sendable () -> Bool
+    private let hashed: @Sendable (String) -> Void
+    private let abort: @Sendable () -> Void
+    private let state = Mutex(State())
+    static let chunk = 256 * 1024
+
+    private struct State {
+        var generation = 0
+        var stopped = false
+        var digest: String?
+        var failure: TransferError?
+    }
+
+    init(file: URL, range: Range<Int64>, unchanged: @escaping @Sendable () -> Bool,
+         hashed: @escaping @Sendable (String) -> Void, abort: @escaping @Sendable () -> Void) {
+        self.file = file
+        self.range = range
+        self.unchanged = unchanged
+        self.hashed = hashed
+        self.abort = abort
+    }
+
+    var digest: String? { state.withLock { $0.digest } }
+    var failure: TransferError? { state.withLock { $0.failure } }
+
+    func stop() {
+        state.withLock { $0.stopped = true }
+    }
+
+    func makeStream() -> InputStream? {
+        var input: InputStream?
+        var output: OutputStream?
+        Stream.getBoundStreams(withBufferSize: Self.chunk, inputStream: &input, outputStream: &output)
+        guard let input, let output else { return nil }
+        let generation = state.withLock { state -> Int in
+            state.generation += 1
+            state.digest = nil
+            return state.generation
+        }
+        let box = StreamBox(output)
+        let thread = Thread { [self] in produce(into: box.stream, generation: generation) }
+        thread.name = "vh.upload-part"
+        thread.qualityOfService = .userInitiated
+        thread.start()
+        return input
+    }
+
+    private func current(_ generation: Int) -> Bool {
+        state.withLock { !$0.stopped && $0.generation == generation }
+    }
+
+    private func fail(_ error: TransferError, generation: Int) {
+        let first = state.withLock { state -> Bool in
+            guard state.generation == generation, state.failure == nil else { return false }
+            state.failure = error
+            return true
+        }
+        if first { abort() }
+    }
+
+    private func produce(into output: OutputStream, generation: Int) {
+        output.open()
+        defer { output.close() }
+        let descriptor = open(file.path(percentEncoded: false), O_RDONLY | O_CLOEXEC)
+        guard descriptor >= 0 else {
+            return fail(.disk("\(file.lastPathComponent) can't be read"), generation: generation)
+        }
+        defer { close(descriptor) }
+        let buffer = UnsafeMutableRawBufferPointer.allocate(byteCount: Self.chunk, alignment: 16)
+        defer { buffer.deallocate() }
+        var hasher = SHA256()
+        var offset = range.lowerBound
+        while offset < range.upperBound {
+            guard current(generation) else { return }
+            let want = Int(min(Int64(Self.chunk), range.upperBound - offset))
+            if offset + Int64(want) == range.upperBound, !unchanged() {
+                // The file changed: abandon the request before its body completes, so the node never records it.
+                return fail(.sourceChanged(file.lastPathComponent), generation: generation)
+            }
+            let read = pread(descriptor, buffer.baseAddress, want, off_t(offset))
+            guard read > 0 else {
+                // Shorter than it was: the file changed.
+                return fail(read == 0 ? .sourceChanged(file.lastPathComponent)
+                            : .disk("\(file.lastPathComponent) can't be read"), generation: generation)
+            }
+            let chunk = UnsafeRawBufferPointer(rebasing: buffer[0..<read])
+            hasher.update(bufferPointer: chunk)
+            var written = 0
+            while written < read {
+                let wrote = output.write(chunk.baseAddress!.advanced(by: written).assumingMemoryBound(to: UInt8.self),
+                                         maxLength: read - written)
+                // The reader went away (the task ended or URLSession asked for a new stream).
+                guard wrote > 0 else { return }
+                written += wrote
+            }
+            offset += Int64(read)
+        }
+        let hex = hasher.finalize().map { String(format: "%02x", $0) }.joined()
+        let latest = state.withLock { state -> Bool in
+            guard state.generation == generation else { return false }
+            state.digest = hex
+            return true
+        }
+        if latest { hashed(hex) }
+    }
+}
+
+/// An `OutputStream` handed to the producer thread, which alone uses it.
+private final class StreamBox: @unchecked Sendable {
+    let stream: OutputStream
+    init(_ stream: OutputStream) { self.stream = stream }
 }
 
 /// A `URLSessionTask` handed to a cancellation handler (URLSession's tasks are thread-safe).
@@ -413,6 +595,8 @@ final class StreamingDelegate: NSObject, URLSessionDataDelegate, Sendable {
         var complete: @Sendable ((any Error)?) -> Void
         /// Whether to take the response's body; false cancels the task (it completes as cancelled).
         var admit: @Sendable (HTTPURLResponse) -> Bool = { _ in true }
+        /// A streamed request's body, asked for when the task starts and again if URLSession has to resend it.
+        var bodyStream: (@Sendable () -> InputStream?)? = nil
     }
 
     private let trust: TrustDelegate
@@ -452,6 +636,11 @@ final class StreamingDelegate: NSObject, URLSessionDataDelegate, Sendable {
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
         handler(dataTask.taskIdentifier)?.data(data)
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask,
+                    needNewBodyStream completionHandler: @escaping @Sendable (InputStream?) -> Void) {
+        completionHandler(handler(task.taskIdentifier)?.bodyStream?())
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64,

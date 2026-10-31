@@ -26,6 +26,18 @@ import os
 /// survives that reload is reported as ``Status/revoked``. A server key that no longer matches the pin is retried once
 /// with the reloaded record too, in case the owner promoted the announced key.
 ///
+/// **Endpoints.** Before each connection it selects the endpoint (the server's transfer protocol §2,
+/// ``EndpointSelector``): loopback, the configured address, the node's advertised endpoints and the last good one are
+/// probed with a TLS handshake against the pins, and the best verified one by class (loopback, lan, vpn, wan,
+/// passthrough) is used; Bonjour is the last source. A key mismatch at an address other than the configured one only
+/// rules that address out; a mismatch at the configured address with nothing verified is the pin failure above. When
+/// nothing answers it connects to the configured address as before. It selects again when the network path changes,
+/// after two failed reconnects in a row, after a lane's connection failure (``laneConnectionFailed()``), every 30 min
+/// while on a class worse than lan, and on request (``testRoute()``), never more often than every 5 s, and moves the
+/// connection only to a better or working route. The route is reported as ``Event/route(_:)``. Once connected, a
+/// node that announces `device.endpoints` is asked for its addresses; the owner reports changes (and the last good
+/// endpoint) as ``Event/endpointsChanged(endpoints:advertisedAt:lastGood:)`` for the registry.
+///
 /// Isolation: an actor. Everything it reports (status, record changes, the identity in use) arrives in order on
 /// ``events``; feature code reads ``client`` per operation, because a key rotation replaces it.
 public actor NodeSession {
@@ -50,6 +62,11 @@ public actor NodeSession {
         /// What `meta.hello` settled after a connect, before that connection reports `.online`; nil when it decided
         /// nothing (no answer in time), in which case support stays unknown until the next connect.
         case protocolNegotiated(NodeProtocol?)
+        /// The route the connection takes (or tries), after each selection and when the connection comes up or drops.
+        case route(NodeRoute)
+        /// The node's advertised endpoints changed, or a connection came up on a new last good endpoint: save them.
+        /// Owner sessions only, like ``recordChanged(pairing:nextServerSPKISHA256:)``.
+        case endpointsChanged(endpoints: [AdvertisedEndpoint], advertisedAt: Date?, lastGood: LastGoodEndpoint?)
     }
 
     public struct Configuration: Sendable {
@@ -61,6 +78,12 @@ public actor NodeSession {
         public var rotationInterval: TimeInterval = 90 * 24 * 60 * 60
         /// The release `meta.hello` reports (`CFBundleShortVersionString`).
         public var clientVersion = Ws.Meta.Hello.clientVersion
+        /// Endpoint selection: timing, schedule, probes, Bonjour and path changes.
+        public var routes = RouteSettings()
+        /// Where the node's advertised endpoints come from once connected.
+        public var advertisements: any EndpointAdvertisementSource = WsEndpointAdvertisementSource()
+        /// How old a saved last good endpoint may get before a connection on it saves it again.
+        public var lastGoodRefresh: TimeInterval = 60 * 60
 
         public init() {}
     }
@@ -82,6 +105,21 @@ public actor NodeSession {
     /// What `meta.hello` settled on the latest connection that answered it; nil before any did. Kept through a
     /// reconnect, replaced by the next negotiation.
     public private(set) var nodeProtocol: NodeProtocol?
+    /// The route the current connection takes (or tries); nil before the first selection.
+    public private(set) var route: NodeRoute?
+
+    /// Where lanes and one-off connections reach the node now: the route's endpoint, else the configured one.
+    public var activeEndpoint: NodeEndpoint { route?.endpoint ?? node.endpoint }
+
+    /// When selections ran (the 5 s floor, the 30 min upgrade check).
+    private var schedule: RouteSchedule
+    /// The latest selection and the pins it was made with.
+    private var selection: (result: EndpointSelection, pins: [Data])?
+    private var selectionTask: Task<EndpointSelection, Never>?
+    /// The next connect must select again even if the last selection is fresh (its route failed).
+    private var forceSelection = false
+    /// The pin the current connection presents to the server (for ``testRoute()``).
+    private var connectionPin = Data()
 
     private let keys: DeviceKeys
     /// A consumer's reloads after a refusal.
@@ -112,6 +150,7 @@ public actor NodeSession {
         self.role = keys.role
         self.reader = CredentialReader(registry: registry, keys: keys)
         self.configuration = configuration
+        self.schedule = configuration.routes.schedule
         (events, eventSink) = AsyncStream.makeStream(of: Event.self, bufferingPolicy: .unbounded)
     }
 
@@ -133,10 +172,32 @@ public actor NodeSession {
         signals?.yield(.rotate)
     }
 
+    /// A lane (upload, download, preview, MCP) failed with a connection error: select again (throttled), and move the
+    /// connection if a better or working route turns up.
+    public func laneConnectionFailed() {
+        signals?.yield(.reselect(.laneFailure))
+    }
+
+    /// Selects again now (or as soon as the 5 s floor allows), reports the route, and moves the connection when the
+    /// selection found a better or working route. nil before the session has an identity.
+    @discardableResult
+    public func testRoute() async -> EndpointSelection? {
+        guard let identity else { return nil }
+        let clock = ContinuousClock()
+        if let earliest = schedule.earliest(for: .manual, activeClass: route?.transportClass, now: clock.now),
+           earliest > clock.now {
+            try? await clock.sleep(until: earliest)
+        }
+        let fresh = await runSelection(identity: identity, pin: connectionPin.isEmpty ? currentPin : connectionPin)
+        signals?.yield(.evaluate)
+        return fresh
+    }
+
     /// Closes the connection and ends ``events``.
     public func stop() async {
         runTask?.cancel()
         runTask = nil
+        selectionTask?.cancel()
         await client?.close()
         client = nil
         eventSink.finish()
@@ -144,11 +205,8 @@ public actor NodeSession {
 
     // MARK: - Run loop
 
-    /// What the connection loop reacts to: the client's states, and requests from outside.
-    private enum Signal {
-        case state(ConnectionState)
-        case rotate
-    }
+    /// What the connection loop reacts to.
+    private typealias Signal = NodeSessionSignal
 
     /// What ended one connection.
     private enum Ending {
@@ -161,6 +219,8 @@ public actor NodeSession {
         /// Consumer: the node refused this key (`device_unknown`).
         case refused(DeviceIdentity)
         case revoked
+        /// Connect again with the same identity over the newly selected endpoint.
+        case reroute
     }
 
     private func run() async {
@@ -204,6 +264,9 @@ public actor NodeSession {
                     candidate = identity
                     fallback = nil
                     retryRotation = retrying
+                case .reroute:
+                    // Same identity and pending state, another endpoint.
+                    continue
                 case .restart:
                     restartsLeft -= 1
                     if restartsLeft < 0 { rotationSuppressed = true }
@@ -279,20 +342,33 @@ public actor NodeSession {
 
     /// Runs one `WsClient` until it has to be replaced.
     private func connect(identity: DeviceIdentity, pin: Data, isPending: Bool, retryRotation: Bool) async -> Ending {
+        self.identity = identity
+        if !isPending { eventSink.yield(.identity(deviceID: identity.deviceID, backend: identity.backend)) }
+        let endpoint: NodeEndpoint
+        let usePin: Data
+        switch await target(identity: identity, pin: pin) {
+        case .stopped:
+            return .stopped
+        case .pinMismatch:
+            return .pinMismatch(reason: "\(node.displayName) presented a different server key than the one this Mac "
+                + "paired with. If the server was reinstalled, pair again.")
+        case .use(let chosen, let chosenPin):
+            endpoint = chosen
+            usePin = chosenPin
+        }
         let made: WsClient
         do {
             made = try WsClient(configuration: .init(
-                endpoint: node.endpoint,
-                security: .mutualTLS(identity: identity.secIdentity, serverSPKIPin: pin, onServerSPKI: { _ in }),
+                endpoint: endpoint,
+                security: .mutualTLS(identity: identity.secIdentity, serverSPKIPin: usePin, onServerSPKI: { _ in }),
                 reconnect: configuration.reconnect,
                 connectTimeout: configuration.connectTimeout))
         } catch {
-            publish(.offline(reason: "The node's address \(node.endpoint) can't be used."))
+            publish(.offline(reason: "The node's address \(endpoint) can't be used."))
             return .stopped
         }
         client = made
-        self.identity = identity
-        if !isPending { eventSink.yield(.identity(deviceID: identity.deviceID, backend: identity.backend)) }
+        connectionPin = usePin
 
         let states = await made.states()
         let (stream, sink) = AsyncStream.makeStream(of: Signal.self, bufferingPolicy: .unbounded)
@@ -300,9 +376,18 @@ public actor NodeSession {
             for await state in states { sink.yield(.state(state)) }
             sink.finish()
         }
+        // A network change calls for a new selection (the 5 s floor applies).
+        let paths = configuration.routes.pathChanges.map { changes in
+            Task {
+                for await _ in changes() { sink.yield(.reselect(.pathChanged)) }
+            }
+        }
+        var timers = RouteTimers()
         signals = sink
         defer {
             relay.cancel()
+            paths?.cancel()
+            timers.cancelAll()
             sink.finish()
         }
         await made.connect()
@@ -310,7 +395,11 @@ public actor NodeSession {
         var ending: Ending = .stopped
         var ready = false
         loop: for await signal in stream {
-            guard case .state(let state) = signal else {
+            let state: ConnectionState
+            switch signal {
+            case .state(let next):
+                state = next
+            case .rotate:
                 // A requested rotation: now if this connection is a checked Device session, else after the next
                 // connect (`connected` looks at the flag).
                 guard rotationRequested, ready else { continue }
@@ -320,8 +409,38 @@ public actor NodeSession {
                     break loop
                 }
                 continue
+            case .reselect(let trigger):
+                if case .dropped = trigger, ready { continue }  // it came back meanwhile
+                let clock = ContinuousClock()
+                let active = ready ? route?.transportClass : nil
+                guard let earliest = schedule.earliest(for: trigger, activeClass: active, now: clock.now) else {
+                    continue
+                }
+                if earliest > clock.now {
+                    timers.defer(trigger, until: earliest, into: sink)
+                    continue
+                }
+                _ = await runSelection(identity: identity, pin: usePin)
+                if movesConnection(from: endpoint, connected: ready) {
+                    log.info("moving the connection to a better route")
+                    ending = .reroute
+                    break loop
+                }
+                refreshRoute(on: endpoint, connected: ready, pin: usePin)
+                if ready { timers.scheduleUpgrade(at: schedule.nextUpgrade(activeClass: route?.transportClass), into: sink) }
+                continue
+            case .evaluate:
+                if movesConnection(from: endpoint, connected: ready) {
+                    ending = .reroute
+                    break loop
+                }
+                refreshRoute(on: endpoint, connected: ready, pin: usePin)
+                continue
             }
-            if case .connected = state {} else { ready = false }
+            if case .connected = state {} else {
+                if ready { refreshRoute(on: endpoint, connected: false, pin: usePin) }
+                ready = false
+            }
             switch state {
             case .idle:
                 continue
@@ -330,19 +449,32 @@ public actor NodeSession {
                 publish(failedAttempts >= 2 ? status : .connecting)
             case .reconnecting(let attempt, _):
                 failedAttempts = attempt
-                publish(attempt >= 2 ? .offline(reason: "Can't reach \(node.endpoint).") : .connecting)
+                publish(attempt >= 2 ? .offline(reason: unreachable(endpoint)) : .connecting)
+                // Two drops in a row: maybe the route is gone (a new network); look for another.
+                if attempt >= 2 { sink.yield(.reselect(.dropped(consecutive: attempt))) }
             case .failed(let reason):
-                ending = .pinMismatch(reason: "\(node.displayName) presented a different server key than the one "
-                    + "this Mac paired with. If the server was reinstalled, pair again. (\(reason))")
+                if endpoint != node.endpoint {
+                    // Another server answers at a selected address now: rule it out, never re-pair over it.
+                    log.info("server key mismatch on a selected endpoint; selecting again")
+                    forceSelection = true
+                    ending = .reroute
+                } else {
+                    ending = .pinMismatch(reason: "\(node.displayName) presented a different server key than the one "
+                        + "this Mac paired with. If the server was reinstalled, pair again. (\(reason))")
+                }
                 break loop
             case .connected:
                 failedAttempts = 0
-                if let result = await connected(made, identity: identity, pin: pin, isPending: isPending,
+                if let result = await connected(made, identity: identity, pin: usePin, isPending: isPending,
                                                 retryRotation: retryRotation) {
                     ending = result
                     break loop
                 }
                 ready = true
+                refreshRoute(on: endpoint, connected: true, pin: usePin)
+                recordLastGood(endpoint)
+                await refreshAdvertisement(on: made)
+                timers.scheduleUpgrade(at: schedule.nextUpgrade(activeClass: route?.transportClass), into: sink)
             }
             if Task.isCancelled { break }
         }
@@ -350,6 +482,162 @@ public actor NodeSession {
         await made.close()
         if client === made { client = nil }
         return Task.isCancelled ? .stopped : ending
+    }
+
+    /// "Can't reach …" for an offline status.
+    private func unreachable(_ endpoint: NodeEndpoint) -> String {
+        if route?.isFallback == true, (selection?.result.reports.count ?? 0) > 1 {
+            return "Can't reach \(node.displayName) at any of its addresses."
+        }
+        return "Can't reach \(endpoint)."
+    }
+
+    // MARK: - Routes
+
+    private enum Target {
+        case use(NodeEndpoint, pin: Data)
+        case pinMismatch
+        case stopped
+    }
+
+    /// The endpoint (and pin) the next connection uses: the last selection while it is fresh and was made with these
+    /// pins, else a new one (waiting out the 5 s floor). With nothing verified it is the configured endpoint, unless
+    /// that presented another key (the pin failure).
+    private func target(identity: DeviceIdentity, pin: Data) async -> Target {
+        let clock = ContinuousClock()
+        let pins = pinsToProbe(pin)
+        var current = selection.flatMap { $0.pins == pins ? $0.result : nil }
+        if forceSelection || current == nil || !schedule.isFresh(now: clock.now) {
+            forceSelection = false
+            if let earliest = schedule.earliest(for: .connect, activeClass: nil, now: clock.now), earliest > clock.now {
+                do {
+                    try await clock.sleep(until: earliest)
+                } catch {
+                    return .stopped
+                }
+            }
+            current = await runSelection(identity: identity, pin: pin)
+        }
+        guard let current, !Task.isCancelled else { return .stopped }
+        if let chosen = current.chosen {
+            let usePin = chosen.matchedPin ?? pin
+            publishRoute(NodeRoute(
+                endpoint: chosen.candidate.endpoint, transportClass: chosen.transportClass, rtt: chosen.rtt,
+                remoteAddress: chosen.remoteAddress, interfaceName: chosen.interfaceName,
+                verifiedKey: usePin == currentPin ? .current : .next, isConnected: false, selection: current))
+            return .use(chosen.candidate.endpoint, pin: usePin)
+        }
+        if current.configuredEndpointMismatched { return .pinMismatch }
+        let configured = current.report(for: node.endpoint)
+        publishRoute(NodeRoute(
+            endpoint: node.endpoint, transportClass: configured?.transportClass ?? .wan, verifiedKey: .unverified,
+            isConnected: false, selection: current))
+        return .use(node.endpoint, pin: pin)
+    }
+
+    /// The pins a selection checks: `pin`, then the announced next key.
+    private func pinsToProbe(_ pin: Data) -> [Data] {
+        var pins = [pin]
+        if let next = node.nextServerSPKISHA256, next != pin { pins.append(next) }
+        return pins.filter { !$0.isEmpty }
+    }
+
+    /// Runs one selection (or joins the one already running), records it and reports it.
+    private func runSelection(identity: DeviceIdentity, pin: Data) async -> EndpointSelection {
+        if let running = selectionTask { return await running.value }
+        let node = node
+        let routes = configuration.routes
+        let task = Task { await routes.select(node, identity: identity, pin: pin) }
+        selectionTask = task
+        let result = await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
+        }
+        if selectionTask == task { selectionTask = nil }
+        schedule.recordSelection(at: .now, verified: result.chosen != nil)
+        selection = (result, pinsToProbe(pin))
+        if let chosen = result.chosen {
+            log.info("""
+                selected \(chosen.candidate.endpoint, privacy: .private) (\(chosen.transportClass.rawValue, privacy: .public)) \
+                of \(result.reports.count) candidates
+                """)
+        } else {
+            log.info("no candidate of \(result.reports.count) proved the server key")
+        }
+        return result
+    }
+
+    /// Whether the latest selection calls for moving the connection off `current`: it chose another endpoint, and
+    /// this one isn't connected, failed its probe, or is of a worse class.
+    private func movesConnection(from current: NodeEndpoint, connected: Bool) -> Bool {
+        guard let result = selection?.result, let chosen = result.chosen, chosen.candidate.endpoint != current else {
+            return false
+        }
+        if !connected { return true }
+        if let report = result.report(for: current), report.outcome != .ok, report.outcome != .notTried { return true }
+        return chosen.transportClass < (route?.transportClass ?? .passthrough)
+    }
+
+    /// Reports the route on `endpoint` with the latest selection, connected or not.
+    private func refreshRoute(on endpoint: NodeEndpoint, connected: Bool, pin: Data) {
+        guard var updated = route, updated.endpoint == endpoint else { return }
+        updated.isConnected = connected
+        if let result = selection?.result {
+            updated.selection = result
+            if let report = result.report(for: endpoint), report.outcome == .ok {
+                updated.rtt = report.rtt
+                updated.transportClass = report.transportClass
+                updated.remoteAddress = report.remoteAddress
+                updated.interfaceName = report.interfaceName
+                updated.verifiedKey = (report.matchedPin ?? pin) == currentPin ? .current : .next
+            }
+        }
+        publishRoute(updated)
+    }
+
+    private func publishRoute(_ new: NodeRoute) {
+        guard new != route else { return }
+        route = new
+        eventSink.yield(.route(new))
+    }
+
+    /// A verified route came up: remember it as the last good endpoint (saved by the owner when it changed, or once
+    /// an hour).
+    private func recordLastGood(_ endpoint: NodeEndpoint) {
+        guard let route, !route.isFallback, route.endpoint == endpoint else { return }
+        let previous = node.lastGood
+        let now = Date.now
+        node.lastGood = LastGoodEndpoint(endpoint: endpoint, at: now, transportClass: route.transportClass)
+        let stale = previous.map { now.timeIntervalSince($0.at) >= configuration.lastGoodRefresh } ?? true
+        guard role == .owner,
+              stale || previous?.endpoint != endpoint || previous?.transportClass != route.transportClass
+        else { return }
+        eventSink.yield(.endpointsChanged(endpoints: node.endpoints, advertisedAt: node.lastAdvertisedAt,
+                                          lastGood: node.lastGood))
+    }
+
+    /// Asks a node that announces `device.endpoints` for its addresses, and keeps them when they changed.
+    private func refreshAdvertisement(on client: WsClient) async {
+        guard nodeProtocol?.supports(capability: .deviceEndpoints) == .yes else { return }
+        let answer: EndpointAdvertisement
+        do {
+            answer = try await configuration.advertisements.advertisement(on: client,
+                                                                          timeout: configuration.requestTimeout)
+        } catch {
+            log.info("device.endpoints failed: \(error.message, privacy: .public)")
+            return
+        }
+        if let announced = answer.nodeID, let known = node.serverNodeID, announced != known {
+            log.error("device.endpoints named another node; ignored")
+            return
+        }
+        guard answer.candidates != node.endpoints else { return }
+        node.endpoints = answer.candidates
+        node.lastAdvertisedAt = answer.generatedAt ?? .now
+        guard role == .owner else { return }
+        eventSink.yield(.endpointsChanged(endpoints: node.endpoints, advertisedAt: node.lastAdvertisedAt,
+                                          lastGood: node.lastGood))
     }
 
     // MARK: - Protocol
@@ -544,4 +832,50 @@ public actor NodeSession {
     }
 
     private var published = false
+}
+
+/// What a session's connection loop reacts to: the client's states, and requests from outside.
+private enum NodeSessionSignal: Sendable {
+    case state(ConnectionState)
+    case rotate
+    /// Something calls for a new selection (subject to the schedule).
+    case reselect(RouteSchedule.Trigger)
+    /// A selection ran outside the loop (``NodeSession/testRoute()``): move if it found better.
+    case evaluate
+}
+
+/// The connection loop's timers: a deferred selection (the 5 s floor) and the periodic upgrade check.
+private struct RouteTimers {
+    private var deferred: Task<Void, Never>?
+    private var deferredUntil: ContinuousClock.Instant?
+    private var upgrade: Task<Void, Never>?
+
+    /// Asks for `trigger` again at `instant`, unless a deferred selection is already waiting.
+    mutating func `defer`(_ trigger: RouteSchedule.Trigger, until instant: ContinuousClock.Instant,
+                          into sink: AsyncStream<NodeSessionSignal>.Continuation) {
+        if let deferredUntil, deferredUntil > .now { return }
+        deferredUntil = instant
+        deferred = Task {
+            try? await ContinuousClock().sleep(until: instant)
+            guard !Task.isCancelled else { return }
+            sink.yield(.reselect(trigger))
+        }
+    }
+
+    mutating func scheduleUpgrade(at instant: ContinuousClock.Instant?,
+                                  into sink: AsyncStream<NodeSessionSignal>.Continuation) {
+        upgrade?.cancel()
+        upgrade = instant.map { instant in
+            Task {
+                try? await ContinuousClock().sleep(until: instant)
+                guard !Task.isCancelled else { return }
+                sink.yield(.reselect(.upgrade))
+            }
+        }
+    }
+
+    func cancelAll() {
+        deferred?.cancel()
+        upgrade?.cancel()
+    }
 }
