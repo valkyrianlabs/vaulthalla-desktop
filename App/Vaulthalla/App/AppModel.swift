@@ -68,8 +68,8 @@ final class AppModel {
         case finished(ConnectionTestResult)
     }
 
-    /// What "Test connection" runs. The default re-runs the endpoint selection; the transfer work replaces it with a
-    /// calibration over `/transfer/*` when the node announces `device.lanes.transfer`.
+    /// What "Test connection" runs: the endpoint selection again (previews), and with live sessions also a calibration
+    /// over the node's `/transfer/*` lanes where it announces `device.lanes.transfer` (`ConnectionTests.calibrating`).
     @ObservationIgnored var connectionTest: ConnectionTest = ConnectionTests.route
     /// Where transfer code reports `TransferStats`.
     @ObservationIgnored let transferStatsBoard: TransferStatsBoard
@@ -123,6 +123,10 @@ final class AppModel {
             recoveryKeys.start()
             if credentialRole == .consumer { watchOwner() }
             watchTransferStats()
+            connectionTest = ConnectionTests.calibrating { [weak self] session throws(TransferError) in
+                guard let lanes = await self?.fileLanes(for: session.nodeID) else { throw .cancelled }
+                return try await lanes.testConnection()
+            }
         }
     }
 

@@ -178,16 +178,20 @@ public struct ConnectionTestResult: Hashable, Sendable {
     /// Measured bytes per second, when the test calibrated.
     public var uploadBytesPerSecond: Double?
     public var downloadBytesPerSecond: Double?
+    /// The calibration behind them (RTT, the part size and concurrency uploads would start with), when it ran.
+    public var calibration: TransferCalibrator.Result?
     /// One plain sentence about the outcome, when the test has one to add.
     public var note: String?
     public var finishedAt: Date
 
     public init(selection: EndpointSelection? = nil, route: NodeRoute? = nil, uploadBytesPerSecond: Double? = nil,
-                downloadBytesPerSecond: Double? = nil, note: String? = nil, finishedAt: Date = .now) {
+                downloadBytesPerSecond: Double? = nil, calibration: TransferCalibrator.Result? = nil,
+                note: String? = nil, finishedAt: Date = .now) {
         self.selection = selection
         self.route = route
         self.uploadBytesPerSecond = uploadBytesPerSecond
         self.downloadBytesPerSecond = downloadBytesPerSecond
+        self.calibration = calibration
         self.note = note
         self.finishedAt = finishedAt
     }
@@ -203,5 +207,39 @@ public enum ConnectionTests {
         let selection = await session.testRoute()
         return ConnectionTestResult(selection: selection, route: await session.route,
                                     note: selection == nil ? "The node's session isn't connected yet." : nil)
+    }
+
+    /// ``route``, then, where the node announces `device.lanes.transfer`, `calibrate` (the node's lanes'
+    /// `testConnection()`: `/transfer/probe`, `/sink`, `/source`, nothing written on the node) over the route it
+    /// settled on. The measured throughput fills the result; a calibration that fails leaves the route's result
+    /// standing with the reason as its note. A node without the capability (or a legacy one) gets the route test only.
+    public static func calibrating(
+        _ calibrate: @escaping @Sendable (NodeSession) async throws(TransferError) -> TransferCalibrator.Result
+    ) -> ConnectionTest {
+        { session in
+            var result = await route(session)
+            guard result.selection != nil, await session.supports(capability: .transferLane) == .yes else {
+                return result
+            }
+            do throws(TransferError) {
+                let measured = try await calibrate(session)
+                result.uploadBytesPerSecond = measured.uploadBytesPerSecond
+                result.downloadBytesPerSecond = measured.downloadBytesPerSecond
+                result.calibration = measured
+                result.note = note(for: measured)
+            } catch {
+                result.note = "The route works, but throughput couldn't be measured: \(error.message)"
+            }
+            result.finishedAt = .now
+            return result
+        }
+    }
+
+    /// "Uploads would start with 64 MiB parts, 2 at a time (RTT 1.2 ms)."
+    static func note(for measured: TransferCalibrator.Result) -> String {
+        let part = String(format: "%.0f MiB", Double(measured.suggestedPartBytes) / Double(1 << 20))
+        var text = "Uploads would start with \(part) parts, \(measured.suggestedConcurrency) at a time"
+        if let rtt = measured.rtt { text += String(format: " (RTT %.1f ms)", rtt * 1000) }
+        return text + "."
     }
 }

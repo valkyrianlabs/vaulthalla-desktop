@@ -273,6 +273,51 @@ extension KeychainSuite {
             await session.stop()
         }
     }
+
+    @Test func testConnectionCalibratesOnlyWhereTheNodeServesTheTransferLanes() async throws {
+        try await withDaemon { fixture in
+            let announced = Mutex(["device.server.identity"])
+            fixture.daemon.answer("meta.hello") { _ in
+                .ok(NodeSessionTests.hello(capabilities: announced.withLock { $0 },
+                                           commands: ["device.server.identity", "meta.hello"]))
+            }
+            let node = fixture.node(NodeEndpoint(host: "127.0.0.1", port: fixture.daemon.port))
+            let calls = Mutex(0)
+            let failing = Mutex(false)
+            let test = ConnectionTests.calibrating { _ throws(TransferError) in
+                calls.withLock { $0 += 1 }
+                if failing.withLock({ $0 }) { throw .connection("reset by peer") }
+                return TransferCalibrator.Result(rtt: 0.0012, uploadBytesPerSecond: 41e6,
+                                                 downloadBytesPerSecond: 87e6, suggestedPartBytes: 64 << 20,
+                                                 suggestedConcurrency: 2)
+            }
+
+            // Without device.lanes.transfer: the route test alone.
+            var (session, events) = await start(node, keys: fixture.registry.ownerKeys(fixture.shared.store))
+            #expect(await online(events))
+            var result = await test(session)
+            #expect(result.selection != nil && result.uploadBytesPerSecond == nil && calls.withLock { $0 } == 0)
+            await session.stop()
+
+            // With it: the calibration's throughput fills the result.
+            announced.withLock { $0.append("device.lanes.transfer") }
+            (session, events) = await start(node, keys: fixture.registry.ownerKeys(fixture.shared.store))
+            #expect(await online(events))
+            result = await test(session)
+            #expect(calls.withLock { $0 } == 1)
+            #expect(result.selection != nil && result.route?.endpoint == node.endpoint)
+            #expect(result.uploadBytesPerSecond == 41e6 && result.downloadBytesPerSecond == 87e6)
+            #expect(result.calibration?.suggestedConcurrency == 2)
+            #expect(result.note == "Uploads would start with 64 MiB parts, 2 at a time (RTT 1.2 ms).")
+
+            // A calibration that fails: the route stands, the reason is the note.
+            failing.withLock { $0 = true }
+            result = await test(session)
+            #expect(result.selection != nil && result.uploadBytesPerSecond == nil)
+            #expect(result.note?.hasPrefix("The route works, but throughput couldn't be measured:") == true)
+            await session.stop()
+        }
+    }
 }
 }
 

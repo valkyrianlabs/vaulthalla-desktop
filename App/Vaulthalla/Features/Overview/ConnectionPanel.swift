@@ -109,7 +109,7 @@ struct ConnectionPanel: View {
 
     private var transferItems: [(term: String, value: String)] {
         var items: [(term: String, value: String)] = [
-            ("Part size", stats?.partBytes.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .binary) } ?? "—"),
+            ("Part size", stats?.partBytes.map(ConnectionWords.partSize) ?? "—"),
             ("Parts in flight", ConnectionWords.parts(inFlight: stats?.partsInFlight, allowed: stats?.concurrency)),
         ]
         if let stats {
@@ -213,6 +213,11 @@ enum ConnectionWords {
     static func milliseconds(_ duration: Duration) -> String {
         let ms = Double(duration.components.seconds) * 1000 + Double(duration.components.attoseconds) / 1e15
         return ms < 10 ? String(format: "%.1f ms", ms) : String(format: "%.0f ms", ms)
+    }
+
+    /// "64 MiB" (parts are whole MiB).
+    static func partSize(_ bytes: Int64) -> String {
+        String(format: "%.0f MiB", Double(bytes) / Double(1 << 20))
     }
 
     /// "2 of 4 allowed", "2", or "—".

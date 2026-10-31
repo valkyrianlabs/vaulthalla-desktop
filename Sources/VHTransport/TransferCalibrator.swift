@@ -32,6 +32,19 @@ public struct TransferCalibrator: Sendable {
         public var bytesReceived: Int64
         public var measuredAt: Date
 
+        public init(rtt: Double?, uploadBytesPerSecond: Double?, downloadBytesPerSecond: Double?,
+                    suggestedPartBytes: Int64, suggestedConcurrency: Int, bytesSent: Int64 = 0, bytesReceived: Int64 = 0,
+                    measuredAt: Date = .now) {
+            self.rtt = rtt
+            self.uploadBytesPerSecond = uploadBytesPerSecond
+            self.downloadBytesPerSecond = downloadBytesPerSecond
+            self.suggestedPartBytes = suggestedPartBytes
+            self.suggestedConcurrency = suggestedConcurrency
+            self.bytesSent = bytesSent
+            self.bytesReceived = bytesReceived
+            self.measuredAt = measuredAt
+        }
+
         /// MB/s (10^6 bytes) for display.
         public var uploadMegabytesPerSecond: Double? { uploadBytesPerSecond.map { $0 / 1e6 } }
         public var downloadMegabytesPerSecond: Double? { downloadBytesPerSecond.map { $0 / 1e6 } }
