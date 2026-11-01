@@ -721,7 +721,7 @@ Epic desktop#1 (Stages A to D). The MVP is desktop#4. Spike findings are on desk
     `sh.vaulthalla.app.fileprovider`, and domain calls from a build whose own copy isn't the elected one fail with
     -2001 (underlying -2014). Unregister stale copies (`pluginkit -r <appex>`, `lsregister -u <app>`), or check
     `pluginkit -m -v -D -i sh.vaulthalla.app.fileprovider`.
-- **Background agent: packaging decision** (desktop#2 E11; not built yet). The future per-user agent is **the app's
+- **Background agent: packaging** (desktop#2 E11). The per-user agent is **the app's
   own main executable in a headless mode** (`Contents/MacOS/Vaulthalla` with an argument), registered with
   `SMAppService.agent` (a LaunchAgent plist whose `BundleProgram` is the app's executable) or `SMAppService.mainApp`.
   - Not a nested `Contents/Library/LoginItems/*.app`. The File Provider client framework takes the provider from
@@ -729,12 +729,28 @@ Epic desktop#1 (Stages A to D). The MVP is desktop#4. Spike findings are on desk
     -2014) and fileproviderd logs "provider identifier shouldn't be nil".
   - Not a bare tool in `Contents/MacOS`. `keychain-access-groups` is restricted and needs a provisioning profile,
     which a bare executable can't embed: AMFI kills it (-413). Without that entitlement it can't read the device key.
-  - The app's executable under launchd does both: it reads the shared key and signals the working set. The agent
-    takes over the credential lease from the app (§3) and signals domains when the server reports changes. The
+  - The app's executable under launchd does both: it reads the shared key and signals the working set. The
     `--developer` commands are not the agent: they run one command and exit.
-- **Next.** Freshness and fail-closed domain removal from a background agent (desktop#5). Later: Finder aliases,
-  context actions and "Open in web console" (follow-ups of desktop#6), and the server's change journal and push
-  (vaulthalla/server#259, #260).
+- **Background agent: as built** (desktop#5, 0.4.1). `BackgroundAgent` (`App/Vaulthalla/App/BackgroundAgent.swift`):
+  `Vaulthalla --agent`, from `Contents/Library/LaunchAgents/sh.vaulthalla.app.agent.plist` (`BundleProgram`,
+  `RunAtLoad`, restarted only after a crash). The app registers it with `SMAppService.agent` while any vault is in
+  Finder (at launch and from the Finder tab) and unregisters it when none is; it exits once no domain is left.
+  - **A consumer, like the extension.** It never takes the credential lease, rotates or writes the registry: it reads
+    the App Group registry and the shared keychain and talks to each node through a `NodeLink`. Taking over ownership
+    from the app (§3) is later work; nothing here needs it.
+  - **Every 60 s** it asks each node with a domain for `storage.vault.accessible.list` and decides with
+    `FreshnessPlan` (`Sources/VHFinder`): a domain whose vault the account may still browse gets
+    `signalEnumerator(.workingSet)`, so Finder picks up remote changes with Desktop closed; a node that didn't answer
+    definitely (offline, slow, an older node) changes nothing and its domains are still signalled.
+  - **Fail closed** on a definite answer only: the node revoked this Mac or its record isn't paired, the node is gone
+    from the registry, or the list no longer has the vault. The domain is removed with `.preserveDirtyUserData`
+    (edits not yet uploaded are moved out, and the reason says where) and recorded in the App Group's defaults
+    (`RemovalLog`), which the Finder tab shows under "Removed from Finder".
+  - Domains outlive reboots on their own (the system keeps them); launchd starts the agent at login. If the operator
+    turns its background item off, the Finder tab says so and links to Login Items.
+  - Push (`fs.changed`, vaulthalla/server#260) replaces the polling once that server release exists.
+- **Next.** The ownership handoff from the app to the agent (§3); Finder aliases, context actions and "Open in web
+  console" (desktop#35); the server's change journal and push (vaulthalla/server#259, #260).
 
 ## 8. Workstreams and order
 

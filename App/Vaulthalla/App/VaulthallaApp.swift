@@ -7,6 +7,10 @@ import VHNodes
 @main
 enum Launch {
     static func main() {
+        // `Vaulthalla --agent`: the background agent, started by launchd (BackgroundAgent.swift), headless.
+        if CommandLine.arguments.dropFirst().first == BackgroundAgent.flag {
+            BackgroundAgent.run()
+        }
         #if DEBUG
         // `Vaulthalla --developer <command>`: the developer commands (DeveloperCommands.swift), headless.
         if CommandLine.arguments.dropFirst().first == DeveloperCommands.flag {

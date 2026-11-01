@@ -18,6 +18,8 @@ struct RootView: View {
             DetailView()
         }
         .frame(minWidth: 980, minHeight: 640)
+        // The background agent runs while any vault is in Finder (desktop#5).
+        .task { await FinderVaults.updateAgent() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 CostAlertsBell()

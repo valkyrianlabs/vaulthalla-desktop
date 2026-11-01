@@ -29,6 +29,17 @@ nonisolated struct FileProviderDomains: DomainRegistrar {
         Self.deleteReplica(identifier: identifier)
     }
 
+    /// Removes the domain the way failing closed needs (desktop#5): with `preservingUnsyncedChanges`, edits not yet
+    /// uploaded are moved out of the domain first, and the URL says where; nil when there were none.
+    func remove(identifier: String, preservingUnsyncedChanges: Bool) async throws -> URL? {
+        guard let domain = try await NSFileProviderManager.domains().first(where: { $0.identifier.rawValue == identifier })
+        else { return nil }
+        let kept = try await NSFileProviderManager.remove(domain, mode: preservingUnsyncedChanges ? .preserveDirtyUserData
+                                                                                                   : .removeAll)
+        Self.deleteReplica(identifier: identifier)
+        return kept
+    }
+
     func removeAll() async throws {
         let identifiers = try await NSFileProviderManager.domains().map(\.identifier.rawValue)
         try await NSFileProviderManager.removeAllDomains()

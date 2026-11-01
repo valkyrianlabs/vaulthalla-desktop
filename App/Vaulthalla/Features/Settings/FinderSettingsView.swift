@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 import SwiftUI
 import VHContract
 import VHCore
@@ -47,6 +48,42 @@ struct FinderSettingsView: View {
                             NSWorkspace.shared.open(FileProviderSettings.loginItemsURL)
                         }
                     }
+                }
+            }
+
+            if finder.agentStatus == .requiresApproval {
+                Section {
+                    Callout(tone: .info, systemImage: "arrow.clockwise") {
+                        Text("Keep Finder up to date while Vaulthalla is closed")
+                            .fontWeight(.semibold)
+                            .foregroundStyle(.fg)
+                        Text("Vaulthalla's background item is off under General ▸ Login Items & Extensions. Turn it on so "
+                            + "Finder picks up changes and removes vaults this Mac may no longer open.")
+                            .foregroundStyle(.fgMuted)
+                    }
+                    Button("Open Login Items Settings", systemImage: "gearshape") {
+                        SMAppService.openSystemSettingsLoginItems()
+                    }
+                }
+            }
+
+            if !finder.removals.isEmpty {
+                Section {
+                    ForEach(finder.removals.reversed()) { removal in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(removal.displayName)
+                                .foregroundStyle(.fg)
+                            Text(removal.reason)
+                                .font(.caption)
+                                .foregroundStyle(.fgSubtle)
+                            Text(removal.at, format: .dateTime)
+                                .font(.caption)
+                                .foregroundStyle(.fgFaint)
+                        }
+                    }
+                    Button("Dismiss") { finder.dismissRemovals() }
+                } header: {
+                    Text("Removed from Finder")
                 }
             }
 
