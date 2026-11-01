@@ -68,6 +68,41 @@ public enum FileProviderSettings {
     }
 }
 
+/// The File Provider consent gate as Desktop handles it (docs/architecture.md §7, "Order matters"). The switch in System
+/// Settings is per provider and lists no domains, and a domain added before it is turned on can stay disallowed after
+/// it is. So Desktop adds one domain while the operator hasn't turned Vaulthalla on, keeps further selections pending,
+/// adds them once a domain is allowed, and offers to add a domain stuck behind the gate again.
+public enum ConsentGate {
+    /// Whether Vaulthalla is on under File Providers, as far as the system shows it: one of its domains is allowed.
+    public static func providerEnabled(_ domains: [DomainSnapshot]) -> Bool {
+        domains.contains(where: \.userEnabled)
+    }
+
+    /// Domains exist and none is allowed: the operator still has to turn Vaulthalla on.
+    public static func awaitingApproval(_ domains: [DomainSnapshot]) -> Bool {
+        !domains.isEmpty && !providerEnabled(domains)
+    }
+
+    /// Which of `pending` to add now, in order: all of them once a domain is allowed (they start allowed too), the
+    /// first while there is no domain at all (it either starts allowed or asks for the switch), and none while a domain
+    /// waits for approval. Vaults that already have a domain are left out.
+    public static func admit(_ pending: [VaultDomain], existing: [DomainSnapshot]) -> [VaultDomain] {
+        let identifiers = Set(existing.map(\.identifier))
+        var seen: Set<VaultDomainID> = []
+        let fresh = pending.filter { !identifiers.contains($0.id.identifier) && seen.insert($0.id).inserted }
+        if providerEnabled(existing) { return fresh }
+        if existing.isEmpty { return Array(fresh.prefix(1)) }
+        return []
+    }
+
+    /// Domains to remove and add again: disallowed while another domain of the provider is allowed, which the switch
+    /// in System Settings can't fix. Adding one again after approval brings it up allowed.
+    public static func stuck(_ domains: [DomainSnapshot]) -> [DomainSnapshot] {
+        guard providerEnabled(domains) else { return [] }
+        return domains.filter { !$0.userEnabled && $0.vault != nil }
+    }
+}
+
 /// Adds, removes and lists this app's File Provider domains: `NSFileProviderManager` in the app, a fake in tests.
 public protocol DomainRegistrar: Sendable {
     func domains() async throws -> [DomainSnapshot]
@@ -121,6 +156,14 @@ extension DomainRegistrar {
             try await add(domain)
         }
         for domain in plan.add { try await add(domain) }
+    }
+
+    /// Removes `domain` and adds it again under the same identifier and name: the recovery for a domain stuck behind
+    /// the consent gate (``ConsentGate/stuck(_:)``). Nothing but Desktop's own domains can be added again.
+    public func addAgain(_ domain: DomainSnapshot) async throws {
+        guard let id = domain.vault else { return }
+        try await remove(identifier: domain.identifier)
+        try await add(VaultDomain(id: id, displayName: domain.displayName))
     }
 
     /// Adds `domain` unless a domain for that vault exists already. Returns what the system reports afterwards.

@@ -5,7 +5,7 @@
 #
 #   tools/ui/sweep.sh [path/to/Vaulthalla.app] [output dir]
 set -u
-app="${1:-build/DerivedData/Build/Products/Debug/Vaulthalla.app}/Contents/MacOS/Vaulthalla"
+app="${1:-build/DerivedData.noindex/Build/Products/Debug/Vaulthalla.app}/Contents/MacOS/Vaulthalla"
 out="${2:-$(mktemp -d "${TMPDIR:-/tmp}/vh-sweep.XXXXXX")}"
 mkdir -p "$out"
 sections="all allKeys 1:overview 1:files 1:vaults 1:credentials 1:shares 1:access 1:syncConflicts 1:cost 1:s3Gateway 1:recoveryKeys 1:devices 0:overview"

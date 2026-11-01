@@ -626,6 +626,14 @@ Epic desktop#1 (Stages A to D). The MVP is desktop#4. Spike findings are on desk
     add). `DomainRegistrar` is the seam: `FileProviderDomains` (`NSFileProviderManager`) in the app, a fake in tests.
     The system ties every domain to the extension embedded in the calling app, so only Vaulthalla's own executable
     can manage them.
+- **Trust model** (Cooper, 2026-11-01). The macOS user account is the authenticated space. Local plaintext copies
+  (the files File Provider materializes) are fine whenever that account's paired Vaulthalla user may view them, so the
+  one gate is the server's RBAC: Finder lists and downloads exactly what that user can see (`fs.dir.list` Lookup
+  filtering, vaulthalla/server#255, and the download lane's checks). There is no FileVault requirement, no per-vault
+  opt-in and no vault policy for local copies (desktop#8 and vaulthalla/server#261 were closed as not planned). Every
+  vault the user can browse can be shown, whatever its backing: a remote vault with the `cache` (smart cache) strategy
+  hydrates a remote-only file from its provider when the extension asks for it (`CloudEngine::openMissingReader`).
+  Files downloaded for offline use can't be revoked retroactively.
 - **The consent gate.** A new domain stays `userEnabled == false`, showing nothing and starting no extension (FP
   -2011), until the operator turns Vaulthalla on under System Settings ▸ General ▸ Login Items & Extensions ▸ File
   Providers. No API does it. The testing-mode bypass needs a paid team (desktop#2 E5, E6). `DomainSnapshot.state`
@@ -695,12 +703,20 @@ Epic desktop#1 (Stages A to D). The MVP is desktop#4. Spike findings are on desk
     `filenameCollision`, `insufficientQuota`, `cannotSynchronize` (a write the server refused), a Cocoa read-permission
     error for a refused read, `deletionRejected`, `versionNoLongerAvailable`, `syncAnchorExpired`, `excludedFromSync`,
     with the POSIX code underneath. Anything else is transient and retried by the system.
-  - **Debug UX.** Domain management stays developer-only: Settings ▸ Finder (Debug builds) and
-    `Vaulthalla.app/Contents/MacOS/Vaulthalla --developer registry|domains|add-domain|remove-domain|remove-all-domains|
-    pair|unpair|signal`. `pair <host:port> [name]` pairs as the credential owner with the app quit and prints the code
-    to approve; `signal <domain>` asks the extension for the working set's changes (the agent's job later, desktop#5).
-    `VH_FILEPROVIDER_SELFCHECK=<domain> <appex>/Contents/MacOS/VaulthallaFileProvider` checks readiness in the
-    extension's own sandbox.
+  - **Finder UX** (desktop#6, Release builds since 0.4.0). Settings ▸ Finder (`FinderSettingsView`, `FinderVaults`)
+    lists every paired node's vaults from `storage.vault.accessible.list` (or `storage.vault.list` on an older node),
+    each with a Show in Finder switch; a vault the account can't browse, or an inactive one, can't be switched on.
+    Each row shows the domain's state and opens its folder once active. Turning a vault off asks first, since its
+    downloaded copies go with the domain. The consent gate is handled as "Order matters" above requires
+    (`ConsentGate` in `Sources/VHFinder`): while no domain is allowed, only the first selection is added and the rest
+    wait (kept in the app's defaults, per macOS user) until one is; a domain stuck in `needsUserApproval` beside an
+    allowed one gets "Add Again". The tab reads the domains every 3 s while it is open, since the system reports no
+    approval change. Debug builds add a developer section (registry location, raw identifiers).
+  - **Developer commands.** `Vaulthalla.app/Contents/MacOS/Vaulthalla --developer registry|domains|add-domain|
+    remove-domain|remove-all-domains|pair|unpair|signal`. `pair <host:port> [name]` pairs as the credential owner with
+    the app quit and prints the code to approve; `signal <domain>` asks the extension for the working set's changes (the
+    agent's job later, desktop#5). `VH_FILEPROVIDER_SELFCHECK=<domain> <appex>/Contents/MacOS/VaulthallaFileProvider`
+    checks readiness in the extension's own sandbox.
   - Several builds of the extension on one Mac compete. pluginkit elects one copy of
     `sh.vaulthalla.app.fileprovider`, and domain calls from a build whose own copy isn't the elected one fail with
     -2001 (underlying -2014). Unregister stale copies (`pluginkit -r <appex>`, `lsregister -u <app>`), or check
@@ -716,8 +732,9 @@ Epic desktop#1 (Stages A to D). The MVP is desktop#4. Spike findings are on desk
   - The app's executable under launchd does both: it reads the shared key and signals the working set. The agent
     takes over the credential lease from the app (§3) and signals domains when the server reports changes. The
     `--developer` commands are not the agent: they run one command and exit.
-- **Next.** Freshness from a background agent that signals the working set (desktop#5), the real Finder UX (desktop#6),
-  the local plaintext policy (desktop#8), and the server's change journal and push (vaulthalla/server#259, #260).
+- **Next.** Freshness and fail-closed domain removal from a background agent (desktop#5). Later: Finder aliases,
+  context actions and "Open in web console" (follow-ups of desktop#6), and the server's change journal and push
+  (vaulthalla/server#259, #260).
 
 ## 8. Workstreams and order
 

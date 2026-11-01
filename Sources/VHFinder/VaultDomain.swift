@@ -38,7 +38,7 @@ public struct VaultDomainID: Hashable, Sendable, Codable, CustomStringConvertibl
 }
 
 /// A domain as Desktop wants it to exist: which vault, and what Finder calls it.
-public struct VaultDomain: Hashable, Sendable, Identifiable {
+public struct VaultDomain: Hashable, Sendable, Identifiable, Codable {
     public let id: VaultDomainID
     public let displayName: String
 

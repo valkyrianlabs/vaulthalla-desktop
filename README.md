@@ -1,14 +1,22 @@
 # Vaulthalla Desktop
 
 The native macOS cockpit for [Vaulthalla](https://github.com/valkyrianlabs/vaulthalla-server) deployments: pair your Mac with
-each server once, then manage every node, browse vault files, back up vault keys to 1Password, and give AI agents a
-safe MCP surface. Swift 6 and SwiftUI, macOS 27+, Apple Silicon.
+each server once, then manage every node, browse vault files, show vaults in Finder, back up vault keys to 1Password,
+and give AI agents a safe MCP surface. Swift 6 and SwiftUI, macOS 27+, Apple Silicon.
 
 The web console stays the browser surface for operators and the page share recipients see. Desktop holds no
 business logic: every action is an operation the daemon authorizes.
 
 **Status:** foundation. The plan, the pairing protocol and the open decisions are in
 [`docs/architecture.md`](docs/architecture.md).
+
+## Finder
+
+Settings ▸ Finder lists every vault of every paired node, each with a **Show in Finder** switch. A vault you show
+appears in Finder under Locations, like iCloud Drive: files download when you open them, and macOS removes downloaded
+copies when it needs the space. Finder shows exactly what your Vaulthalla account may see, whatever the vault's
+backing (local, or S3 with smart cache). The first time, macOS asks you to allow Vaulthalla under System Settings ▸
+General ▸ Login Items & Extensions ▸ File Providers; the Finder tab links there.
 
 ## Layout
 
@@ -32,8 +40,14 @@ Needs Xcode 27 and Go (`brew install go`): the app embeds the Go 1Password helpe
 swift test                                                  # VaulthallaKit
 VH_LIVE_NODE=<host>:36982 swift test --filter Live         # against a live daemon (docs/interop-testing.md)
 open App/Vaulthalla.xcodeproj                               # or:
-xcodebuild -project App/Vaulthalla.xcodeproj -scheme Vaulthalla -derivedDataPath build/DerivedData build
+xcodebuild -project App/Vaulthalla.xcodeproj -scheme Vaulthalla -derivedDataPath build/DerivedData.noindex build
 ```
+
+Build products go under `build/*.noindex`, which Spotlight skips. Otherwise every dev build shows up next to the
+installed app. Dev builds share the shipped bundle ids (`sh.vaulthalla.app`, `.fileprovider`, `.mcp`), so launching
+one can make macOS elect its File Provider extension over the installed one. Run `lsregister -u <app>` afterwards
+(`/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister`). Test a
+release by installing it into `/Applications`, not from the build folder.
 
 Signed builds use the Valkyrian Labs LLC team: copy `App/Config/Signing.local.xcconfig.example` to
 `App/Config/Signing.local.xcconfig` (gitignored), or pass `DEVELOPMENT_TEAM=ZG2G6V7GLC -allowProvisioningUpdates` to
@@ -71,7 +85,7 @@ tools/keychain-proof/run.sh ZG2G6V7GLC
 UI regression sweep (renders every section at three window sizes from a DEBUG build; catches AppKit layout loops):
 
 ```sh
-tools/ui/sweep.sh build/DerivedData/Build/Products/Debug/Vaulthalla.app
+tools/ui/sweep.sh build/DerivedData.noindex/Build/Products/Debug/Vaulthalla.app
 ```
 
 Refresh the contract after a server change:
