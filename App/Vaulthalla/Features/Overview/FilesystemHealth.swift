@@ -58,7 +58,7 @@ private struct FuseBody: View {
     }
 
     var body: some View {
-        let focus = model.healthFocus(on: .fuse)
+        let focus = model.healthTarget(on: .fuse)
         let idle = stats.ops.filter { $0.count == 0 }.count
         let rows = showIdle ? stats.ops : stats.ops.filter { $0.count > 0 }
         VStack(alignment: .leading, spacing: 20) {

@@ -143,14 +143,14 @@ nonisolated enum HealthRoute: Equatable {
 
 extension AppModel {
     /// The focus a followed warning set on `anchor`'s panel, if it points there.
-    func healthFocus(on anchor: HealthAnchor) -> HealthFocus? {
-        healthFocus.flatMap { $0.targets(anchor) ? $0 : nil }
+    func healthTarget(on anchor: HealthAnchor) -> HealthFocus? {
+        healthTarget.flatMap { $0.targets(anchor) ? $0 : nil }
     }
 
     /// Shows a Health page of the selected node, optionally scrolled to a panel with a metric marked.
     func openHealth(_ page: HealthPage, anchor: HealthAnchor? = nil, code: String? = nil, metricKey: String? = nil) {
         healthPage = page
-        healthFocus = anchor == nil && code == nil ? nil
+        healthTarget = anchor == nil && code == nil ? nil
             : HealthFocus(page: page, anchor: anchor, code: code, metricKey: metricKey)
         select(.overview)
     }

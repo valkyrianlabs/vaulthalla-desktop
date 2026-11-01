@@ -53,7 +53,7 @@ private struct OperationsBody: View {
     @State private var selection: Int?
 
     var body: some View {
-        let focus = model.healthFocus(on: .operationQueue)
+        let focus = model.healthTarget(on: .operationQueue)
         let tone = StatusTone(severity: stats.overallStatus)
         VStack(alignment: .leading, spacing: 20) {
             StatGrid(minimum: 150, uniformHeight: true) {

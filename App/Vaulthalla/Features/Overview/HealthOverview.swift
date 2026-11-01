@@ -34,8 +34,8 @@ struct HealthPages: View {
                     }
                 }
             }
-            .task(id: model.healthFocus?.id) {
-                guard let focus = model.healthFocus, focus.page == page, let anchor = focus.anchor else { return }
+            .task(id: model.healthTarget?.id) {
+                guard let focus = model.healthTarget, focus.page == page, let anchor = focus.anchor else { return }
                 // Let the page lay out (it may have just switched) before scrolling to the panel.
                 try? await Task.sleep(for: .milliseconds(180))
                 withAnimation(.easeInOut(duration: 0.35)) { proxy.scrollTo(anchor, anchor: .top) }

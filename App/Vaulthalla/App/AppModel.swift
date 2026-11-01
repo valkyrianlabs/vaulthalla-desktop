@@ -29,7 +29,10 @@ final class AppModel {
     var selectedSection: NodeSection = .overview
     /// Which page of the Overview shows, and the panel and metric a followed warning points at.
     var healthPage: HealthPage = .summary
-    var healthFocus: HealthFocus?
+    var healthTarget: HealthFocus?
+    /// The health card a drill-down should bring forward (a dashboard card id such as "system.fuse"), set when an
+    /// All Nodes alert opens a node's Overview. The Overview reads it and sets it back to nil.
+    var healthFocus: String?
 
     var sheet: Sheet?
     var columnVisibility: NavigationSplitViewVisibility = .all
@@ -99,6 +102,8 @@ final class AppModel {
     @ObservationIgnored private(set) var sessions: NodeSessions?
     /// Each connected node's server data (`queries(for:)`), kept while its session lives.
     @ObservationIgnored private var queryStores: [NodeID: NodeQueries] = [:]
+    /// Each node's All Nodes figures (`pulse(for:)`), on the node's current query store.
+    @ObservationIgnored private var pulses: [NodeID: NodePulse] = [:]
     /// Whether the app is active with a visible window: polling runs only then (`AppActivity`).
     @ObservationIgnored private var isAppActive = true
     /// Vault key backups to 1Password across every node (Recovery Keys).
@@ -286,6 +291,7 @@ final class AppModel {
         guard edit({ try store.remove(id) }) else { return }
         liveStatus[id] = nil
         queryStores[id] = nil
+        pulses[id] = nil
         keyBackends[id] = nil
         nodeProtocols[id] = nil
         routes[id] = nil
@@ -409,6 +415,9 @@ final class AppModel {
         for id in queryStores.keys where !live.contains(id) {
             queryStores[id] = nil
         }
+        for id in pulses.keys where !live.contains(id) {
+            pulses[id] = nil
+        }
         for id in nodeProtocols.keys where !live.contains(id) {
             nodeProtocols[id] = nil
         }
@@ -521,6 +530,16 @@ final class AppModel {
         }
     }
 
+    /// The node's All Nodes figures while it has server data to show (`liveQueries(for:)`), made on first use and
+    /// remade when the node's query store is (a new session).
+    func pulse(for node: Node) -> NodePulse? {
+        guard let queries = liveQueries(for: node) else { return nil }
+        if let existing = pulses[node.id], existing.queries === queries { return existing }
+        let made = NodePulse(queries: queries)
+        pulses[node.id] = made
+        return made
+    }
+
     /// The app became active or inactive, or its window was hidden or shown: polling follows.
     func setAppActive(_ active: Bool) {
         guard active != isAppActive else { return }
@@ -540,12 +559,17 @@ final class AppModel {
 
     /// ⌘R: refetch what the selected node's visible section shows.
     func refreshVisible() {
+        if showsAllNodes, allNodesPage == .overview {
+            for node in nodes { if let pulse = pulse(for: node) { Task { await pulse.refresh() } } }
+            return
+        }
         guard !showsAllNodes, let node = selectedNode else { return }
         liveQueries(for: node)?.refreshObserved()
     }
 
     var canRefreshVisible: Bool {
-        guard !showsAllNodes, let node = selectedNode else { return false }
+        if showsAllNodes { return allNodesPage == .overview && nodes.contains { status(for: $0) == .online } }
+        guard let node = selectedNode else { return false }
         return status(for: node) == .online
     }
 
@@ -604,6 +628,20 @@ final class AppModel {
     func selectNode(atPosition position: Int) {
         guard nodes.indices.contains(position) else { return }
         selectNode(nodes[position].id)
+    }
+
+    /// Opens what an All Nodes alert is about: the node's Cost or Sync Conflicts section, or its Overview with the
+    /// alert's health card in focus.
+    func open(_ alert: NodeDigest.Alert, on id: NodeID) {
+        switch alert.area {
+        case .cost:
+            selectNode(id, section: .cost)
+        case .sync where alert.cardID.hasPrefix("sync"):
+            selectNode(id, section: .syncConflicts)
+        default:
+            healthFocus = alert.cardID
+            selectNode(id, section: .overview)
+        }
     }
 
     func select(_ section: NodeSection) {

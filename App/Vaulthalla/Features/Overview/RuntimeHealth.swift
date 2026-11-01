@@ -55,7 +55,7 @@ private struct SystemHealthBody: View {
     ]
 
     var body: some View {
-        let focus = model.healthFocus(on: .systemHealth)
+        let focus = model.healthTarget(on: .systemHealth)
         let summary = stats.summary
         VStack(alignment: .leading, spacing: 20) {
             StatGrid(minimum: 160, uniformHeight: true) {
@@ -194,7 +194,7 @@ private struct ThreadPoolsBody: View {
     @State private var selection: String?
 
     var body: some View {
-        let focus = model.healthFocus(on: .threadPools)
+        let focus = model.healthTarget(on: .threadPools)
         VStack(alignment: .leading, spacing: 16) {
             StatGrid(minimum: 120, uniformHeight: true) {
                 StatTile(label: "Workers", value: Format.count(stats.totalWorkerCount),
@@ -262,7 +262,7 @@ private struct ConnectionsBody: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        let focus = model.healthFocus(on: .connections)
+        let focus = model.healthTarget(on: .connections)
         VStack(alignment: .leading, spacing: 16) {
             DonutChart(
                 parts: [

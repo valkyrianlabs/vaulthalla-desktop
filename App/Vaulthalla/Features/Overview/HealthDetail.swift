@@ -156,8 +156,8 @@ struct HealthDetailSection<R: WsRequest, Content: View, Actions: View>: View {
                 .opacity(flash ? 0.9 : 0)
                 .allowsHitTesting(false)
         }
-        .task(id: model.healthFocus?.id) {
-            guard model.healthFocus?.targets(anchor) == true else { return }
+        .task(id: model.healthTarget?.id) {
+            guard model.healthTarget?.targets(anchor) == true else { return }
             withAnimation(.easeOut(duration: 0.2)) { flash = true }
             try? await Task.sleep(for: .seconds(1.4))
             withAnimation(.easeIn(duration: 0.6)) { flash = false }

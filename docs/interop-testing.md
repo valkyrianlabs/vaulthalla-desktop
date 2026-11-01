@@ -148,6 +148,41 @@ A local node is the same with a private, non-installed test-mode daemon on 127.0
 remove-all-domains`, `vh device revoke` on each node, `--developer unpair <node id>`, stop the instances, and
 `pluginkit -r` / `lsregister -u` every build copy you registered.
 
+## Finder E2E matrix (desktop#9)
+
+The matrix runs on a **Release** build installed the way users get it (`brew install --cask
+valkyrianlabs/tap/vaulthalla-desktop`, or the DMG, into `/Applications`), never a build from `build/`. File Provider
+starts no extension until a person allows the provider in System Settings, so none of this runs in CI. CI covers the
+layer underneath with `swift test`: `ConsentGate`, `FreshnessPlan`, `RemovalLog`, `PinStore`, the replica store and
+its mapping, and `VaultReplica` against the mock daemon.
+
+Setup, once per Mac: sign in to the node in Desktop, show the vault in Settings ▸ Finder, allow Vaulthalla under File
+Providers when asked, then quit Desktop. The background agent keeps running (`pgrep -fl 'Vaulthalla --agent'`).
+
+```sh
+tools/interop/finder-e2e.py --root ~/Library/CloudStorage/Vaulthalla-<vault>·<node> --domain <node id>.<vault id> \
+    --vault <vault id> --vh "<vh as the paired account>" --agent \
+    --large 2 --restart-cmd "<restarts the node>" \
+    --stop-cmd "<stops the node>" --start-cmd "<starts it>"
+# last, and destructive (pair again afterwards):
+tools/interop/finder-e2e.py … --agent --revoke-cmd "<vh device revoke <device id>, as an admin>"
+```
+
+| Case | How | Expected |
+| --- | --- | --- |
+| The app quit, the agent signals | `--agent` | the agent runs; a server-side file appears in Finder within its 60 s tick |
+| Multi-GiB files | `--large 2` | the write reaches the server intact (streamed hash); a read-back after eviction is intact; a partial read near the end matches |
+| Server restart mid-transfer | `--restart-cmd` | the read-back still completes intact |
+| Network loss, offline edits | `--stop-cmd`, `--start-cmd` | the edit made while the node was down reconciles: the server's edit stays, the Mac's is a conflict copy |
+| Revocation fails closed | `--revoke-cmd` | the agent removes the domain; Settings ▸ Finder lists it under "Removed from Finder" with the reason |
+| Keep Downloaded | Finder ▸ right-click ▸ Keep Downloaded on a folder | its files download without being opened (`du`); Remove Download refuses until Allow Removing Download |
+| Never launched after login | restart, log in, don't open Desktop | `launchctl print gui/$(id -u)/sh.vaulthalla.app.agent` shows it running; a server change reaches Finder |
+| Two macOS accounts | a second account signs in to its own node account | each sees only its own vaults; neither sees the other's domains or credentials |
+| Key rotation in use | Settings ▸ node ▸ Rotate Key Now while a large read runs | the read completes; Finder keeps working (the extension and agent reload the rotated key) |
+| Clean Mac (moved from desktop#10) | a Mac that never ran Desktop: install the cask, sign in, show a vault | the vault is browsable in Finder |
+
+Record each run under "Findings" below and on desktop#9 (date, macOS, Desktop and server versions, node, results).
+
 ## Findings: direct transport (2026-10-31, server `feat/direct-transport` 372b5bdb, Desktop `feat/direct-transport`)
 
 - Everything above passes against the dev box (`-O0` and `-O3` builds): 11 live tests. The Mac reached the box over

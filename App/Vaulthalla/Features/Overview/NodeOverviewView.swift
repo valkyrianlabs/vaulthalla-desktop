@@ -32,6 +32,12 @@ struct NodeOverviewView: View {
                 }
             }
         }
+        // An All Nodes alert names the card it's about (`healthFocus`): open its panel and mark what's behind it.
+        .task(id: model.healthFocus) {
+            guard let cardID = model.healthFocus else { return }
+            model.healthFocus = nil
+            model.openHealth(href: nil, cardID: cardID)
+        }
         .toolbar {
             ToolbarItem(placement: .principal) {
                 HealthPagePicker(overview: queries.flatMap { $0.query(Ws.Stats.Dashboard.Overview.self, .init()).value?.stats })

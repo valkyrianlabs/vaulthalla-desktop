@@ -9,8 +9,19 @@ The vault holds what tools/interop/vh-instance.sh seeds (/hello.txt, /docs/blob.
 whole reads and a `dd` partial read (only the range lands on disk); an edit reaches the server; a concurrent server
 edit makes the Mac's edit a conflict copy and loses neither; create, mkdir, rename, move and delete reach the server;
 the deleted file comes back through `vh recovery list`/`restore` (the vault needs local versioning on). Signals the
-working set with `Vaulthalla --developer signal` where the background agent would (desktop#5). Prints PASS/FAIL per
-step; exits 0 only if every step passed. See docs/interop-testing.md, "Finder (File Provider)".
+working set with `Vaulthalla --developer signal` (a Debug build), or with `--agent` leaves that to the background agent
+of a Release build (desktop#5). Prints PASS/FAIL per step; exits 0 only if every step passed. See
+docs/interop-testing.md, "Finder (File Provider)" and "Finder E2E matrix" (desktop#9).
+
+Matrix groups (desktop#9), each opt-in:
+  --agent                 Release build: no developer signal; the agent must run, and a server change must reach Finder
+                          with the app quit.
+  --large GIB             a GIB GiB file written through Finder reaches the server intact, and reads back intact after
+                          eviction, with a partial read near its end.
+  --restart-cmd CMD       restarts the node during that read-back (needs --large); the read still completes intact.
+  --stop-cmd/--start-cmd  an edit made while the node is down reconciles on reconnect: the server's own edit from before
+                          stays, the Mac's edit becomes a conflict copy.
+  --revoke-cmd CMD        last and destructive: revokes this Mac; the agent must remove the domain (needs --agent).
 """
 from __future__ import annotations
 
@@ -69,8 +80,44 @@ class Node:
         return self.run("fs", "put", str(self.vault), "-", path, "--overwrite", stdin=data).returncode == 0
 
 
+    def sha256(self, path: str) -> str | None:
+        """`vh fs get` streamed into a hash: multi-GiB files never sit in memory."""
+        argv = self.prefix + ([shlex.quote(a) for a in ("fs", "get", str(self.vault), path)]
+                              if self.prefix and self.prefix[0] == "ssh" else ["fs", "get", str(self.vault), path])
+        digest = hashlib.sha256()
+        with subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL) as proc:
+            assert proc.stdout
+            while chunk := proc.stdout.read(8 << 20):
+                digest.update(chunk)
+        return digest.hexdigest() if proc.returncode == 0 else None
+
+
+AGENT = False  # --agent: the background agent signals, not this script
+
+
 def signal(domain: str) -> None:
+    if AGENT:
+        return
     subprocess.run([str(APP), "--developer", "signal", domain], capture_output=True, timeout=60)
+
+
+def shell(command: str) -> bool:
+    return subprocess.run(command, shell=True, capture_output=True, timeout=300).returncode == 0
+
+
+def file_sha256(path: Path, limit: int | None = None, offset: int = 0) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as f:
+        f.seek(offset)
+        left = limit
+        while left is None or left > 0:
+            chunk = f.read(8 << 20 if left is None else min(8 << 20, left))
+            if not chunk:
+                break
+            digest.update(chunk)
+            if left is not None:
+                left -= len(chunk)
+    return digest.hexdigest()
 
 
 def wait(what, timeout: float = 90, every: float = 1.5, domain: str | None = None):
@@ -99,15 +146,34 @@ def main() -> int:
     ap.add_argument("--vault", type=int, required=True)
     ap.add_argument("--vh", required=True)
     ap.add_argument("--app", help="the Vaulthalla.app whose extension serves the domain")
+    ap.add_argument("--agent", action="store_true", help="Release build: the background agent signals")
+    ap.add_argument("--large", type=float, metavar="GIB", help="round-trip a file this many GiB through Finder")
+    ap.add_argument("--restart-cmd", help="restarts the node, during the large read-back")
+    ap.add_argument("--stop-cmd", help="stops the node (with --start-cmd: an offline edit)")
+    ap.add_argument("--start-cmd", help="starts the node again")
+    ap.add_argument("--revoke-cmd", help="revokes this Mac on the node; destructive, runs last (needs --agent)")
     args = ap.parse_args()
-    global APP
+    global APP, AGENT
     if args.app:
         APP = Path(args.app) / "Contents/MacOS/Vaulthalla"
+    AGENT = args.agent
+    if args.revoke_cmd and not args.agent:
+        ap.error("--revoke-cmd needs --agent: the agent is what removes the domain")
+    if args.restart_cmd and not args.large:
+        ap.error("--restart-cmd needs --large: the restart lands during the large read-back")
+    if bool(args.stop_cmd) != bool(args.start_cmd):
+        ap.error("--stop-cmd and --start-cmd go together")
     root, node, domain = Path(args.root), Node(args.vh, args.vault), args.domain
     tag = str(int(time.time()))
 
-    running = subprocess.run(["pgrep", "-x", "Vaulthalla"], capture_output=True).stdout.strip()
-    step("Desktop app not running", not running, running.decode() or "only the extension")
+    # The app's executable also runs as the agent (`Vaulthalla --agent`): only an instance without it is the app.
+    procs = subprocess.run(["pgrep", "-fl", "Contents/MacOS/Vaulthalla"], capture_output=True).stdout.decode()
+    app = [line for line in procs.splitlines() if "--agent" not in line and "--developer" not in line]
+    step("Desktop app not running", not app, "; ".join(app) or "only the extension and the agent")
+    if AGENT:
+        agent = [line for line in procs.splitlines() if "--agent" in line]
+        step("background agent running (desktop#5)", bool(agent), "; ".join(agent) or
+             "not running: show a vault in Finder from Desktop once, and check Login Items")
 
     # 1. Listings equal `vh fs ls` as the same account (Lookup-filtered by the server).
     signal(domain)
@@ -183,6 +249,67 @@ def main() -> int:
         (root / name).unlink()
     if copies:
         step("conflict copies deleted through Finder", wait(lambda: all(node.get("/" + n) is None for n in copies)) is True)
+
+    # 6. Freshness with the app quit: the agent signals, nothing here does (desktop#5).
+    if AGENT:
+        fresh = f"fresh-{tag}.txt"
+        step("server-side create (vh fs put)", node.put("/" + fresh, b"from the server\n"))
+        if step("it appears in Finder within the agent's interval", wait(lambda: fresh in local_ls(root), 180) is True):
+            (root / fresh).unlink()  # `vh` has no delete: tidy through Finder
+
+    # 7. A large file through Finder and back; a node restart during the read (desktop#9).
+    if args.large:
+        size = int(args.large * (1 << 30))
+        large = root / f"large-{tag}.bin"
+        block = os.urandom(8 << 20)
+        with large.open("wb") as f:
+            for i in range(0, size, len(block)):
+                f.write(block[: min(len(block), size - i)])
+        local = file_sha256(large)
+        step(f"large write: {args.large:g} GiB reaches the server intact",
+             wait(lambda: node.sha256(f"/{large.name}") == local, 1800, every=20) is True, local[:16])
+        evicted = subprocess.run(["fileproviderctl", "evict", str(large)], capture_output=True)
+        step("evict the local copy (fileproviderctl evict)", evicted.returncode == 0,
+             evicted.stderr.decode().strip()[:200])
+        restarted: list[bool] = []
+        if args.restart_cmd:
+            import threading
+            threading.Timer(2.0, lambda: restarted.append(shell(args.restart_cmd))).start()
+        step("large read-back is intact" + (" across a node restart" if args.restart_cmd else ""),
+             file_sha256(large) == local)
+        if args.restart_cmd:
+            step("the restart command ran", restarted == [True])
+        tail = max(0, size - (3 << 20))
+        step("partial read near the end matches", file_sha256(large, 1 << 20, tail) ==
+             hashlib.sha256((block * 2)[tail % len(block): tail % len(block) + (1 << 20)]).hexdigest())
+        large.unlink()
+        step("large file deleted through Finder", wait(lambda: node.get(f"/{large.name}") is None, 120) is True)
+
+    # 8. An edit made while the node is down reconciles on reconnect, without overwriting the server (desktop#9).
+    if args.stop_cmd:
+        offline = f"offline-{tag}.txt"
+        server_side, mac_side = b"server, before the outage\n", b"Mac, during the outage\n"
+        (root / offline).write_bytes(b"base\n")
+        step("offline: base file on the server", wait(lambda: node.get("/" + offline) == b"base\n") is True)
+        step("offline: server edits it (vh fs put)", node.put("/" + offline, server_side))
+        step("offline: node stopped", shell(args.stop_cmd))
+        (root / offline).write_bytes(mac_side)
+        time.sleep(10)
+        step("offline: node started", shell(args.start_cmd))
+        def reconciled():
+            names = [n for n in local_ls(root) if n.startswith("offline-") and "(conflict from " in n]
+            return [n for n in names if node.get("/" + n) == mac_side] or None
+        offline_copies = wait(reconciled, 300, every=5, domain=domain)
+        step("offline: the Mac's edit is a conflict copy after reconnect", bool(offline_copies), f"{offline_copies}")
+        step("offline: the server's edit stays", node.get("/" + offline) == server_side)
+        for name in [offline] + (offline_copies or []):
+            (root / name).unlink()
+
+    # 9. Revocation fails closed: the agent removes the domain (desktop#5). Destructive: pair again afterwards.
+    if args.revoke_cmd:
+        step("revoke this Mac on the node", shell(args.revoke_cmd))
+        step("the agent removes the domain from Finder", wait(lambda: not root.exists(), 240, every=5) is True,
+             str(root))
 
     print(f"{sum(results)}/{len(results)} passed", flush=True)
     return 0 if all(results) else 1

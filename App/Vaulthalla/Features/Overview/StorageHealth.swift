@@ -57,7 +57,7 @@ private struct StorageBody: View {
     }
 
     var body: some View {
-        let focus = model.healthFocus(on: .storageBackend)
+        let focus = model.healthTarget(on: .storageBackend)
         VStack(alignment: .leading, spacing: 16) {
             StatGrid(minimum: 120, uniformHeight: true) {
                 StatTile(label: "Vaults", value: Format.count(stats.vaultCountTotal))
@@ -241,7 +241,7 @@ private struct RetentionBody: View {
             .font(.callout)
             DataTable(rows: rows, id: \.key, columns: Self.columns, sort: $sort,
                       selection: .constant(nil),
-                      tone: { $0.overdueCount > 0 && model.healthFocus(on: .retention) != nil ? .warn : nil },
+                      tone: { $0.overdueCount > 0 && model.healthTarget(on: .retention) != nil ? .warn : nil },
                       help: { "\($0.label): \($0.kept) kept, \($0.overdue) past retention. Policy: \($0.policy)." })
         }
     }
