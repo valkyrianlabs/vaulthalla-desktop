@@ -17,8 +17,6 @@ cask "vaulthalla-desktop" do
 
   # Sparkle updates the app in place; Homebrew leaves upgrades to it.
   auto_updates true
-  # The vaulthalla cask (server + Desktop) installs the same app from the server package.
-  conflicts_with cask: "vaulthalla"
   depends_on arch: :arm64
   depends_on macos: :golden_gate
 
