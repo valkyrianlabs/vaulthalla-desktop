@@ -248,6 +248,21 @@ public final class ReplicaStore {
         }
     }
 
+    /// Gives each of `entryIDs` the replica has the next revision without changing it, so the next changes report it
+    /// as updated: how the system learns that something it can't see in the row did change (Keep Downloaded). Returns
+    /// how many rows took a revision.
+    @discardableResult
+    public func touch(_ entryIDs: [Int64]) throws(Failure) -> Int {
+        try transaction { () throws(Failure) -> Int in
+            var touched = 0
+            for id in entryIDs where try item(id) != nil {
+                try run("UPDATE items SET revision = ? WHERE entry_id = ?", [.int(nextRevision()), .int(id)])
+                touched += 1
+            }
+            return touched
+        }
+    }
+
     /// Marks a folder as enumerated by the system, so refreshes list it again.
     public func markListed(_ entryID: Int64) throws(Failure) {
         try run("UPDATE items SET listed = 1 WHERE entry_id = ?", [.int(entryID)])

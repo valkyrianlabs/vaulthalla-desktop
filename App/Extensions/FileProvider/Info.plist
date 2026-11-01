@@ -10,6 +10,25 @@
 	<string>Vaulthalla connects to the Vaulthalla servers on your network to keep their vaults in Finder.</string>
 	<key>NSExtension</key>
 	<dict>
+		<key>NSExtensionFileProviderActions</key>
+		<array>
+			<dict>
+				<key>NSExtensionFileProviderActionIdentifier</key>
+				<string>sh.vaulthalla.app.fileprovider.keepDownloaded</string>
+				<key>NSExtensionFileProviderActionName</key>
+				<string>Keep Downloaded</string>
+				<key>NSExtensionFileProviderActionActivationRule</key>
+				<string>SUBQUERY ( fileproviderItems, $fileproviderItem, $fileproviderItem.userInfo.keepDownloaded == nil ).@count &gt; 0</string>
+			</dict>
+			<dict>
+				<key>NSExtensionFileProviderActionIdentifier</key>
+				<string>sh.vaulthalla.app.fileprovider.allowRemovingDownload</string>
+				<key>NSExtensionFileProviderActionName</key>
+				<string>Allow Removing Download</string>
+				<key>NSExtensionFileProviderActionActivationRule</key>
+				<string>SUBQUERY ( fileproviderItems, $fileproviderItem, $fileproviderItem.userInfo.keepDownloaded == YES ).@count &gt; 0</string>
+			</dict>
+		</array>
 		<key>NSExtensionFileProviderDocumentGroup</key>
 		<string>$(VH_APP_GROUP)</string>
 		<key>NSExtensionFileProviderSupportsEnumeration</key>

@@ -38,8 +38,7 @@ final class ContainerEnumerator: NSObject, NSFileProviderEnumerator, @unchecked 
         tasks.add(Task {
             do throws(FinderError) {
                 let (items, next) = try await replica.list(container, page: start, pageSize: pageSize)
-                let root = await replica.rootEntryID
-                observer.call.didEnumerate(items.map { ReplicaItem($0, root: root) })
+                observer.call.didEnumerate(await replica.present(items))
                 observer.call.finishEnumerating(upTo: next.map { NSFileProviderPage($0.data) })
             } catch {
                 observer.call.finishEnumeratingWithError(error.nsError)
@@ -80,8 +79,7 @@ final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator, @unchecked
         tasks.add(Task {
             do throws(FinderError) {
                 let (items, next) = try await replica.workingSet(page: start, pageSize: pageSize)
-                let root = await replica.rootEntryID
-                observer.call.didEnumerate(items.map { ReplicaItem($0, root: root) })
+                observer.call.didEnumerate(await replica.present(items))
                 observer.call.finishEnumerating(upTo: next.map { NSFileProviderPage($0.data) })
             } catch {
                 observer.call.finishEnumeratingWithError(error.nsError)
@@ -133,9 +131,8 @@ enum ChangeReporter {
             }
             do throws(FinderError) {
                 let changes = try await replica.changes(since: since, limit: limit)
-                let root = await replica.rootEntryID
                 if !changes.updated.isEmpty {
-                    observer.call.didUpdate(changes.updated.map { ReplicaItem($0, root: root) })
+                    observer.call.didUpdate(await replica.present(changes.updated))
                 }
                 if !changes.deleted.isEmpty {
                     observer.call.didDeleteItems(withIdentifiers: changes.deleted.map {

@@ -45,6 +45,33 @@ import Testing
         #expect(try store.item(11) == nil)
     }
 
+    @Test func touchReportsUnchangedRowsAsUpdated() throws {
+        let store = try ReplicaStore(url: nil)
+        try store.applyListing(of: Self.root, children: [Self.file(10, "/a.txt", parent: 1), Self.file(12, "/b", parent: 1)])
+        let before = store.revision
+        #expect(try store.touch([12, 99]) == 1, "an id the replica doesn't have takes nothing")
+        let batch = try store.changes(after: before, limit: 100)
+        #expect(batch.updated.map(\.entryID) == [12])
+        #expect(store.revision == before + 1)
+        #expect(try store.touch([]) == 0)
+    }
+
+    @Test func pinsSurviveAReloadAndReportWhatChanged() throws {
+        let directory = FileManager.default.temporaryDirectory.appending(path: "vh-test-pins-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = PinStore.url(forStore: directory.appending(path: "n1.7.sqlite"))
+        #expect(url.lastPathComponent == "n1.7.pins.json")
+        var pins = PinStore(url: url)
+        #expect(pins.entries.isEmpty)
+        #expect(try pins.set([10, 11, 10], pinned: true) == [10, 11])
+        #expect(try pins.set([10], pinned: true).isEmpty)
+        #expect(PinStore(url: url).entries == [10, 11])
+        #expect(try pins.set([11, 12], pinned: false) == [11])
+        #expect(PinStore(url: url).entries == [10])
+        PinStore.deleteFile(at: url)
+        #expect(PinStore(url: url).entries.isEmpty)
+    }
+
     @Test func aRemovedFolderTakesItsSubtreeAndAReturningIDIsAnUpdateOnly() throws {
         let store = try ReplicaStore(url: nil)
         let docs = Self.folder(11, "/docs", parent: 1)

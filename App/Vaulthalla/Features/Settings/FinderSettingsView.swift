@@ -246,7 +246,21 @@ private struct FinderVaultRow: View {
     var confirmHide: (VaultDomainID, String) -> Void
     var unavailable: String?
 
+    @Environment(AppModel.self) private var model
+    @Environment(\.openWindow) private var openWindow
+
     private var snapshot: DomainSnapshot? { finder.snapshot(for: id) }
+
+    private var isActive: Bool { snapshot?.state == .active }
+
+    /// The vault in Desktop's file browser, in the main window.
+    private func openInVaulthalla() {
+        guard let node = model.node(withID: id.nodeID) else { return }
+        model.selectNode(node.id, section: .files)
+        FilesWorkspaces.workspace(for: node, model: model).open(vault: id.vaultID, name: name)
+        openWindow(id: "main")
+        NSApp.activate()
+    }
 
     private var shown: Binding<Bool> {
         Binding {
@@ -304,6 +318,17 @@ private struct FinderVaultRow: View {
                 .labelsHidden()
                 .toggleStyle(.switch)
                 .disabled(!finder.isShown(id) && (!canShow || domain == nil))
+        }
+        // Drag the vault into Finder for an alias to its folder.
+        .onDrag { isActive ? finder.aliasProvider(id, name: name) : NSItemProvider() }
+        .contextMenu {
+            if isActive {
+                Button("Open in Finder") { Task { await finder.open(id) } }
+                Button("Make Alias…") { Task { await finder.makeAlias(id, name: name) } }
+            }
+            if canShow || snapshot != nil {
+                Button("Open in Vaulthalla", action: openInVaulthalla)
+            }
         }
     }
 }
