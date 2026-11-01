@@ -27,6 +27,9 @@ final class AppModel {
     var allNodesPage: AllNodesPage = .overview
     var selectedNodeID: NodeID?
     var selectedSection: NodeSection = .overview
+    /// Which page of the Overview shows, and the panel and metric a followed warning points at.
+    var healthPage: HealthPage = .summary
+    var healthFocus: HealthFocus?
 
     var sheet: Sheet?
     var columnVisibility: NavigationSplitViewVisibility = .all

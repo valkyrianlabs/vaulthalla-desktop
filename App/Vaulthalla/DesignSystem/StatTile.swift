@@ -7,6 +7,10 @@ struct StatTile: View {
     var systemImage: String?
     var hint: String?
     var tone: StatusTone?
+    /// Set when the tile is the subject of a warning the person followed here: an outline in `tone` (or warn).
+    var highlighted = false
+
+    @Environment(\.statTilesReserveHint) private var reservesHint
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -41,6 +45,8 @@ struct StatTile: View {
                     .font(.caption)
                     .foregroundStyle(.fgSubtle)
                     .lineLimit(1)
+            } else if reservesHint {
+                Text(" ").font(.caption).accessibilityHidden(true)
             }
         }
         .padding(.horizontal, 14)
@@ -48,19 +54,30 @@ struct StatTile: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(.surface1, in: RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous))
         .overlay {
-            RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous).strokeBorder(.line, lineWidth: 1)
+            RoundedRectangle(cornerRadius: Theme.radiusCard, style: .continuous)
+                .strokeBorder(highlighted ? (tone ?? .warn).line : Color.line, lineWidth: highlighted ? 1.5 : 1)
         }
+        .help(hint ?? "")
         .accessibilityElement(children: .combine)
     }
 }
 
 /// Lays stat tiles out in as many columns as fit.
 struct StatGrid<Content: View>: View {
+    /// The narrowest a tile gets before the grid drops a column.
+    var minimum: CGFloat = 170
+    /// Every tile keeps a line for its hint, so a row of tiles with and without hints lines up.
+    var uniformHeight = false
     @ViewBuilder var content: Content
 
     var body: some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: 170), spacing: 10)], spacing: 10) {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: minimum), spacing: 10)], spacing: 10) {
             content
         }
+        .environment(\.statTilesReserveHint, uniformHeight)
     }
+}
+
+extension EnvironmentValues {
+    @Entry var statTilesReserveHint = false
 }

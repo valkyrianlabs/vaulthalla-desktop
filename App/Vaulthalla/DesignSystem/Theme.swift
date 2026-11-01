@@ -14,6 +14,8 @@ enum Theme {
     /// Detail pages use one gutter so panels line up across sections.
     static let pagePadding: CGFloat = 28
     static let stackSpacing: CGFloat = 16
+    /// The longest a line of prose gets (about 90 characters): pages use the whole window, sentences don't.
+    static let proseWidth: CGFloat = 720
 }
 
 extension Color {

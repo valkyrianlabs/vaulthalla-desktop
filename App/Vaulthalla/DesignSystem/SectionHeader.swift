@@ -24,7 +24,7 @@ struct SectionHeader<Accessory: View>: View {
                     Text(subtitle)
                         .font(.callout)
                         .foregroundStyle(.fgSubtle)
-                        .frame(maxWidth: 640, alignment: .leading)
+                        .frame(maxWidth: Theme.proseWidth, alignment: .leading)
                 }
             }
             Spacer(minLength: 0)

@@ -61,7 +61,7 @@ struct GatewayBudgetsTab: View {
             }
             .padding(.horizontal, Theme.pagePadding)
             .padding(.bottom, Theme.pagePadding)
-            .frame(maxWidth: 1100, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollContentBackground(.hidden)
         .observing(policies)
@@ -204,7 +204,7 @@ struct GatewayClientSetup: View {
             }
             .padding(.horizontal, Theme.pagePadding)
             .padding(.bottom, Theme.pagePadding)
-            .frame(maxWidth: 1100, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollContentBackground(.hidden)
         .observing(buckets)
