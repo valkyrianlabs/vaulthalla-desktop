@@ -127,8 +127,12 @@ public struct LocalPairing: Sendable {
         return !bare.isEmpty && hostNames.map(plain).contains(plain(bare))
     }
 
+    /// This Mac's host name (`gethostname`, which never waits on DNS as `ProcessInfo.hostName` may).
     public static func hostNames() -> [String] {
-        [ProcessInfo.processInfo.hostName].filter { !$0.isEmpty }
+        var name = [CChar](repeating: 0, count: 256)
+        guard gethostname(&name, name.count) == 0 else { return [] }
+        let text = String(decoding: name.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+        return text.isEmpty ? [] : [text]
     }
 
     public static func interfaceAddresses() -> Set<String> {
