@@ -1,14 +1,22 @@
 # Vaulthalla Desktop
 
 The native macOS cockpit for [Vaulthalla](https://github.com/valkyrianlabs/vaulthalla-server) deployments: pair your Mac with
-each server once, then manage every node, browse vault files, back up vault keys to 1Password, and give AI agents a
-safe MCP surface. Swift 6 and SwiftUI, macOS 27+, Apple Silicon.
+each server once, then manage every node, browse vault files, show vaults in Finder, back up vault keys to 1Password,
+and give AI agents a safe MCP surface. Swift 6 and SwiftUI, macOS 27+, Apple Silicon.
 
 The web console stays the browser surface for operators and the page share recipients see. Desktop holds no
 business logic: every action is an operation the daemon authorizes.
 
 **Status:** foundation. The plan, the pairing protocol and the open decisions are in
 [`docs/architecture.md`](docs/architecture.md).
+
+## Finder
+
+Settings ▸ Finder lists every vault of every paired node, each with a **Show in Finder** switch. A vault you show
+appears in Finder under Locations, like iCloud Drive: files download when you open them, and macOS removes downloaded
+copies when it needs the space. Finder shows exactly what your Vaulthalla account may see, whatever the vault's
+backing (local, or S3 with smart cache). The first time, macOS asks you to allow Vaulthalla under System Settings ▸
+General ▸ Login Items & Extensions ▸ File Providers; the Finder tab links there.
 
 ## Layout
 

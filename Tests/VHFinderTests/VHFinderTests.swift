@@ -137,6 +137,43 @@ import VHNodes
                                                                     userEnabled: true)]))
     }
 
+    @Test func consentGateAddsOneDomainUntilTheProviderIsOn() {
+        let photos = domain("n1", 1, "Photos · lab")
+        let docs = domain("n1", 2, "Docs · lab")
+        let media = domain("n2", 3, "Media · vps")
+        // No domain yet: the first one goes in alone, since it either starts allowed or asks for the switch.
+        #expect(ConsentGate.admit([photos, docs, photos], existing: []) == [photos])
+        // It waits for approval: nothing more is added, so no second domain gets stuck behind the gate.
+        let waiting = [snapshot(photos, enabled: false)]
+        #expect(ConsentGate.awaitingApproval(waiting))
+        #expect(ConsentGate.admit([photos, docs], existing: waiting).isEmpty)
+        // Allowed: everything pending goes in, minus what exists, each once.
+        let allowed = [snapshot(photos)]
+        #expect(!ConsentGate.awaitingApproval(allowed))
+        #expect(ConsentGate.admit([photos, docs, media, docs], existing: allowed) == [docs, media])
+        #expect(!ConsentGate.awaitingApproval([]))
+    }
+
+    @Test func consentGateFindsDomainsStuckBehindTheSwitch() {
+        let photos = domain("n1", 1, "Photos · lab")
+        let docs = domain("n1", 2, "Docs · lab")
+        let leftover = DomainSnapshot(identifier: "spike-domain", displayName: "Leftover", userEnabled: false)
+        #expect(ConsentGate.stuck([snapshot(photos), snapshot(docs, enabled: false), leftover])
+            == [snapshot(docs, enabled: false)])
+        #expect(ConsentGate.stuck([snapshot(photos, enabled: false), snapshot(docs, enabled: false)]).isEmpty,
+                "with no domain allowed, the switch itself is what's missing")
+    }
+
+    @Test func addAgainKeepsIdentifierAndName() async throws {
+        let docs = domain("n1", 2, "Docs · lab")
+        let registrar = FakeRegistrar([snapshot(docs, enabled: false)])
+        try await registrar.addAgain(snapshot(docs, enabled: false))
+        #expect(registrar.calls == ["remove n1.2", "add n1.2"])
+        #expect(try await registrar.domains().map(\.displayName) == ["Docs · lab"])
+        try await registrar.addAgain(DomainSnapshot(identifier: "spike-domain", displayName: "", userEnabled: false))
+        #expect(registrar.calls.count == 2, "a domain Desktop didn't make isn't added again")
+    }
+
     @Test func settingsLinksOpenSystemSettings() {
         #expect(FileProviderSettings.fileProvidersURL.scheme == "x-apple.systempreferences")
         #expect(FileProviderSettings.fileProvidersURL.absoluteString.contains("com.apple.fileprovider-nonui"))
