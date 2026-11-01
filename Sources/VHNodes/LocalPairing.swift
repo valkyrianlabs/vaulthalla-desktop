@@ -1,4 +1,5 @@
 public import Foundation
+public import VHCore
 import Darwin
 import VHTransport
 
@@ -85,9 +86,47 @@ public struct LocalPairing: Sendable {
         LocalPairing { arguments in try await Self.launch(executable, arguments) }
     }
 
-    /// Opens a pairing window owned by the Vaulthalla user the daemon maps this macOS account to.
-    public func openWindow() async throws(Failure) {
-        try await vh(["device", "pair"])
+    /// The pairing window `vh device pair --json` opened (server 1.21+), with where this Mac's server listens for
+    /// devices and what it is. An older `vh` only opens the window: then only the defaults are known.
+    public struct Window: Sendable, Hashable {
+        /// The device listener's port.
+        public var port: UInt16
+        /// Whether the listener is up; nil when this `vh` doesn't say.
+        public var listening: Bool?
+        /// The daemon's install id, the `serverNodeID` a pairing records; nil from an older `vh`.
+        public var nodeID: String?
+        /// The SHA-256 of the server's SPKI: the key the pairing connection must present. Learnt over `vh`'s
+        /// authenticated socket, so another server is refused before anything is sent (the code still decides).
+        public var serverSPKISHA256: Data?
+
+        public init(port: UInt16 = NodeEndpoint.defaultDevicePort, listening: Bool? = nil, nodeID: String? = nil,
+                    serverSPKISHA256: Data? = nil) {
+            self.port = port
+            self.listening = listening
+            self.nodeID = nodeID
+            self.serverSPKISHA256 = serverSPKISHA256
+        }
+    }
+
+    /// Opens a pairing window owned by the Vaulthalla user the daemon maps this macOS account to, and says what it
+    /// learnt about the server: `vh device pair --json`, or plain `vh device pair` where `vh` predates `--json`.
+    @discardableResult
+    public func openWindow() async throws(Failure) -> Window {
+        let output: Output
+        do {
+            output = try await vh(["device", "pair", "--json"])
+        } catch .refused(let message) where message.contains("unknown option '--json'") {
+            try await vh(["device", "pair"])
+            return Window()
+        }
+        guard let opened = try? JSONDecoder().decode(Opened.self, from: Data(output.stdout.utf8)),
+              let port = UInt16(exactly: opened.port), port > 0 else { throw .unreadable }
+        var spki: Data?
+        if let hex = opened.server_spki_sha256 {
+            guard let bytes = PairLink.hex32(hex) else { throw .unreadable }
+            spki = bytes
+        }
+        return Window(port: port, listening: opened.listening, nodeID: opened.node_id, serverSPKISHA256: spki)
     }
 
     /// Approves this Mac's request, once the daemon's own view confirms it: a request with `deviceID` whose choices
@@ -155,6 +194,14 @@ public struct LocalPairing: Sendable {
 
     // MARK: - Machinery
 
+    /// `vh device pair --json`, the members used here.
+    private struct Opened: Decodable {
+        let port: Int
+        let listening: Bool?
+        let node_id: String?
+        let server_spki_sha256: String?
+    }
+
     /// `vh device pending --json`, the members used here.
     private struct Pending: Decodable {
         struct Request: Decodable {
@@ -185,7 +232,17 @@ public struct LocalPairing: Sendable {
         let stdout = Pipe(), stderr = Pipe()
         process.standardOutput = stdout
         process.standardError = stderr
-        return try await withCheckedThrowingContinuation { continuation in
+        // Cancelling the caller (a timeout) stops a `vh` that hangs, say on a wedged daemon; it then reports how it
+        // ended like any other run.
+        return try await withTaskCancellationHandler {
+            try await run(process, stdout: stdout, stderr: stderr)
+        } onCancel: {
+            if process.isRunning { process.terminate() }
+        }
+    }
+
+    private static func run(_ process: Process, stdout: Pipe, stderr: Pipe) async throws -> Output {
+        try await withCheckedThrowingContinuation { continuation in
             // `vh` prints a few lines at most, well under a pipe's buffer, so reading after it exits can't stall it.
             process.terminationHandler = { finished in
                 let out = stdout.fileHandleForReading.readDataToEndOfFile()

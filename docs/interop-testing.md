@@ -17,6 +17,13 @@ opt-in: without `VH_LIVE_NODE` every test in it is skipped, so `swift test` and 
 |---|---|
 | `pairsThroughVHStaysSignedInAndSignsOut` | 1. `LocalPairing` with the instance's `vh` as its runner: open the window, pair, approve once `vh device pending` lists this key with this Mac's code, close the window (`pending` shows none). 2. A relaunch: the keychain opened again and a new `NodeSession` from the record come online without pairing. 3. `SignOut.run`: the node revokes the device over its own session, the key is gone from the keychain, `vh device list` shows it revoked, and a session from the old record never comes online and asks for pairing |
 
+`LiveLocalAutopairTests` covers setting up this Mac's own server with no code (`LocalNodeAutopair`, with the instance's
+`vh` as this Mac's and its address in place of loopback; needs a server with `vh device pair --json`):
+
+| Test | Steps |
+|---|---|
+| `setsUpTheServerWithoutACodeAndOnlyOnce` | 1. One `run` on an empty registry: paired, the record at the port `vh device pair --json` named, pinned to the listener's key, with the server's install id; the window is closed and `vh device list` has the device. 2. A second `run` finds the node by its install id: `alreadyKnown`, nothing added, the window closed again. 3. A `NodeSession` from the record comes online without pairing; the device is revoked at the end |
+
 `LiveTransferTests` covers direct transport (the server's docs/reference/transfer-protocol.md); each test pairs its own
 key and revokes it at the end:
 

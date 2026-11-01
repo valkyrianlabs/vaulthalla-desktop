@@ -103,6 +103,15 @@ Number matching is kept, compared by machine: `pending` is the daemon's view ove
 that a network attacker can't reach, and a relay on the TLS leg (another key on either side) gives a different code,
 so it is denied, and the daemon checks the code again on `approve`.
 
+**This Mac's own server, without asking.** The macOS account is the authenticated space, so for the server on the
+same Mac Desktop takes the person's consent as given and pairs on its own (`VHNodes.LocalNodeAutopair`): the same
+steps, except that the window is opened with `vh device pair --json` (server 1.21+), which also returns the device
+listener's `port`, `listening`, the server's `node_id` and `server_spki_sha256`. The node is saved at
+`127.0.0.1:<port>`, and every pairing connection is pinned to that key, learnt over the kernel-authenticated socket,
+so a different server is refused before the request is sent; the code is still compared through `vh` before
+`approve`. Where `vh` predates `--json` (it answers `unknown option '--json'`), plain `vh device pair` opens the
+window and the default port applies, without a pin.
+
 **Timeouts.** A window lasts 10 minutes or until closed; closing it expires its requests. A request expires 5 minutes
 after `confirm`, or when its window does. Expired and denied requests are deleted; Desktop shows "Pairing timed out"
 or "Pairing was declined" and starts over with fresh nonces (the device key is kept). Approved: the daemon writes the

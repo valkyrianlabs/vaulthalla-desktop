@@ -36,8 +36,11 @@ struct VaulthallaApp: App {
         if let path = UserDefaults.standard.string(forKey: "VHDebugRegistry") {
             let lease = CredentialLease(forRegistry: URL(filePath: path), holder: "app")
             try? lease.acquire()
-            return AppModel(store: NodeStore(fileURL: URL(filePath: path), lease: lease),
-                            keys: DeviceKeys.standard(lease: lease))
+            let model = AppModel(store: NodeStore(fileURL: URL(filePath: path), lease: lease),
+                                 keys: DeviceKeys.standard(lease: lease))
+            // With `-VHDebugLocalVH <path>` too: set up "this Mac's server" through that stand-in (LocalNodeSetup).
+            if UserDefaults.standard.string(forKey: "VHDebugLocalVH") != nil { model.setUpLocalNode() }
+            return model
         }
         #endif
         // Until the background agent ships, the app is the credential owner (docs/architecture.md §3): it takes the
@@ -50,6 +53,7 @@ struct VaulthallaApp: App {
         let model = AppModel(store: NodeStore(fileURL: registry.location.registryURL, lease: registry.lease),
                              keys: DeviceKeys.standard(lease: registry.lease), registry: registry)
         model.signOutIfNotKept()
+        model.setUpLocalNode()
         return model
     }
 

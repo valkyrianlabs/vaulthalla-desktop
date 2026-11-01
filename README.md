@@ -132,6 +132,12 @@ offers a `vaulthalla://pair?…` link: opening it fills in Add Node with an addr
 key, and pairing then refuses any other server. You still approve with the six-digit code. When the node runs on
 this Mac, the pairing sheet can do the approving for you through `vh`, once you agree.
 
+**This Mac's own server needs no pairing at all.** When Vaulthalla's server is installed on this Mac (the
+`valkyrianlabs/tap/vaulthalla` cask installs both and opens Desktop once), Desktop sets it up on its own at launch, or
+as soon as the server appears while it runs: your macOS account is the proof, so there's no code to compare, and the
+node acts as the Vaulthalla user that account is bound to (the person who installed the server is `admin`). Remove
+the node and Desktop leaves it removed; with Keep me signed in off it isn't added either.
+
 Pairing once is enough: Desktop stays signed in across quits, restarts and reboots, separately for each macOS account.
 Turn off **Keep me signed in on this Mac** (Settings ▸ General) on a Mac that isn't yours: quitting or logging out
 then signs this Mac out of every node, revokes it there, deletes its keys and removes its vaults from Finder. **Sign
