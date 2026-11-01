@@ -11,6 +11,9 @@ name: Release
 #   MACOS_NOTARY_APPLE_ID, MACOS_NOTARY_TEAM_ID, MACOS_NOTARY_PASSWORD   notarytool credentials
 #   SPARKLE_ED_PRIVATE_KEY                            the EdDSA key that signs updates (public half: SUPublicEDKey)
 #   HOMEBREW_TAP_TOKEN                                contents:write on valkyrianlabs/homebrew-tap (the cask)
+#
+# The publish job runs in the Production environment (no secrets or rules of its own, as in vaulthalla-server), so each
+# release is recorded as a deployment to production.
 on:
   push:
     tags: ['v*']
@@ -135,6 +138,7 @@ jobs:
     name: GitHub release
     needs: dmg
     if: startsWith(github.ref, 'refs/tags/')
+    environment: Production
     runs-on: ubuntu-latest
     permissions:
       contents: write
