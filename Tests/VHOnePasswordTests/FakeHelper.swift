@@ -94,17 +94,9 @@ extension OnePasswordHelper {
     }
 }
 
-/// Whether a process still exists (and isn't a zombie Foundation has yet to reap).
-func processExists(_ pid: Int32) -> Bool {
-    kill(pid, 0) == 0
-}
-
-/// Waits up to `seconds` for `condition`.
-func eventually(_ seconds: Double = 5, _ condition: () -> Bool) async -> Bool {
-    let deadline = Date().addingTimeInterval(seconds)
-    while Date() < deadline {
-        if condition() { return true }
-        try? await Task.sleep(for: .milliseconds(20))
-    }
-    return condition()
+/// Waits for the helper process to exit, then checks that the system no longer knows its pid (`kill(pid, 0)` still
+/// succeeds for a zombie nobody has reaped). No deadline: the suite's time limit fails a process that never exits.
+func exited(_ process: HelperProcess) async -> Bool {
+    await process.waitUntilExit()
+    return kill(process.processIdentifier, 0) != 0
 }

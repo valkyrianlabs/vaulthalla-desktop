@@ -225,6 +225,9 @@ public actor OnePasswordHelper {
     /// The running helper's pid (tests).
     var processIdentifier: Int32? { process?.processIdentifier }
 
+    /// The running helper (tests: awaiting its exit).
+    var currentProcess: HelperProcess? { process }
+
     /// Sends any op and decodes its result as `R` (tests: the fake build's fault injection, malformed requests).
     func send<R: Decodable & Sendable>(
         op: String, as _: R.Type, timeout: Duration? = nil, params: (inout RequestLineWriter) -> Void = { _ in }
