@@ -732,8 +732,8 @@ Epic desktop#1 (Stages A to D). The MVP is desktop#4. Spike findings are on desk
   - The app's executable under launchd does both: it reads the shared key and signals the working set. The agent
     takes over the credential lease from the app (§3) and signals domains when the server reports changes. The
     `--developer` commands are not the agent: they run one command and exit.
-- **Next.** Freshness and fail-closed domain removal from a background agent (desktop#5). Later: Finder aliases, context actions
-  and "Open in web console" (follow-ups of desktop#6), and the server's change journal and push
+- **Next.** Freshness and fail-closed domain removal from a background agent (desktop#5). Later: Finder aliases,
+  context actions and "Open in web console" (follow-ups of desktop#6), and the server's change journal and push
   (vaulthalla/server#259, #260).
 
 ## 8. Workstreams and order
