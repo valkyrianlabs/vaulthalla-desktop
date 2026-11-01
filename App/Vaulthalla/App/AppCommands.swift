@@ -27,6 +27,13 @@ struct AppCommands: Commands {
                 .keyboardShortcut("r")
                 .disabled(!model.canRefreshVisible)
             Divider()
+            // The Overview's pages, like Activity Monitor's tabs.
+            ForEach(Array(HealthPage.allCases.enumerated()), id: \.element) { position, page in
+                Button(page == .summary ? "Overview" : "Health: \(page.title)") { model.openHealth(page) }
+                    .keyboardShortcut(KeyEquivalent(Character(String(position + 1))), modifiers: [.command, .option])
+                    .disabled(model.selectedNodeID == nil)
+            }
+            Divider()
         }
 
         CommandMenu("Node") {

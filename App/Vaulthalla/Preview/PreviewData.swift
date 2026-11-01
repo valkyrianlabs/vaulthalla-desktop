@@ -20,7 +20,7 @@ nonisolated final class PreviewTransport: NodeTransport {
     let vaults = Mutex(PreviewData.vaults)
 
     /// Feature folders' own canned answers (`PreviewFeature`), asked in order for commands answered nowhere here.
-    static let features: [any PreviewFeature.Type] = [CostPreviewData.self, CredentialsPreviewData.self, NewVaultPreviewData.self, SyncConflictsPreviewData.self, AccessPreviewData.self, SharesPreviewData.self, DevicesPreviewData.self, GatewayPreviewData.self, RecoveryKeysPreviewData.self, AllNodesPreviewData.self]
+    static let features: [any PreviewFeature.Type] = [CostPreviewData.self, CredentialsPreviewData.self, NewVaultPreviewData.self, SyncConflictsPreviewData.self, AccessPreviewData.self, SharesPreviewData.self, DevicesPreviewData.self, GatewayPreviewData.self, RecoveryKeysPreviewData.self, AllNodesPreviewData.self, HealthPreviewData.self]
 
     init(_ scenario: Scenario) {
         self.scenario = scenario
@@ -153,8 +153,11 @@ nonisolated enum PreviewData {
     private static func backend(_ id: Int64, _ type: String, size: Int64?, status: String)
         -> WsModel.StorageVaultBackendStats
     {
-        WsModel.StorageVaultBackendStats(vaultID: id, vaultName: "", type: type, active: status != "inactive",
-                                         allowFsWrite: true, quotaBytes: 0, vaultSizeBytes: size, backendStatus: status)
+        WsModel.StorageVaultBackendStats(vaultID: id, vaultName: vaults.first { $0.id == id }?.name ?? "",
+                                         type: type, active: status != "inactive", allowFsWrite: true, quotaBytes: 0,
+                                         freeSpaceBytes: type == "local" ? 1_400_000_000_000 : nil,
+                                         vaultSizeBytes: size, backendStatus: status,
+                                         bucket: type == "s3" ? "vh-preview-\(id)" : nil)
     }
 
     static func syncPolicy(_ id: Int64) -> WsModel.RemoteSyncPolicy {
@@ -202,8 +205,11 @@ nonisolated enum PreviewData {
     // MARK: Health
 
     static let overview = WsModel.DashboardOverview(
-        overallStatus: "warning", warningCount: 2, errorCount: 0, checkedAt: now - 40,
+        overallStatus: "warning", warningCount: 3, errorCount: 0, checkedAt: now - 40,
         attention: [
+            .init(code: "system.fuse.error_rate_elevated", severity: "warning", cardID: "system.fuse",
+                  title: "FUSE Filesystem", message: "FUSE alertable error rate is above 2%.",
+                  href: "/health/filesystem#fuse", metricKey: "alertable_error_rate"),
             .init(code: "system.storage.degraded_vaults", severity: "warning", cardID: "system.storage",
                   title: "Storage Backend", message: "1 vault backend(s) are degraded."),
             .init(code: "system.pricing.warnings", severity: "warning", cardID: "system.pricing_budget",
@@ -211,7 +217,7 @@ nonisolated enum PreviewData {
         ],
         sections: [
             section("runtime", "Runtime", "Runtime services, worker pressure, and connected sessions.", "healthy"),
-            section("filesystem", "Filesystem", "FUSE activity and preview cache readiness.", "healthy"),
+            section("filesystem", "Filesystem", "FUSE activity and preview cache readiness.", "warning", warnings: 1),
             section("storage", "Storage", "Backing providers, database health, and cleanup pressure.", "warning", warnings: 1),
             section("operations", "Operations", "Queued work, active transfers, and stuck-operation pressure.", "info"),
             section("cost_control", "Cost Control", "S3 price budgets, projected spend, catalog health, and override activity.",
@@ -234,10 +240,14 @@ nonisolated enum PreviewData {
                 metric("human", "Human", "4", 4), metric("share", "Share", "3", 3),
                 metric("oldest_session", "Oldest", "6h 12m", 22_320),
             ]),
-            card("system.fuse", "filesystem", "FUSE Filesystem", "healthy", [
-                metric("alertable_error_rate", "Alertable Errors", "0.0%", 0), metric("ops", "Ops", "1.28M", 1_280_000),
-                metric("avg_latency", "Avg Latency", "0.4 ms", 0.4), metric("open_handles", "Open Handles", "37", 37),
-            ], series: series([120, 340, 280, 510, 460, 390, 720, 650, 300, 280, 410, 380])),
+            card("system.fuse", "filesystem", "FUSE Filesystem", "warning", [
+                metric("alertable_error_rate", "Alertable Errors", "2.29%", 0.0229, tone: "warning"),
+                metric("ops", "Ops", "1.67M", 1_670_000), metric("avg_latency", "Avg Latency", "0.9 ms", 0.9),
+                metric("open_handles", "Open Handles", "37", 37),
+            ], series: series([120, 340, 280, 510, 460, 390, 720, 650, 300, 280, 410, 380]),
+               warnings: [.init(code: "system.fuse.error_rate_elevated", severity: "warning",
+                                message: "FUSE alertable error rate is above 2%.", href: "/health/filesystem#fuse",
+                                metricKey: "alertable_error_rate")]),
             card("system.fs_cache", "filesystem", "FS Cache", "healthy", [
                 metric("hit_rate", "Hit Rate", "97.2%", 0.972), metric("requests", "Requests", "88.1K", 88_100),
                 metric("used", "Used", "1.9 GB", 1.9e9), metric("evictions", "Evictions", "212", 212),
@@ -273,9 +283,15 @@ nonisolated enum PreviewData {
                  reason: "The pricing catalog hasn't been verified on this node yet."),
         ])
 
+    private static let sectionHrefs = [
+        "runtime": "/health/runtime", "filesystem": "/health/filesystem", "storage": "/health/storage",
+        "operations": "/health/activity#operation-queue", "cost_control": "/cost", "trends": "/health/activity#trends",
+    ]
+
     private static func section(_ id: String, _ title: String, _ description: String, _ severity: String,
                                 warnings: Int64 = 0) -> WsModel.DashboardSectionSummary {
-        WsModel.DashboardSectionSummary(id: id, title: title, description: description, href: "/health",
+        WsModel.DashboardSectionSummary(id: id, title: title, description: description,
+                                        href: sectionHrefs[id] ?? "/health",
                                         severity: severity, warningCount: warnings, errorCount: 0, summary: "",
                                         metrics: [], warnings: [], errors: [], checkedAt: now - 40)
     }
@@ -284,7 +300,9 @@ nonisolated enum PreviewData {
                              _ metrics: [WsModel.DashboardMetricSummary], series: [WsModel.DashboardCardSummary.Serie] = [],
                              warnings: [WsModel.DashboardIssueSummary] = [], summary: String = "",
                              available: Bool = true, reason: String? = nil) -> WsModel.DashboardCardSummary {
-        WsModel.DashboardCardSummary(id: id, sectionID: section, title: title, description: "", href: "/health",
+        WsModel.DashboardCardSummary(id: id, sectionID: section, title: title, description: "",
+                                     href: HealthAnchor(cardID: id).map { "/health/\($0.page.rawValue)#\($0.rawValue)" }
+                                        ?? (id.hasPrefix("system.pricing") ? "/cost" : "/health"),
                                      variant: "tiles", size: "2x1", severity: available ? severity : "unavailable",
                                      available: available, unavailableReason: reason, summary: summary,
                                      metrics: metrics, series: series, warnings: warnings, errors: [],

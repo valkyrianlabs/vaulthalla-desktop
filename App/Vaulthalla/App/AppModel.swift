@@ -27,6 +27,9 @@ final class AppModel {
     var allNodesPage: AllNodesPage = .overview
     var selectedNodeID: NodeID?
     var selectedSection: NodeSection = .overview
+    /// Which page of the Overview shows, and the panel and metric a followed warning points at.
+    var healthPage: HealthPage = .summary
+    var healthTarget: HealthFocus?
     /// The health card a drill-down should bring forward (a dashboard card id such as "system.fuse"), set when an
     /// All Nodes alert opens a node's Overview. The Overview reads it and sets it back to nil.
     var healthFocus: String?

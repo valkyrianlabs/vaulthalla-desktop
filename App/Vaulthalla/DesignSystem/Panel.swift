@@ -29,9 +29,11 @@ struct Panel<Content: View, Actions: View>: View {
                                 .foregroundStyle(.fg)
                         }
                         if let subtitle {
+                            // Prose keeps a readable line length however wide the panel gets.
                             Text(subtitle)
                                 .font(.subheadline)
                                 .foregroundStyle(.fgSubtle)
+                                .frame(maxWidth: Theme.proseWidth, alignment: .leading)
                         }
                     }
                     Spacer(minLength: 0)

@@ -3,10 +3,14 @@ import VHContract
 import VHCore
 import VHTransport
 
-/// The scaffold every per-node section uses: a header naming the node and section, then the content.
+/// The scaffold every per-node section uses: a header naming the node and section, then the content. It fills the
+/// window: panels lay themselves out for the width they get, from the minimum window to an ultrawide.
 struct NodePage<Content: View>: View {
     var node: Node
     var section: NodeSection
+    /// Overrides the section's title and summary (a page within the section).
+    var title: String?
+    var subtitle: String?
     @ViewBuilder var content: Content
 
     @Environment(AppModel.self) private var model
@@ -14,9 +18,11 @@ struct NodePage<Content: View>: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Theme.stackSpacing + 8) {
-                SectionHeader(eyebrow: node.displayName, title: section.title, subtitle: section.summary) {
+                SectionHeader(eyebrow: node.displayName, title: title ?? section.title,
+                              subtitle: subtitle ?? section.summary) {
                     let status = model.status(for: node)
                     HStack(spacing: 6) {
+                        NodeHealthPill(node: node)
                         if model.incompatibility(for: node) != nil {
                             StatusBadge(label: "Incompatible", tone: .danger)
                         }
@@ -26,8 +32,7 @@ struct NodePage<Content: View>: View {
                 content
             }
             .padding(Theme.pagePadding)
-            .frame(maxWidth: 1100, alignment: .leading)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollContentBackground(.hidden)
     }

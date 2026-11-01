@@ -7,6 +7,39 @@ nonisolated enum Format {
         value.formatted(.byteCount(style: .file))
     }
 
+    /// "1,284,113".
+    static func count(_ value: Int64) -> String {
+        value.formatted()
+    }
+
+    /// A 0…1 ratio as "2.31%". Small non-zero rates keep enough digits not to read as 0%.
+    static func percent(_ ratio: Double, digits: Int = 2) -> String {
+        guard ratio.isFinite else { return "—" }
+        return ratio.formatted(.percent.precision(.fractionLength(0...digits)))
+    }
+
+    /// Milliseconds as "0.42 ms", "18 ms", "1.2 s".
+    static func milliseconds(_ value: Double) -> String {
+        guard value.isFinite else { return "—" }
+        if value >= 1000 { return (value / 1000).formatted(.number.precision(.fractionLength(0...1))) + " s" }
+        if value >= 10 { return value.formatted(.number.precision(.fractionLength(0))) + " ms" }
+        return value.formatted(.number.precision(.fractionLength(0...2))) + " ms"
+    }
+
+    /// A duration in seconds as "6h 12m", "3d 4h", "42s".
+    static func duration(seconds: Int64) -> String {
+        let value = max(seconds, 0)
+        let units: [(Int64, String)] = [(86_400, "d"), (3600, "h"), (60, "m"), (1, "s")]
+        var parts: [String] = []
+        var rest = value
+        for (size, unit) in units where rest >= size || (parts.isEmpty && size == 1) {
+            parts.append("\(rest / size)\(unit)")
+            rest %= size
+            if parts.count == 2 { break }
+        }
+        return parts.joined(separator: " ")
+    }
+
     /// Epoch seconds as "3 min ago".
     static func relative(epoch seconds: Int64, now: Date = .now) -> String {
         relative(Date(timeIntervalSince1970: TimeInterval(seconds)), now: now)

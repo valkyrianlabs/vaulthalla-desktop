@@ -4,28 +4,77 @@ import VHCore
 import VHIdentity
 import VHNodes
 
-/// The node's health once it's connected (`HealthOverview`), how this Mac reaches it (`ConnectionPanel`), and what
-/// Desktop itself knows about it. Without access to stats, the health part shows a calm denied state; the node's
-/// identity still shows.
+/// The node's health once it's connected (`HealthPages`: the summary and the Runtime, Filesystem, Storage and
+/// Activity drill-downs, switched in the toolbar), how this Mac reaches it (`ConnectionPanel`), and what Desktop itself
+/// knows about it. Without access to stats, the health part shows a calm denied state; the node's identity still shows.
 struct NodeOverviewView: View {
     var node: Node
 
     @Environment(AppModel.self) private var model
 
     var body: some View {
-        NodePage(node: node, section: .overview) {
-            let queries = model.liveQueries(for: node)
+        let page = model.healthPage
+        let queries = model.liveQueries(for: node)
+        NodePage(node: node, section: .overview, title: page == .summary ? nil : page.title,
+                 subtitle: page == .summary ? nil : page.subtitle) {
             if let queries {
-                HealthOverview(node: node, queries: queries)
+                HealthPages(node: node, queries: queries, page: page)
                     .environment(queries)
             } else {
                 NodeUnavailablePanel(node: node, section: .overview)
             }
-            if node.pairing.isPaired {
-                ConnectionPanel(node: node)
+            if page == .summary {
+                AdaptiveColumns(minColumnWidth: 460, spacing: Theme.stackSpacing) {
+                    if node.pairing.isPaired {
+                        ConnectionPanel(node: node)
+                    }
+                    NodeIdentityPanel(node: node, queries: queries)
+                }
             }
-            NodeIdentityPanel(node: node, queries: queries)
         }
+        // An All Nodes alert names the card it's about (`healthFocus`): open its panel and mark what's behind it.
+        .task(id: model.healthFocus) {
+            guard let cardID = model.healthFocus else { return }
+            model.healthFocus = nil
+            model.openHealth(href: nil, cardID: cardID)
+        }
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                HealthPagePicker(overview: queries.flatMap { $0.query(Ws.Stats.Dashboard.Overview.self, .init()).value?.stats })
+            }
+        }
+    }
+}
+
+/// Switches the Overview between its summary and drill-downs (Activity Monitor's tabs). A page whose sections report
+/// warnings or errors says so in its label. ⌥⌘1…5 from the View menu.
+private struct HealthPagePicker: View {
+    var overview: WsModel.DashboardOverview?
+
+    @Environment(AppModel.self) private var model
+
+    var body: some View {
+        Picker("Health", selection: page) {
+            ForEach(HealthPage.allCases) { page in
+                Label(label(page), systemImage: page.systemImage)
+                    .tag(page)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelStyle(.titleOnly)
+        .help("Overview pages")
+        .fixedSize()
+    }
+
+    private var page: Binding<HealthPage> {
+        Binding(get: { model.healthPage }, set: { model.openHealth($0) })
+    }
+
+    /// "Filesystem ⚠︎" when that page's sections report a problem.
+    private func label(_ page: HealthPage) -> String {
+        guard let overview else { return page.title }
+        let sections = overview.sections.filter { page.sectionIDs.contains($0.id) }
+        return sections.contains { $0.errorCount + $0.warningCount > 0 } ? "\(page.title) ⚠︎" : page.title
     }
 }
 

@@ -42,6 +42,7 @@ struct Sidebar: View {
                     ForEach(NodeSection.allCases) { section in
                         Label(section.title, systemImage: section.systemImage)
                             .syncConflictsBadge(section: section, node: node)
+                            .healthBadge(section: section, node: node)
                             .recoveryKeysBadge(section: section, node: node)
                             .tag(SidebarItem.section(section))
                     }

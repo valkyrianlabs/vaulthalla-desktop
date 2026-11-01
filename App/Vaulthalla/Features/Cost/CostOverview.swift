@@ -35,7 +35,6 @@ struct CostOverview: View {
             }
             .padding(.horizontal, Theme.pagePadding)
             .padding(.bottom, Theme.pagePadding)
-            .frame(maxWidth: 1100, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollContentBackground(.hidden)

@@ -8,7 +8,8 @@ import VHCore
 ///     Vaulthalla.app/Contents/MacOS/Vaulthalla -VHDebugSelect 0:files -VHDebugSheet addNode \
 ///         -VHDebugSnapshot /tmp/shell.png
 ///
-/// `-VHDebugSelect` takes `all`, `allKeys` (Recovery Keys across nodes) or `<node position>:<section>`;
+/// `-VHDebugSelect` takes `all`, `allKeys` (Recovery Keys across nodes) or `<node position>:<section>`, and for the
+/// Overview a page or a daemon link as a third part (`1:overview:filesystem`, `1:overview:/health/filesystem#fuse`);
 /// `-VHDebugSheet` takes `addNode` or `pair:<position>`.
 /// `-VHDebugPreviewData YES` serves the preview nodes from PREVIEW DATA (`PreviewTransport`); with it,
 /// `-VHDebugVault <id>` selects a vault and `-VHDebugDeleteVault YES` opens its delete sheet;
@@ -31,6 +32,14 @@ enum DebugSnapshot {
             } else if let position = Int(parts[0]) {
                 model.selectNode(atPosition: position)
                 if parts.count > 1, let section = NodeSection(rawValue: parts[1]) { model.select(section) }
+                if parts.count > 2 {
+                    let target = parts[2...].joined(separator: ":")
+                    if let page = HealthPage(rawValue: target) {
+                        model.openHealth(page)
+                    } else {
+                        model.openHealth(href: target, cardID: nil, metricKey: "alertable_error_rate")
+                    }
+                }
             }
         }
         if let sheet = defaults.string(forKey: "VHDebugSheet") {
