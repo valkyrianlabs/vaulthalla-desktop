@@ -13,7 +13,7 @@ struct DetailView: View {
                     .navigationSubtitle(node.displayName)
                     .id(node.id)
             } else if model.allNodesPage == .recoveryKeys {
-                AllRecoveryKeysView()
+                SensitiveGate(title: "Recovery Keys") { AllRecoveryKeysView() }
                     .navigationTitle("Recovery Keys")
                     .navigationSubtitle("All Nodes")
             } else {
@@ -32,13 +32,13 @@ struct DetailView: View {
         case .overview: NodeOverviewView(node: node)
         case .files: FilesView(node: node)
         case .vaults: VaultsView(node: node)
-        case .credentials: CredentialsView(node: node)
+        case .credentials: SensitiveGate(title: "Credentials") { CredentialsView(node: node) }
         case .shares: SharesView(node: node)
-        case .access: AccessView(node: node)
+        case .access: SensitiveGate(title: "Access") { AccessView(node: node) }
         case .syncConflicts: SyncConflictsView(node: node)
         case .cost: CostView(node: node)
         case .s3Gateway: S3GatewayView(node: node)
-        case .recoveryKeys: RecoveryKeysView(node: node)
+        case .recoveryKeys: SensitiveGate(title: "Recovery Keys") { RecoveryKeysView(node: node) }
         case .devices: DevicesView(node: node)
         }
     }

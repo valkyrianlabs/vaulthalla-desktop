@@ -100,6 +100,8 @@ final class AppModel {
     @ObservationIgnored private var isAppActive = true
     /// Vault key backups to 1Password across every node (Recovery Keys).
     @ObservationIgnored let recoveryKeys: RecoveryKeysModel
+    /// The optional Touch ID gate for Recovery Keys, Credentials and Access (desktop#7).
+    @ObservationIgnored let sensitiveAccess = SensitiveAccess()
     /// While a consumer: follows the owner's changes to the registry and takes the lease over once the owner exits.
     @ObservationIgnored private var ownerWatch: Task<Void, Never>?
     #if DEBUG

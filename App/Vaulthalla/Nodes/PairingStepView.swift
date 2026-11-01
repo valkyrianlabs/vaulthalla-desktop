@@ -13,6 +13,10 @@ struct PairingStepView: View {
 
     @Environment(AppModel.self) private var model
     @State private var flow = PairingFlow()
+    /// This Mac's Vaulthalla server, when the node is it and `vh` is installed (desktop#7).
+    @State private var localServer: LocalPairing?
+    @State private var confirmingLocal = false
+    @AppStorage(SignInPreferences.keepSignedInKey) private var keepSignedIn = true
 
     var body: some View {
         VStack(spacing: 0) {
@@ -25,8 +29,27 @@ struct PairingStepView: View {
             VStack(alignment: .leading, spacing: 16) {
                 status
                 if !flow.phase.isFinished {
-                    instructions
+                    if flow.approvingLocally {
+                        HStack(spacing: 8) {
+                            ProgressView().controlSize(.mini)
+                            Text("Approving through Vaulthalla on this Mac…")
+                                .font(.callout)
+                                .foregroundStyle(.fgSubtle)
+                        }
+                    } else {
+                        instructions
+                    }
                 }
+                if let problem = flow.localProblem {
+                    Label(problem, systemImage: "exclamationmark.triangle")
+                        .font(.callout)
+                        .foregroundStyle(StatusTone.warn.color)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Toggle("Keep me signed in on this Mac", isOn: $keepSignedIn)
+                    .font(.callout)
+                    .help(keepSignedIn ? "This Mac stays paired across quits, restarts and macOS logins."
+                          : "Quitting Vaulthalla or logging out of macOS signs this Mac out of every node. Use this on a Mac that isn't yours.")
                 if flow.backend == .software {
                     Label(KeyBackend.software.displayName, systemImage: "key")
                         .font(.caption)
@@ -39,8 +62,28 @@ struct PairingStepView: View {
 
             SheetFooter { buttons }
         }
-        .task { flow.start(node: node, model: model) }
+        .task {
+            localServer = PairingFlow.localServer(for: node)
+            flow.start(node: node, model: model)
+        }
         .onDisappear { flow.cancel() }
+        .confirmationDialog("Pair using Vaulthalla on this Mac?", isPresented: $confirmingLocal, titleVisibility: .visible) {
+            Button("Pair") {
+                if let localServer { flow.pairLocally(localServer, node: node, model: model) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Vaulthalla runs vh device pair as \(NSUserName()) to open a pairing window, checks that the server shows this Mac's code, and approves it. The server decides which Vaulthalla user that is: the one linked to this macOS account. This Mac then appears under Devices, where it can be revoked.")
+        }
+    }
+
+    /// Offers pairing through this Mac's own server, when there is one.
+    @ViewBuilder
+    private var localButton: some View {
+        if localServer != nil, !flow.approvingLocally {
+            Button("Pair Using Vaulthalla on This Mac…", systemImage: "laptopcomputer") { confirmingLocal = true }
+                .padding(.top, 4)
+        }
     }
 
     // MARK: - Status
@@ -112,6 +155,7 @@ struct PairingStepView: View {
                     .foregroundStyle(.fgMuted)
                 CommandText("vh device pair")
                     .padding(.top, 4)
+                localButton
             }
 
         case .failed(.unreachable(let endpoint)):
@@ -164,6 +208,7 @@ struct PairingStepView: View {
                     Text("The server lists this Mac with three codes. Click the one shown here once it appears.")
                 }
             }
+            localButton
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .leading)
