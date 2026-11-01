@@ -34,4 +34,4 @@ jobs:
       - name: App build (unsigned)
         run: |
           xcodebuild -project App/Vaulthalla.xcodeproj -scheme Vaulthalla -configuration Debug \
-            -derivedDataPath build/DerivedData CODE_SIGNING_ALLOWED=NO -quiet build
+            -derivedDataPath build/DerivedData.noindex CODE_SIGNING_ALLOWED=NO -quiet build

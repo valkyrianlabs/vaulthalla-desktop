@@ -40,8 +40,14 @@ Needs Xcode 27 and Go (`brew install go`): the app embeds the Go 1Password helpe
 swift test                                                  # VaulthallaKit
 VH_LIVE_NODE=<host>:36982 swift test --filter Live         # against a live daemon (docs/interop-testing.md)
 open App/Vaulthalla.xcodeproj                               # or:
-xcodebuild -project App/Vaulthalla.xcodeproj -scheme Vaulthalla -derivedDataPath build/DerivedData build
+xcodebuild -project App/Vaulthalla.xcodeproj -scheme Vaulthalla -derivedDataPath build/DerivedData.noindex build
 ```
+
+Build products go under `build/*.noindex`, which Spotlight skips. Otherwise every dev build shows up next to the
+installed app. Dev builds share the shipped bundle ids (`sh.vaulthalla.app`, `.fileprovider`, `.mcp`), so launching
+one can make macOS elect its File Provider extension over the installed one. Run `lsregister -u <app>` afterwards
+(`/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister`). Test a
+release by installing it into `/Applications`, not from the build folder.
 
 Signed builds use the Valkyrian Labs LLC team: copy `App/Config/Signing.local.xcconfig.example` to
 `App/Config/Signing.local.xcconfig` (gitignored), or pass `DEVELOPMENT_TEAM=ZG2G6V7GLC -allowProvisioningUpdates` to
@@ -79,7 +85,7 @@ tools/keychain-proof/run.sh ZG2G6V7GLC
 UI regression sweep (renders every section at three window sizes from a DEBUG build; catches AppKit layout loops):
 
 ```sh
-tools/ui/sweep.sh build/DerivedData/Build/Products/Debug/Vaulthalla.app
+tools/ui/sweep.sh build/DerivedData.noindex/Build/Products/Debug/Vaulthalla.app
 ```
 
 Refresh the contract after a server change:

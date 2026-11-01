@@ -123,8 +123,8 @@ again brings it up enabled (seen on macOS 27.0.1, docs/architecture.md §7).
 ```sh
 # Mac: one signed build, installed as the only registered copy
 xcodebuild -project App/Vaulthalla.xcodeproj -scheme Vaulthalla -configuration Debug DEVELOPMENT_TEAM=<team> \
-    -allowProvisioningUpdates -derivedDataPath build/SignedData build
-cp -R build/SignedData/Build/Products/Debug/Vaulthalla.app ~/Applications/
+    -allowProvisioningUpdates -derivedDataPath build/SignedData.noindex build
+cp -R build/SignedData.noindex/Build/Products/Debug/Vaulthalla.app ~/Applications/
 APP=~/Applications/Vaulthalla.app/Contents/MacOS/Vaulthalla
 ssh dev '/tmp/vhi_interop/vh device pair'                   # open the window as the seeded user
 $APP --developer pair 10.0.0.11:36982 dev-interop           # prints the code; approve it on the node:
