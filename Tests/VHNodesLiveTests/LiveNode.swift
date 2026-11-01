@@ -115,9 +115,15 @@ enum LiveKeychain {
     static let nodeTags = ["live-node", "live-denied"]
 
     static func withKeys<R: Sendable>(_ body: (DeviceKeys) async throws -> R) async throws -> R {
+        try await withKeys(reopenable: { keys, _ in try await body(keys) })
+    }
+
+    /// `withKeys`, plus `reopen`: the same keychain opened again, as a relaunched app opens it (a new store and keys).
+    static func withKeys<R: Sendable>(reopenable body: (DeviceKeys, () -> DeviceKeys) async throws -> R) async throws -> R {
         await KeychainLock.shared.acquire()
-        let store = DeviceIdentityStore(configuration: .init(
-            namespace: "sh.vaulthalla.app.test.\(UUID().uuidString.lowercased())", keychain: .fileBased))
+        let configuration = DeviceIdentityStore.Configuration(
+            namespace: "sh.vaulthalla.app.test.\(UUID().uuidString.lowercased())", keychain: .fileBased)
+        let store = DeviceIdentityStore(configuration: configuration)
         // The suite is the credential owner: it pairs, rotates and deletes (docs/architecture.md §3).
         let leaseDirectory = FileManager.default.temporaryDirectory
             .appending(path: "vh-live-lease-\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -126,8 +132,12 @@ enum LiveKeychain {
         try lease.acquire()
         defer { lease.release() }
         let keys = DeviceKeys(primary: store, development: nil, preferredBackend: .software, lease: lease)
+        let reopen = {
+            DeviceKeys(primary: DeviceIdentityStore(configuration: configuration), development: nil,
+                       preferredBackend: .software, lease: lease)
+        }
         do {
-            let result = try await body(keys)
+            let result = try await body(keys, reopen)
             try await cleanUp(store)
             await KeychainLock.shared.release()
             return result

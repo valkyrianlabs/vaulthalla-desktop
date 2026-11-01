@@ -361,6 +361,32 @@ docs/                   this plan, the pairing protocol, release notes
     between a running app and a starting agent is part of that work.
   - `vaulthalla-mcp` never takes the lease: its registry and keys are read-only by construction.
   - Desktop still holds no business logic, and neither the pairing protocol nor the server changed.
+- **Staying signed in** (desktop#7). Pairing is the sign-in; there is no password or token to keep.
+  - **Across quits, restarts and reboots.** The device key (Secure Enclave, `AfterFirstUnlockThisDeviceOnly`) and the
+    registry record outlive the process, so a relaunch, a reboot or a macOS login reconnects with no prompt. The
+    live suite proves it with a second keychain handle and session from the saved record (`LiveSignInTests`).
+  - **Per macOS account.** Keys live in that account's data protection keychain and the registry in its App Group
+    container, so two accounts on one Mac each have their own nodes and keys and can't see each other's. Which
+    Vaulthalla user a device acts as is decided by whoever approved it on the node; Desktop never takes an account
+    name or uid as proof of anything.
+  - **"Keep me signed in on this Mac"** (Settings ▸ General and the pairing sheet; on by default, `signIn.keepSignedIn`).
+    Off, quitting Vaulthalla or logging out of macOS (which quits it) signs out: `applicationShouldTerminate` waits
+    for `VHNodes.SignOut`. A launch that finds paired nodes with the switch off means that sign-out never ran (force
+    quit, crash, power loss), so it runs then. Only the credential owner signs out.
+  - **Sign-out fails closed** (`VHNodes.SignOut`; also Settings ▸ General ▸ Sign Out). Each paired node is asked to
+    revoke this Mac (`device.revoke`, in parallel, 5 s each, best effort); Finder's domains are removed
+    (`FileProviderDomains.removeAll`, downloaded copies and unsynced edits with them) with the selections still behind
+    the consent gate; then every node's key is deleted and its record returns to unpaired. A node that couldn't be
+    told keeps a device row nobody can use (the key is gone) and is named so it can be revoked from the web console.
+    The records stay, so signing back in is pairing again.
+  - **Touch ID for sensitive views** (Settings ▸ General ▸ Security, off by default). Recovery Keys, Credentials and
+    Access then ask for Touch ID or the Mac's password (`LAPolicy.deviceOwnerAuthentication`) and lock again when the
+    screen locks, the Mac sleeps or the session switches users; turning it off asks too. It gates views only:
+    sessions, key backups, the File Provider extension and the background agent never wait for it.
+  - **Pairing with this Mac's own server.** When a node's address is this Mac and `vh` is installed, the pairing
+    sheet offers "Pair Using Vaulthalla on This Mac…" (`VHNodes.LocalPairing`, `docs/pairing.md` §3, "Pairing
+    through `vh`"). After the person agrees, Desktop runs `vh` as them: it opens the window, approves this Mac's
+    request with its code once the daemon lists it, and closes the window.
 - **Signing and the shared container** (desktop#4; evidence from the desktop#2 spike). The File Provider extension
   is sandboxed and must read the same registry and device keys as the app, so signed builds share an App Group and a
   keychain access group.

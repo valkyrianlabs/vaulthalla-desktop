@@ -19,6 +19,8 @@ enum Launch {
 
 struct VaulthallaApp: App {
     @State private var model = Self.makeModel()
+    /// Signs out on quit and at logout while "Keep me signed in on this Mac" is off (SignIn.swift).
+    @NSApplicationDelegateAdaptor private var delegate: AppDelegate
 
     private static func makeModel() -> AppModel {
         #if DEBUG
@@ -41,8 +43,10 @@ struct VaulthallaApp: App {
         let registry = RegistryOwnership.open(in: .current(), holder: "app")
         Logger(subsystem: "sh.vaulthalla.app", category: "registry").notice(
             "registry \(registry.location.description, privacy: .private): \(registry.migration.description, privacy: .public)")
-        return AppModel(store: NodeStore(fileURL: registry.location.registryURL, lease: registry.lease),
-                        keys: DeviceKeys.standard(lease: registry.lease), registry: registry)
+        let model = AppModel(store: NodeStore(fileURL: registry.location.registryURL, lease: registry.lease),
+                             keys: DeviceKeys.standard(lease: registry.lease), registry: registry)
+        model.signOutIfNotKept()
+        return model
     }
 
     var body: some Scene {
@@ -50,6 +54,7 @@ struct VaulthallaApp: App {
         Window("Vaulthalla", id: "main") {
             RootView()
                 .environment(model)
+                .onAppear { delegate.model = model }
                 // `vaulthalla://pair?…` from the web console's Pair a Device dialog (untrusted: parsed defensively).
                 .onOpenURL { model.openPairLink($0) }
         }

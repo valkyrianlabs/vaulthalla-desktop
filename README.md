@@ -127,7 +127,14 @@ Desktop reaches each node over the best address that proves the node's pinned se
 network, a VPN, then the internet (the node advertises its addresses; Bonjour is the last resort). When a route
 drops, Desktop selects again and carries transfers over to the new one. The web console's "Pair a device" dialog
 offers a `vaulthalla://pair?…` link: opening it fills in Add Node with an address that answers with the server's
-key, and pairing then refuses any other server. You still approve with the six-digit code.
+key, and pairing then refuses any other server. You still approve with the six-digit code. When the node runs on
+this Mac, the pairing sheet can do the approving for you through `vh`, once you agree.
+
+Pairing once is enough: Desktop stays signed in across quits, restarts and reboots, separately for each macOS account.
+Turn off **Keep me signed in on this Mac** (Settings ▸ General) on a Mac that isn't yours: quitting or logging out
+then signs this Mac out of every node, revokes it there, deletes its keys and removes its vaults from Finder. **Sign
+Out** does the same at any time. Settings ▸ General ▸ Security can ask for Touch ID before Recovery Keys,
+Credentials and Access show.
 
 On a node that supports them (server 1.20), uploads go in resumable parts: Retry, a dropped route or quitting the app
 picks an upload up where the node left it, and the part size and parts in flight adapt to the link. The node's

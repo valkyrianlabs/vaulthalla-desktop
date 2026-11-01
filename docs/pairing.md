@@ -91,6 +91,18 @@ visible request in the owner's list.
 | `device.pair.status` (pairing-only) | `{request_id}` → `{state: pending\|approved\|denied\|expired, node_id?, node_name?, device_id?}` | Same SPKI rule. The daemon MAY hold the reply up to 20 s until the state changes (long poll); after an immediate `pending` Desktop waits 2 s before asking again. |
 | `device.pairing.open/close/pending/approve/deny` (owner's Human session) | `approve {request_id, code}` | `pending` lists requests with name, platform, app version, source IP, device id and `code_choices`: three six-digit codes in random order, one of them the SAS, the other two fresh random decoys (fixed per request). The real code is never returned on its own. **Number matching:** the web dialog shows the three choices and the owner clicks the one the Mac shows (one click, but it can't be done without comparing); `vh device approve <id>` prompts for the code (`--code 482913` when non-interactive). `approve` MUST carry the chosen code, compared in constant time; any wrong code denies the request. |
 
+**Pairing through `vh` on the same Mac** (desktop#7). When the node runs on the Mac Desktop runs on, Desktop can
+drive the owner's side itself, with the person's consent, through the server's own CLI (`VHNodes.LocalPairing`):
+`vh device pair` (no terminal, so it only opens the window), then the usual request and confirm, then
+`vh device pending --json`, which must list a request with this Mac's device id whose `code_choices` include this
+Mac's code, then `vh device approve <request_id> --code <code>`, then `vh device pair --close`. If the choices don't
+include the code, Desktop denies the request (`vh device deny`) and stops. This is no shortcut around authorization:
+`vh` is authorized by the daemon from the socket's kernel peer credentials and its own uid binding, exactly as when
+the person types the commands, and the window belongs to the Vaulthalla user the daemon maps that account to.
+Number matching is kept, compared by machine: `pending` is the daemon's view over a kernel-authenticated channel
+that a network attacker can't reach, and a relay on the TLS leg (another key on either side) gives a different code,
+so it is denied, and the daemon checks the code again on `approve`.
+
 **Timeouts.** A window lasts 10 minutes or until closed; closing it expires its requests. A request expires 5 minutes
 after `confirm`, or when its window does. Expired and denied requests are deleted; Desktop shows "Pairing timed out"
 or "Pairing was declined" and starts over with fresh nonces (the device key is kept). Approved: the daemon writes the

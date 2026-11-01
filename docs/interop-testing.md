@@ -11,6 +11,12 @@ opt-in: without `VH_LIVE_NODE` every test in it is skipped, so `swift test` and 
 | `aDecoyCodeDeniesThePairing` | open a window (`vh device pair`), pair, approve with one of the two decoys from `vh device pending`: the client ends `denied`, the key never becomes a device, and the HTTP lanes refuse it (`DeviceHTTPError.forbidden`) |
 | `pairsTalksRotatesAndIsRevoked` | 1. pair and approve with the code the client computed (it must be one of the daemon's three); the pin is the daemon's listener key. 2. `NodeSession` online with that pin; `device.server.identity`; `meta.contract.get` (`ws_hash` equals the daemon build's); `storage.vault.list` equals `vh vault list` as the same user; `fs.list` of the seeded vault. 3. `DeviceHTTPClient`: whole file and a `Range` request (206, exact bytes). 4. `/mcp`: `initialize`, `notifications/initialized` (202), `tools/list` (no key export, pairing or remote tools), `vh_run` refuses `vault keys export`, `device approve`, `device remote enable`; `vh_read` lists the vault as the device's user; `vault delete` without `confirm` returns `needs_confirmation: destructive`. 5. `rotateDeviceKey()`: the session reconnects with the new key, `vh device list` shows the new device id with no previous key, and the lanes accept the new key; a credential consumer session on the same Keychain (no lease) comes online with the rotated key and can't rotate, and `CredentialReader.check` reports the key accepted. 6. `vh device revoke`: the session reports `revoked`, keeps no connection, the lanes refuse the key, and the listener has no open connections; the consumer reports `revoked` too (refused, reloaded, refused again) without writing anything, and `check` reports the key refused |
 
+`LiveSignInTests` covers staying signed in (desktop#7):
+
+| Test | Steps |
+|---|---|
+| `pairsThroughVHStaysSignedInAndSignsOut` | 1. `LocalPairing` with the instance's `vh` as its runner: open the window, pair, approve once `vh device pending` lists this key with this Mac's code, close the window (`pending` shows none). 2. A relaunch: the keychain opened again and a new `NodeSession` from the record come online without pairing. 3. `SignOut.run`: the node revokes the device over its own session, the key is gone from the keychain, `vh device list` shows it revoked, and a session from the old record never comes online and asks for pairing |
+
 `LiveTransferTests` covers direct transport (the server's docs/reference/transfer-protocol.md); each test pairs its own
 key and revokes it at the end:
 
