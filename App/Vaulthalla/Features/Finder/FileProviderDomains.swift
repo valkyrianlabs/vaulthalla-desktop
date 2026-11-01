@@ -59,7 +59,9 @@ nonisolated struct FileProviderDomains: DomainRegistrar {
     /// removed with its domain. Builds without the App Group have none here.
     private static func deleteReplica(identifier: String) {
         guard let container = RegistryEnvironment.current().groupContainer else { return }
-        ReplicaStore.deleteFiles(at: ReplicaLocation.storeURL(domain: identifier, in: container))
+        let store = ReplicaLocation.storeURL(domain: identifier, in: container)
+        ReplicaStore.deleteFiles(at: store)
+        PinStore.deleteFile(at: PinStore.url(forStore: store))
     }
 
     /// Where Finder shows the domain (`~/Library/CloudStorage/Vaulthalla-<name>`).

@@ -8,10 +8,13 @@ import VHFinder
 final class ReplicaItem: NSObject, NSFileProviderItem, @unchecked Sendable {
     let item: FinderItem
     private let root: Int64?
+    /// Kept downloaded: Finder's Keep Downloaded (desktop#35, ``PinStore``).
+    private let pinned: Bool
 
-    init(_ item: FinderItem, root: Int64?) {
+    init(_ item: FinderItem, root: Int64?, pinned: Bool = false) {
         self.item = item
         self.root = root
+        self.pinned = pinned
     }
 
     var itemIdentifier: NSFileProviderItemIdentifier {
@@ -47,9 +50,28 @@ final class ReplicaItem: NSObject, NSFileProviderItem, @unchecked Sendable {
     }
 
     /// Lazy: nothing is downloaded until it is opened, and a local copy goes when the server's file changes
-    /// (vaulthalla/desktop#4). Set on the root; everything below inherits it.
+    /// (vaulthalla/desktop#4). Set on the root; everything below inherits it. An item kept downloaded is fetched
+    /// eagerly and never evicted, and so is everything below a folder kept downloaded.
     var contentPolicy: NSFileProviderContentPolicy {
-        item.isRoot ? .downloadLazilyAndEvictOnRemoteUpdate : .inherited
+        if pinned { return .downloadEagerlyAndKeepDownloaded }
+        return item.isRoot ? .downloadLazilyAndEvictOnRemoteUpdate : .inherited
+    }
+
+    /// What the Finder actions' activation rules read (`userInfo.keepDownloaded`, Info.plist).
+    var userInfo: [AnyHashable: Any]? {
+        pinned ? ["keepDownloaded": true] : nil
+    }
+}
+
+extension VaultReplica {
+    /// `item` as the system sees it, kept downloaded or not.
+    func present(_ item: FinderItem) -> ReplicaItem {
+        ReplicaItem(item, root: rootEntryID, pinned: pinnedEntries.contains(item.entryID))
+    }
+
+    func present(_ items: [FinderItem]) -> [ReplicaItem] {
+        let (root, pins) = (rootEntryID, pinnedEntries)
+        return items.map { ReplicaItem($0, root: root, pinned: pins.contains($0.entryID)) }
     }
 }
 

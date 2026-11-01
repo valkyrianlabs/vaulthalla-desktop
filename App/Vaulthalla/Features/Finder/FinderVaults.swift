@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import Observation
 import ServiceManagement
+import UniformTypeIdentifiers
 import VHFinder
 
 /// This Mac user's vaults in Finder (docs/architecture.md §7): the File Provider domains the system reports, and the
@@ -99,6 +100,56 @@ final class FinderVaults {
         } catch {
             problem = error.localizedDescription
         }
+    }
+
+    /// Asks where to put a Finder alias of the vault's folder and makes it (desktop#35): an alias to the real
+    /// CloudStorage root, which Finder resolves like any other.
+    func makeAlias(_ id: VaultDomainID, name: String) async {
+        do {
+            guard let root = try await registrar.rootURL(identifier: id.identifier) else { return }
+            let panel = NSSavePanel()
+            panel.title = "Make Alias"
+            panel.nameFieldStringValue = name
+            panel.directoryURL = .desktopDirectory
+            guard panel.runModal() == .OK, let destination = panel.url else { return }
+            try Self.writeAlias(to: root, at: destination)
+        } catch {
+            problem = error.localizedDescription
+        }
+    }
+
+    /// A drag of the vault into Finder: an alias file Finder copies to where it's dropped.
+    func aliasProvider(_ id: VaultDomainID, name: String) -> NSItemProvider {
+        let provider = NSItemProvider()
+        provider.suggestedName = name
+        let registrar = registrar
+        provider.registerFileRepresentation(forTypeIdentifier: UTType.aliasFile.identifier, fileOptions: [],
+                                            visibility: .all) { completion in
+            Task {
+                do {
+                    guard let root = try await registrar.rootURL(identifier: id.identifier) else {
+                        throw CocoaError(.fileNoSuchFile)
+                    }
+                    let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+                    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+                    let alias = directory.appending(path: name)
+                    try Self.writeAlias(to: root, at: alias)
+                    completion(alias, false, nil)
+                } catch {
+                    completion(nil, false, error)
+                }
+            }
+            return nil
+        }
+        return provider
+    }
+
+    private nonisolated static func writeAlias(to target: URL, at destination: URL) throws {
+        let scoped = target.startAccessingSecurityScopedResource()
+        defer { if scoped { target.stopAccessingSecurityScopedResource() } }
+        let bookmark = try target.bookmarkData(options: .suitableForBookmarkFile, includingResourceValuesForKeys: nil,
+                                               relativeTo: nil)
+        try URL.writeBookmarkData(bookmark, to: destination)
     }
 
     private func sync() async {

@@ -712,6 +712,15 @@ Epic desktop#1 (Stages A to D). The MVP is desktop#4. Spike findings are on desk
     wait (kept in the app's defaults, per macOS user) until one is; a domain stuck in `needsUserApproval` beside an
     allowed one gets "Add Again". The tab reads the domains every 3 s while it is open, since the system reports no
     approval change. Debug builds add a developer section (registry location, raw identifiers).
+  - **Finder actions and aliases** (desktop#35). Finder's context menu gets **Keep Downloaded** and **Allow Removing
+    Download** (`NSExtensionFileProviderActions`, `NSFileProviderCustomAction`); Download Now and Remove Download are
+    the system's own. A kept item's entry id goes to `<domain>.pins.json` beside the replica database (`PinStore`,
+    apart from the cache so a rebuild keeps it, deleted with the domain), the item reports
+    `downloadEagerlyAndKeepDownloaded` (what is below a kept folder inherits it) and `userInfo.keepDownloaded`, which the
+    actions' activation rules read, and `ReplicaStore.touch` gives it a revision so the working set's changes carry
+    the new policy. In Settings ▸ Finder a vault row opens in Finder or in Desktop's file browser, and makes a Finder
+    alias to its CloudStorage folder (Make Alias…, or drag the row into Finder). "Open in web console" waits for the
+    server to announce its console's address: Desktop knows only the device listener.
   - **Developer commands.** `Vaulthalla.app/Contents/MacOS/Vaulthalla --developer registry|domains|add-domain|
     remove-domain|remove-all-domains|pair|unpair|signal`. `pair <host:port> [name]` pairs as the credential owner with
     the app quit and prints the code to approve; `signal <domain>` asks the extension for the working set's changes (the
@@ -749,8 +758,8 @@ Epic desktop#1 (Stages A to D). The MVP is desktop#4. Spike findings are on desk
   - Domains outlive reboots on their own (the system keeps them); launchd starts the agent at login. If the operator
     turns its background item off, the Finder tab says so and links to Login Items.
   - Push (`fs.changed`, vaulthalla/server#260) replaces the polling once that server release exists.
-- **Next.** The ownership handoff from the app to the agent (§3); Finder aliases, context actions and "Open in web
-  console" (desktop#35); the server's change journal and push (vaulthalla/server#259, #260).
+- **Next.** The ownership handoff from the app to the agent (§3); "Open in web console" (desktop#35, needs the
+  console's address from the server); the server's change journal and push (vaulthalla/server#259, #260).
 
 ## 8. Workstreams and order
 

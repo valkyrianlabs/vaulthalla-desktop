@@ -114,7 +114,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
             do throws(FinderError) {
                 let replica = try serving()
                 let item = try await replica.item(try Self.itemID(identifier))
-                reply.call(ReplicaItem(item, root: await replica.rootEntryID), nil)
+                reply.call(await replica.present(item), nil)
             } catch {
                 reply.call(nil, error.nsError)
             }
@@ -150,7 +150,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
                 let replica = try serving()
                 let (url, item) = try await replica.fetch(try Self.itemID(itemIdentifier),
                                                           into: try temporaryDirectory())
-                reply.call(url, ReplicaItem(item, root: await replica.rootEntryID), nil)
+                reply.call(url, await replica.present(item), nil)
             } catch {
                 reply.call(nil, nil, error.nsError)
             }
@@ -176,7 +176,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
                                                            minimal: minimal, alignment: Int64(alignment),
                                                            strict: strict, into: try temporaryDirectory())
                 let range = NSRange(location: Int(fetched.range.lowerBound), length: Int(fetched.range.count))
-                reply.call(fetched.url, ReplicaItem(fetched.item, root: await replica.rootEntryID), range, [], nil)
+                reply.call(fetched.url, await replica.present(fetched.item), range, [], nil)
             } catch {
                 reply.call(nil, nil, NSRange(location: 0, length: 0), [], error.nsError)
             }
@@ -209,7 +209,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
                 let replica = try serving()
                 let template = VaultReplica.Template(name: name, parent: try Self.itemID(parent), kind: kind)
                 let made = try await replica.create(template, contents: contents, mayAlreadyExist: mayExist)
-                reply.call(ReplicaItem(made, root: await replica.rootEntryID), [], false, nil)
+                reply.call(await replica.present(made), [], false, nil)
             } catch {
                 reply.call(nil, [], false, error.nsError)
             }
@@ -236,7 +236,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
                 let changes = VaultReplica.Changeset(name: name, parent: try parent.map(Self.itemID), contents: contents)
                 let done = try await replica.modify(try Self.itemID(identifier), base: base, changes: changes,
                                                     failOnConflict: failOnConflict)
-                reply.call(ReplicaItem(done.item, root: await replica.rootEntryID), [], done.fetchContents, nil)
+                reply.call(await replica.present(done.item), [], done.fetchContents, nil)
                 if done.conflictCopy != nil { signalWorkingSet() }
             } catch {
                 reply.call(nil, [], false, error.nsError)
@@ -286,5 +286,38 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
             }
         }
         return progress(for: task, total: Int64(itemIdentifiers.count))
+    }
+}
+
+// MARK: - Finder actions
+
+/// Finder's context menu (desktop#35): Keep Downloaded and its reverse, declared under `NSExtensionFileProviderActions`
+/// in Info.plist. Removing a download and downloading now are the system's own items.
+extension FileProviderExtension: NSFileProviderCustomAction {
+    static let keepDownloadedAction = "sh.vaulthalla.app.fileprovider.keepDownloaded"
+    static let allowRemovingDownloadAction = "sh.vaulthalla.app.fileprovider.allowRemovingDownload"
+
+    func performAction(identifier actionIdentifier: NSFileProviderExtensionActionIdentifier,
+                       onItemsWithIdentifiers itemIdentifiers: [NSFileProviderItemIdentifier],
+                       completionHandler: @escaping ((any Error)?) -> Void) -> Progress {
+        let reply = Reply(completionHandler)
+        let keep: Bool? = switch actionIdentifier.rawValue {
+        case Self.keepDownloadedAction: true
+        case Self.allowRemovingDownloadAction: false
+        default: nil
+        }
+        let ids = itemIdentifiers.compactMap { FinderItemID(rawValue: $0.rawValue) }
+        let task = Task {
+            do throws(FinderError) {
+                guard let keep else { throw .transient("Unknown action \(actionIdentifier.rawValue).") }
+                try await serving().keepDownloaded(ids, keep)
+                // The items took a revision: the working set's changes carry their new content policy.
+                signalWorkingSet()
+                reply.call(nil)
+            } catch {
+                reply.call(error.nsError)
+            }
+        }
+        return progress(for: task)
     }
 }

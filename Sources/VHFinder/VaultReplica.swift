@@ -27,6 +27,7 @@ public actor VaultReplica {
     public let vaultID: Int64
     private let link: any ReplicaLink
     private let store: ReplicaStore
+    private var pins: PinStore
     private let macName: String
     private let now: @Sendable () -> Date
     private var lastRefresh: ContinuousClock.Instant?
@@ -47,6 +48,7 @@ public actor VaultReplica {
         } catch {
             throw .transient(error.description)
         }
+        pins = PinStore(url: storeURL.map(PinStore.url(forStore:)))
     }
 
     public func close() async {
@@ -56,6 +58,32 @@ public actor VaultReplica {
     // MARK: - Items
 
     public var rootEntryID: Int64? { store.rootEntryID }
+
+    /// Entries kept downloaded (``PinStore``).
+    public var pinnedEntries: Set<Int64> { pins.entries }
+
+    /// Keeps `ids` downloaded, or lets the system remove their downloads again (Finder's Keep Downloaded, desktop#35).
+    /// The changed items take a revision, so the system reads their new content policy with the next changes.
+    public func keepDownloaded(_ ids: [FinderItemID], _ keep: Bool) throws(FinderError) {
+        let entries = ids.compactMap { id -> Int64? in
+            switch id {
+            case .entry(let entryID): entryID
+            case .root: store.rootEntryID
+            case .workingSet, .trash: nil
+            }
+        }
+        let changed: [Int64]
+        do {
+            changed = try pins.set(entries, pinned: keep)
+        } catch {
+            throw .transient("Couldn't save what to keep downloaded (\(error.localizedDescription)).")
+        }
+        do {
+            try store.touch(changed)
+        } catch {
+            throw .transient(error.description)
+        }
+    }
 
     /// The item `id` names, from the replica (the root is listed first when the replica has none yet).
     public func item(_ id: FinderItemID) async throws(FinderError) -> FinderItem {

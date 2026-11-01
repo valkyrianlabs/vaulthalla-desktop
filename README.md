@@ -16,7 +16,9 @@ Settings ▸ Finder lists every vault of every paired node, each with a **Show i
 appears in Finder under Locations, like iCloud Drive: files download when you open them, and macOS removes downloaded
 copies when it needs the space. Finder shows exactly what your Vaulthalla account may see, whatever the vault's
 backing (local, or S3 with smart cache). The first time, macOS asks you to allow Vaulthalla under System Settings ▸
-General ▸ Login Items & Extensions ▸ File Providers; the Finder tab links there.
+General ▸ Login Items & Extensions ▸ File Providers; the Finder tab links there. In Finder, **Keep Downloaded** keeps
+a file or folder on this Mac; Settings ▸ Finder also opens a vault in Desktop and makes Finder aliases to it (drag the
+vault's row into Finder).
 
 ## Layout
 
