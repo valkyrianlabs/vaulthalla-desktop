@@ -1,6 +1,7 @@
 import AppKit
 import Foundation
 import Observation
+import ServiceManagement
 import VHFinder
 
 /// This Mac user's vaults in Finder (docs/architecture.md §7): the File Provider domains the system reports, and the
@@ -13,6 +14,10 @@ final class FinderVaults {
     private(set) var pending: [VaultDomain] = []
     private(set) var problem: String?
     private(set) var loaded = false
+    /// What the background agent removed while Desktop may have been closed, and why.
+    private(set) var removals: [RemovedDomain] = []
+    /// The agent's registration: `.requiresApproval` when the operator turned it off under Login Items.
+    private(set) var agentStatus: SMAppService.Status = .notRegistered
 
     @ObservationIgnored private let registrar = FileProviderDomains()
     @ObservationIgnored private let defaults: UserDefaults
@@ -73,6 +78,17 @@ final class FinderVaults {
         }
     }
 
+    func dismissRemovals() {
+        if let defaults = BackgroundAgent.sharedDefaults { RemovalLog.clear(defaults) }
+        removals = []
+    }
+
+    /// At launch: the agent runs while any vault is in Finder (it may have been unregistered by an older build).
+    static func updateAgent() async {
+        guard let current = try? await FileProviderDomains().domains() else { return }
+        BackgroundAgent.update(hasDomains: !current.isEmpty)
+    }
+
     /// Opens the vault's folder (`~/Library/CloudStorage/Vaulthalla-<name>`) in Finder.
     func open(_ id: VaultDomainID) async {
         do {
@@ -96,6 +112,9 @@ final class FinderVaults {
                 current = try await registrar.domains()
             }
             domains = current
+            BackgroundAgent.update(hasDomains: !current.isEmpty)
+            agentStatus = BackgroundAgent.service.status
+            if let defaults = BackgroundAgent.sharedDefaults { removals = RemovalLog.read(defaults) }
             setPending(pending.filter { waiting in !current.contains { $0.identifier == waiting.id.identifier } })
             problem = nil
         } catch {

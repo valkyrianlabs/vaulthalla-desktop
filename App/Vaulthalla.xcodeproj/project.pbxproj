@@ -21,6 +21,7 @@
 /* End PBXAggregateTarget section */
 
 /* Begin PBXBuildFile section */
+		7A60000000000000000000A1 /* sh.vaulthalla.app.agent.plist in Embed Background Agent */ = {isa = PBXBuildFile; fileRef = 7A6000000000000000000011 /* sh.vaulthalla.app.agent.plist */; };
 		7A10000000000000000000A1 /* VHCore in Frameworks */ = {isa = PBXBuildFile; productRef = 7A10000000000000000000C1 /* VHCore */; };
 		7A10000000000000000000A2 /* VHContract in Frameworks */ = {isa = PBXBuildFile; productRef = 7A10000000000000000000C2 /* VHContract */; };
 		7A10000000000000000000A3 /* VHTransport in Frameworks */ = {isa = PBXBuildFile; productRef = 7A10000000000000000000C3 /* VHTransport */; };
@@ -65,6 +66,17 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		7A6000000000000000000033 /* Embed Background Agent */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = Contents/Library/LaunchAgents;
+			dstSubfolderSpec = 1;
+			files = (
+				7A60000000000000000000A1 /* sh.vaulthalla.app.agent.plist in Embed Background Agent */,
+			);
+			name = "Embed Background Agent";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		7A2000000000000000000033 /* Embed MCP Bridge */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -101,6 +113,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		7A6000000000000000000011 /* sh.vaulthalla.app.agent.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = sh.vaulthalla.app.agent.plist; sourceTree = "<group>"; };
 		7A1000000000000000000010 /* Vaulthalla.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Vaulthalla.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		7A1000000000000000000014 /* Vaulthalla.Team.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Vaulthalla.Team.entitlements; sourceTree = "<group>"; };
 		7A1000000000000000000015 /* Vaulthalla.Unsigned.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Vaulthalla.Unsigned.entitlements; sourceTree = "<group>"; };
@@ -188,6 +201,7 @@
 			isa = PBXGroup;
 			children = (
 				7A1000000000000000000013 /* Base.xcconfig */,
+				7A6000000000000000000011 /* sh.vaulthalla.app.agent.plist */,
 			);
 			path = Config;
 			sourceTree = "<group>";
@@ -217,6 +231,7 @@
 				7A2000000000000000000034 /* Link MCP Bridge */,
 				7A3000000000000000000033 /* Embed 1Password Helper */,
 				7A4000000000000000000033 /* Embed Foundation Extensions */,
+				7A6000000000000000000033 /* Embed Background Agent */,
 			);
 			buildRules = (
 			);

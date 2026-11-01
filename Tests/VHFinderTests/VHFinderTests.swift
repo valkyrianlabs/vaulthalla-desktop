@@ -174,6 +174,41 @@ import VHNodes
         #expect(registrar.calls.count == 2, "a domain Desktop didn't make isn't added again")
     }
 
+    @Test func freshnessSignalsReachableDomainsAndFailsClosedOnDefiniteAnswers() {
+        let photos = domain("n1", 1, "Photos · lab")
+        let docs = domain("n1", 2, "Docs · lab")
+        let waiting = domain("n1", 3, "Waiting · lab")
+        let media = domain("n2", 5, "Media · vps")
+        let offline = domain("n3", 6, "Offline · far")
+        let gone = domain("n4", 7, "Gone · old")
+        let domains = [snapshot(photos), snapshot(docs), snapshot(waiting, enabled: false), snapshot(media),
+                       snapshot(offline), snapshot(gone),
+                       DomainSnapshot(identifier: "spike-domain", displayName: "Leftover", userEnabled: true)]
+        let plan = FreshnessPlan.make(domains: domains, checks: [
+            NodeID(rawValue: "n1"): .browsable([1, 3]),
+            NodeID(rawValue: "n2"): .closed("revoked"),
+            NodeID(rawValue: "n3"): .unknown,
+        ])
+        #expect(plan.signal == ["n1.1", "n3.6"], "a waiting domain and one Desktop didn't make aren't signalled")
+        #expect(plan.remove.map(\.identifier) == ["n1.2", "n2.5", "n4.7"])
+        #expect(plan.remove.map(\.reason)[1] == "revoked")
+        #expect(plan.remove.first?.displayName == "Docs · lab")
+    }
+
+    @Test func removalLogKeepsTheNewestTwenty() throws {
+        let defaults = try #require(UserDefaults(suiteName: "vh-test-removals-\(UUID().uuidString)"))
+        #expect(RemovalLog.read(defaults).isEmpty)
+        let removals = (0..<25).map {
+            RemovedDomain(identifier: "n1.\($0)", displayName: "V\($0)", reason: "revoked",
+                          at: Date(timeIntervalSince1970: Double($0)))
+        }
+        RemovalLog.append(Array(removals.prefix(5)), to: defaults)
+        RemovalLog.append(Array(removals.dropFirst(5)), to: defaults)
+        #expect(RemovalLog.read(defaults).map(\.identifier) == removals.suffix(20).map(\.identifier))
+        RemovalLog.clear(defaults)
+        #expect(RemovalLog.read(defaults).isEmpty)
+    }
+
     @Test func settingsLinksOpenSystemSettings() {
         #expect(FileProviderSettings.fileProvidersURL.scheme == "x-apple.systempreferences")
         #expect(FileProviderSettings.fileProvidersURL.absoluteString.contains("com.apple.fileprovider-nonui"))
