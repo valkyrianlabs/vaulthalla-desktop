@@ -387,6 +387,18 @@ docs/                   this plan, the pairing protocol, release notes
     sheet offers "Pair Using Vaulthalla on This Mac…" (`VHNodes.LocalPairing`, `docs/pairing.md` §3, "Pairing
     through `vh`"). After the person agrees, Desktop runs `vh` as them: it opens the window, approves this Mac's
     request with its code once the daemon lists it, and closes the window.
+  - **This Mac's own server, set up without asking** (`VHNodes.LocalNodeAutopair`, the app's `LocalNodeSetup`). The
+    macOS account is an authenticated space, so for the server on this Mac the consent above is implied: at launch,
+    when `vh` appears while the app runs, and after a failure every ten minutes, the credential owner pairs with it
+    through the same `vh` path. `vh device pair --json` (server 1.21+; an older `vh` only opens the window and the
+    defaults apply) names the listener's port, the server's install id and its key; the node is saved at
+    `127.0.0.1:<port>` and the pairing connection is pinned to that key, so another server is refused before anything
+    is sent; approval is number matching through `vh` as above. Anything short of approval removes the node and its
+    key again. It runs only from the registry's say-so: never when a saved node's address is this Mac (whatever its
+    state) or the server's install id is already saved, never after the person removed this Mac's server
+    (`localNode.autopairDeclined`), and never with Keep me signed in off. The `vaulthalla` meta cask opens Desktop
+    once on its first install (Homebrew sandboxes install steps away from the home folder, so the app does this
+    itself), which is how `brew install --cask valkyrianlabs/tap/vaulthalla` ends with the server already in Desktop.
 - **Signing and the shared container** (desktop#4; evidence from the desktop#2 spike). The File Provider extension
   is sandboxed and must read the same registry and device keys as the app, so signed builds share an App Group and a
   keychain access group.

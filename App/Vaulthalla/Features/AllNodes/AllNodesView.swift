@@ -19,7 +19,17 @@ struct AllNodesView: View {
                     }
                 }
 
-                if model.nodes.isEmpty {
+                if model.nodes.isEmpty, model.settingUpLocalNode {
+                    Panel {
+                        EmptyState(
+                            "Connecting to this Mac's server",
+                            systemImage: "desktopcomputer",
+                            message: "Vaulthalla is installed on this Mac too. Desktop is pairing with it through your macOS account, so there's no code to compare."
+                        ) {
+                            ProgressView().controlSize(.small)
+                        }
+                    }
+                } else if model.nodes.isEmpty {
                     Panel {
                         EmptyState(
                             "No nodes yet",

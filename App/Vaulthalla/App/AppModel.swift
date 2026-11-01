@@ -40,6 +40,9 @@ final class AppModel {
     var nodePendingRemoval: Node?
     /// A failed edit, shown as an alert.
     var errorMessage: String?
+    /// While this Mac's own Vaulthalla server is being set up without a code (``LocalNodeSetup``).
+    var settingUpLocalNode = false
+    @ObservationIgnored private var localNodeSetup: LocalNodeSetup?
     /// Why a `vaulthalla://pair` link couldn't be used, shown as an alert.
     var pairLinkProblem: String?
     /// What a pairing link said about a node added from it: the server key to insist on while pairing (the code
@@ -288,7 +291,10 @@ final class AppModel {
 
     func remove(_ id: NodeID) {
         let index = nodes.firstIndex { $0.id == id }
+        let removed = node(withID: id)
         guard edit({ try store.remove(id) }) else { return }
+        // Removing this Mac's own server is a choice: it isn't added back on its own.
+        if let removed { LocalNodeSetup.recordRemoval(of: removed) }
         liveStatus[id] = nil
         queryStores[id] = nil
         pulses[id] = nil
@@ -312,6 +318,14 @@ final class AppModel {
             selectedNodeID = nil
             showsAllNodes = true
         }
+    }
+
+    /// Starts setting up this Mac's own Vaulthalla server when it has one (``LocalNodeSetup``): now, and while running.
+    func setUpLocalNode() {
+        guard localNodeSetup == nil, deviceKeys != nil else { return }
+        let setup = LocalNodeSetup()
+        localNodeSetup = setup
+        setup.start(model: self)
     }
 
     /// Sidebar drag-to-reorder.
