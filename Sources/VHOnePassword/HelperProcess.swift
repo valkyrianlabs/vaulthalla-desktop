@@ -18,6 +18,7 @@ final class HelperProcess: @unchecked Sendable {
     private let process: Process
     private let stdinHandle: FileHandle
     private let stderrHandle: FileHandle
+    private let exit = ExitSignal()
     private let lock = NSLock()
     private var inputClosed = false
     private var stderrTail: [String] = []
@@ -33,6 +34,7 @@ final class HelperProcess: @unchecked Sendable {
         process.standardInput = stdin
         process.standardOutput = stdout
         process.standardError = stderr
+        process.terminationHandler = { [exit] _ in exit.fire() } // Foundation calls it once the child is reaped
 
         // Writing to a dead helper must fail with EPIPE, not kill the app with SIGPIPE.
         _ = fcntl(stdin.fileHandleForWriting.fileDescriptor, F_SETNOSIGPIPE, 1)
@@ -74,6 +76,11 @@ final class HelperProcess: @unchecked Sendable {
     /// The exit status once the process has exited.
     var exitStatus: Int32? {
         process.isRunning ? nil : process.terminationStatus
+    }
+
+    /// Returns once the process has exited and been reaped, or when the task is cancelled.
+    func waitUntilExit() async {
+        await exit.wait()
     }
 
     /// The last lines the helper wrote to stderr (redacted diagnostics).
@@ -178,5 +185,41 @@ final class HelperProcess: @unchecked Sendable {
             }
         }
         if !line.isEmpty || discarding { emitLine() }
+    }
+}
+
+/// Fires once, when the process exits; waiters before and after that point all resume. A cancelled waiter resumes
+/// early.
+private final class ExitSignal: @unchecked Sendable {
+    private let lock = NSLock()
+    private var fired = false
+    private var nextID = 0
+    private var waiters: [Int: CheckedContinuation<Void, Never>] = [:]
+
+    func fire() {
+        let waiting = lock.withLock {
+            fired = true
+            defer { waiters.removeAll() }
+            return waiters.values
+        }
+        for waiter in waiting { waiter.resume() }
+    }
+
+    func wait() async {
+        let id = lock.withLock {
+            defer { nextID += 1 }
+            return nextID
+        }
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let done = lock.withLock {
+                    if !fired, !Task.isCancelled { waiters[id] = continuation }
+                    return fired || Task.isCancelled
+                }
+                if done { continuation.resume() }
+            }
+        } onCancel: {
+            lock.withLock { waiters.removeValue(forKey: id) }?.resume()
+        }
     }
 }

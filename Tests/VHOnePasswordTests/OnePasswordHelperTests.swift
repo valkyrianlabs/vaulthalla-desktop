@@ -4,7 +4,9 @@ import VHCore
 @testable import VHOnePassword
 
 /// The Swift client against the Go helper's fake build (see FakeHelper). Nothing here contacts 1Password.
-@Suite(.enabled(if: FakeHelper.goAvailable, "needs a Go toolchain to build the helper's fake mode"))
+// The time limit is only a backstop: tests await process exits rather than polling with a deadline, so a helper left
+// running hangs its test until the limit fails it. Five minutes leaves room for the first test's cold `go build`.
+@Suite(.enabled(if: FakeHelper.goAvailable, "needs a Go toolchain to build the helper's fake mode"), .timeLimit(.minutes(5)))
 struct OnePasswordHelperTests {
     private static func key(_ byte: UInt8, count: Int = 32) -> [UInt8] { [UInt8](repeating: byte, count: count) }
 
@@ -177,7 +179,7 @@ struct OnePasswordHelperTests {
         defer { Task { await helper.close() } }
         try await helper.checkAccount("Cooper")
         _ = try await helper.ensureVault()
-        let firstPID = try #require(await helper.processIdentifier)
+        let first = try #require(await helper.currentProcess)
 
         do {
             _ = try await helper.send(op: "fake.crash", as: Empty.self) { w in w.field("code", 70) }
@@ -185,13 +187,13 @@ struct OnePasswordHelperTests {
         } catch let error as OnePasswordHelperError {
             guard case .exited = error else { Issue.record("got \(error)"); return }
         }
-        #expect(await eventually { !processExists(firstPID) })
+        #expect(await exited(first))
 
         // No explicit account.check: the client re-runs it for the new process.
         let vault = try await helper.ensureVault()
         #expect(vault.created, "a new process (the fake's state is in memory)")
         let secondPID = try #require(await helper.processIdentifier)
-        #expect(secondPID != firstPID)
+        #expect(secondPID != first.processIdentifier)
     }
 
     @Test func stopsRestartingInACrashLoop() async throws {
@@ -211,16 +213,16 @@ struct OnePasswordHelperTests {
         let helper = try FakeHelper.helper()
         defer { Task { await helper.close() } }
         try await helper.checkAccount("Cooper")
-        let pid = try #require(await helper.processIdentifier)
+        let stuck = try #require(await helper.currentProcess)
         await #expect(throws: OnePasswordHelperError.timeout(op: "fake.sleep")) {
             _ = try await helper.send(op: "fake.sleep", as: Slept.self, timeout: .milliseconds(400)) { w in
                 w.field("ms", 10_000)
             }
         }
-        #expect(await eventually { !processExists(pid) }, "the stuck helper is terminated")
+        #expect(await exited(stuck), "the stuck helper is terminated")
         let slept = try await helper.send(op: "fake.sleep", as: Slept.self) { w in w.field("ms", 10) }
         #expect(slept.slept_ms == 10)
-        #expect(try #require(await helper.processIdentifier) != pid)
+        #expect(try #require(await helper.processIdentifier) != stuck.processIdentifier)
     }
 
     @Test func concurrentRequestsAreSerialized() async throws {
@@ -261,18 +263,18 @@ struct OnePasswordHelperTests {
     @Test func closeStopsTheHelper() async throws {
         let helper = try FakeHelper.helper()
         try await helper.checkAccount("Cooper")
-        let pid = try #require(await helper.processIdentifier)
+        let running = try #require(await helper.currentProcess)
         await helper.close()
-        #expect(await eventually { !processExists(pid) })
+        #expect(await exited(running))
         await #expect(throws: OnePasswordHelperError.closed) { try await helper.checkAccount("Cooper") }
     }
 
     @Test func releasingTheClientTerminatesTheHelper() async throws {
         var helper: OnePasswordHelper? = try FakeHelper.helper()
         try await helper?.checkAccount("Cooper")
-        let pid = try #require(await helper?.processIdentifier)
+        let running = try #require(await helper?.currentProcess)
         helper = nil
-        #expect(await eventually { !processExists(pid) })
+        #expect(await exited(running))
     }
 
     @Test func missingExecutableFailsToLaunch() async {
