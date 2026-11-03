@@ -835,5 +835,6 @@ Xcode MCP (`xcrun mcpbridge`) for previews and UI checks once it is enabled.
   as versioned fields. A version still needed for restoration is never overwritten or dropped.
 - **D7. Real restoration.** Backup verification and export to a file (preferred over the clipboard) are the first
   milestones; full recovery support is not claimed until the daemon has `vh vault keys import` (workstream S6).
-- **D8. Public AGPL-3.0 repository, direct distribution:** a signed, notarized DMG with Sparkle updates and an
-  optional Homebrew cask. Local development signing until a paid Apple Developer membership exists.
+- **D8. AGPL-3.0, direct distribution:** a signed, notarized DMG with Sparkle updates and an optional Homebrew cask,
+  both served from the public assets-only repository `valkyrianlabs/vaulthalla-desktop-releases`, so the source
+  repository may be private. Local development signing until a paid Apple Developer membership exists.

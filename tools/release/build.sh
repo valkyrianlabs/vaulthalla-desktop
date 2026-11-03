@@ -14,8 +14,8 @@
 #
 # The marketing version is VERSION. Writes Vaulthalla-<version>.dmg, its .sha256, the Homebrew cask
 # vaulthalla-desktop.rb and (with the key) appcast.xml to DIR.
-# The appcast lists this release alone: the app reads it from the latest GitHub release (SUFeedURL), and the DMG it
-# points to is that release's asset.
+# The appcast lists this release alone: the app reads it from the latest release of the public
+# valkyrianlabs/vaulthalla-desktop-releases repository (SUFeedURL), and the DMG it points to is that release's asset.
 set -euo pipefail
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -123,7 +123,7 @@ sed -e "s/@VERSION@/$version/g" -e "s/@SHA256@/$(cut -d' ' -f1 "$out/$name.sha25
 if [ -n "${VH_SPARKLE_KEY_FILE:-}" ]; then
     log "Appcast"
     tools="$work/DerivedData/SourcePackages/artifacts/sparkle/Sparkle/bin"
-    releases="https://github.com/valkyrianlabs/vaulthalla-desktop/releases"
+    releases="https://github.com/valkyrianlabs/vaulthalla-desktop-releases/releases"
     mkdir -p "$work/appcast"
     cp "$dmg" "$work/appcast/"
     "$tools/generate_appcast" --ed-key-file "$VH_SPARKLE_KEY_FILE" \

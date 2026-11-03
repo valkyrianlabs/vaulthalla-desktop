@@ -1,8 +1,11 @@
 name: Release
 # The Developer ID release (tools/release/build.sh): a signed app and DMG, both notarized and stapled, and the Sparkle
-# appcast that offers it. A tag vX.Y.Z that matches VERSION publishes them as the latest GitHub release, which is where
-# the app's feed points (SUFeedURL: releases/latest/download/appcast.xml); a pull request that touches the release
-# tooling rehearses the whole pipeline, notarization included, and publishes nothing.
+# appcast that offers it. A tag vX.Y.Z that matches VERSION publishes them as the latest release of the public
+# valkyrianlabs/vaulthalla-desktop-releases repository, which holds release assets only: the app's feed (SUFeedURL:
+# releases/latest/download/appcast.xml there) and the Homebrew cask download from it, so this repository can be
+# private. The same assets also go to this repository's own release, the feed of copies up to 0.5.0, which read it
+# here until they update. A pull request that touches the release tooling rehearses the whole pipeline, notarization
+# included, and publishes nothing.
 #
 # Organization secrets (valkyrianlabs, this repository selected):
 #   MACOS_SIGNING_P12, MACOS_SIGNING_P12_PASSWORD     the Developer ID Application identity (+ G2 intermediate)
@@ -11,6 +14,7 @@ name: Release
 #   MACOS_NOTARY_APPLE_ID, MACOS_NOTARY_TEAM_ID, MACOS_NOTARY_PASSWORD   notarytool credentials
 #   SPARKLE_ED_PRIVATE_KEY                            the EdDSA key that signs updates (public half: SUPublicEDKey)
 #   HOMEBREW_TAP_TOKEN                                contents:write on valkyrianlabs/homebrew-tap (the cask)
+#   DESKTOP_RELEASES_TOKEN                            contents:write on valkyrianlabs/vaulthalla-desktop-releases
 #
 # The publish job runs in the Production environment (no secrets or rules of its own, as in vaulthalla-server), so each
 # release is recorded as a deployment to production.
@@ -135,7 +139,7 @@ jobs:
           rm -f "$RUNNER_TEMP/sparkle.key"
 
   publish:
-    name: GitHub release
+    name: GitHub releases
     needs: dmg
     if: startsWith(github.ref, 'refs/tags/')
     environment: Production
@@ -147,13 +151,32 @@ jobs:
         with:
           name: vaulthalla-desktop-dmg
           path: release
-      - name: Publish
+      - name: The DMG matches its checksum
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          (cd release && sha256sum -c "Vaulthalla-$version.dmg.sha256")
+
+      # First, so the appcast's enclosure (and the cask) never point at a DMG that isn't published yet. The releases
+      # repository has no code: the tag is made on its main. Never a prerelease: releases/latest, the app's update
+      # feed, skips prereleases. The notes stay generic, as this repository's pull requests may not be public.
+      - name: Publish the public release
+        env:
+          GH_TOKEN: ${{ secrets.DESKTOP_RELEASES_TOKEN }}
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          if [ -z "$GH_TOKEN" ]; then echo "::error::no DESKTOP_RELEASES_TOKEN: the update feed can't be published"; exit 1; fi
+          gh release create "$GITHUB_REF_NAME" release/*.dmg release/*.sha256 release/appcast.xml \
+            --repo valkyrianlabs/vaulthalla-desktop-releases --target main --latest \
+            --title "Vaulthalla Desktop $version" \
+            --notes "Install with \`brew install --cask valkyrianlabs/tap/vaulthalla-desktop\`, or open the DMG. Installed copies update themselves."
+
+      # The feed of copies up to 0.5.0 (this repository's latest appcast.xml), which offers the DMG published above;
+      # also the release record once this repository is private.
+      - name: Publish this repository's release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           version=${GITHUB_REF_NAME#v}
-          (cd release && sha256sum -c "Vaulthalla-$version.dmg.sha256")
-          # Never a prerelease: releases/latest, the app's update feed, skips prereleases.
           gh release create "$GITHUB_REF_NAME" release/*.dmg release/*.sha256 release/appcast.xml \
             --repo "$GITHUB_REPOSITORY" --verify-tag --latest --title "Vaulthalla Desktop $version" --generate-notes
 
