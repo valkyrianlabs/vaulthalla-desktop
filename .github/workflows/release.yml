@@ -14,7 +14,8 @@ name: Release
 #   MACOS_NOTARY_APPLE_ID, MACOS_NOTARY_TEAM_ID, MACOS_NOTARY_PASSWORD   notarytool credentials
 #   SPARKLE_ED_PRIVATE_KEY                            the EdDSA key that signs updates (public half: SUPublicEDKey)
 #   HOMEBREW_TAP_TOKEN                                contents:write on valkyrianlabs/homebrew-tap (the cask)
-#   DESKTOP_RELEASES_TOKEN                            contents:write on valkyrianlabs/vaulthalla-desktop-releases
+#   RELEASE_FINALIZE_TOKEN                            the org-wide release token (contents:write on the org's repos),
+#                                                     reused to publish to valkyrianlabs/vaulthalla-desktop-releases
 #
 # The publish job runs in the Production environment (no secrets or rules of its own, as in vaulthalla-server), so each
 # release is recorded as a deployment to production.
@@ -161,10 +162,10 @@ jobs:
       # feed, skips prereleases. The notes stay generic, as this repository's pull requests may not be public.
       - name: Publish the public release
         env:
-          GH_TOKEN: ${{ secrets.DESKTOP_RELEASES_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_FINALIZE_TOKEN }}
         run: |
           version=${GITHUB_REF_NAME#v}
-          if [ -z "$GH_TOKEN" ]; then echo "::error::no DESKTOP_RELEASES_TOKEN: the update feed can't be published"; exit 1; fi
+          if [ -z "$GH_TOKEN" ]; then echo "::error::no RELEASE_FINALIZE_TOKEN: the update feed can't be published"; exit 1; fi
           gh release create "$GITHUB_REF_NAME" release/*.dmg release/*.sha256 release/appcast.xml \
             --repo valkyrianlabs/vaulthalla-desktop-releases --target main --latest \
             --title "Vaulthalla Desktop $version" \

@@ -109,7 +109,7 @@ notarized and stapled, then a signed DMG notarized and stapled too, and the Spar
 (signed with the EdDSA key in `SPARKLE_ED_PRIVATE_KEY`). Pushing a tag `v<VERSION>` publishes the DMG, its `.sha256`
 and the appcast as the latest release of the public, assets-only repository
 [`valkyrianlabs/vaulthalla-desktop-releases`](https://github.com/valkyrianlabs/vaulthalla-desktop-releases) (with
-`DESKTOP_RELEASES_TOKEN`), then as this repository's latest release too, which copies up to 0.5.0 still read for
+`RELEASE_FINALIZE_TOKEN`), then as this repository's latest release too, which copies up to 0.5.0 still read for
 updates. The app's update feed is that repository's `releases/latest/download/appcast.xml`, so a release is never
 marked prerelease. It then commits the rendered cask to `valkyrianlabs/homebrew-tap`
 (`brew install --cask valkyrianlabs/tap/vaulthalla-desktop`; template `tools/release/homebrew/vaulthalla-desktop.rb.in`,
