@@ -2,9 +2,10 @@ import Combine
 import Sparkle
 import SwiftUI
 
-/// Sparkle updates (docs/architecture.md D8). The feed is the latest GitHub release's `appcast.xml` (`SUFeedURL` in
-/// Info.plist); every update is verified against the EdDSA public key `SUPublicEDKey` and must carry the app's
-/// Developer ID signature. Debug builds never start the updater, so a development build can't replace itself.
+/// Sparkle updates (docs/architecture.md D8). The feed is the `appcast.xml` of the latest release in the public
+/// valkyrianlabs/vaulthalla-desktop-releases repository (`SUFeedURL` in Info.plist); every update is verified against
+/// the EdDSA public key `SUPublicEDKey` and must carry the app's Developer ID signature. Debug builds never start the
+/// updater, so a development build can't replace itself.
 @MainActor
 final class Updates {
     static let shared = Updates()
