@@ -16,6 +16,12 @@ struct SettingsView: View {
             Tab("Finder", systemImage: "folder.badge.gearshape") {
                 FinderSettingsView()
             }
+            // Vaulthalla Cloud isn't open yet: shown only with `defaults write sh.vaulthalla.app cloud.enabled -bool YES`.
+            if UserDefaults.standard.bool(forKey: "cloud.enabled") {
+                Tab("Cloud", systemImage: "cloud") {
+                    CloudSettingsView()
+                }
+            }
             Tab("About", systemImage: "info.circle") {
                 AboutView()
             }

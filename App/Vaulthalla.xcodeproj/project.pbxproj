@@ -31,6 +31,8 @@
 		7A20000000000000000000A2 /* VHMCP in Frameworks */ = {isa = PBXBuildFile; productRef = 7A20000000000000000000C1 /* VHMCP */; };
 		7A30000000000000000000A1 /* VHOnePassword in Frameworks */ = {isa = PBXBuildFile; productRef = 7A30000000000000000000C1 /* VHOnePassword */; };
 		7A30000000000000000000A2 /* VHKeyBackup in Frameworks */ = {isa = PBXBuildFile; productRef = 7A30000000000000000000C2 /* VHKeyBackup */; };
+		7A70000000000000000000A1 /* VHRecovery in Frameworks */ = {isa = PBXBuildFile; productRef = 7A70000000000000000000C1 /* VHRecovery */; };
+		7A70000000000000000000A2 /* VHCloud in Frameworks */ = {isa = PBXBuildFile; productRef = 7A70000000000000000000C2 /* VHCloud */; };
 		7A30000000000000000000A3 /* vaulthalla-1password in Embed 1Password Helper */ = {isa = PBXBuildFile; fileRef = 7A3000000000000000000010 /* vaulthalla-1password */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		7A40000000000000000000A1 /* VHCore in Frameworks */ = {isa = PBXBuildFile; productRef = 7A40000000000000000000C1 /* VHCore */; };
 		7A40000000000000000000A2 /* VHIdentity in Frameworks */ = {isa = PBXBuildFile; productRef = 7A40000000000000000000C2 /* VHIdentity */; };
@@ -145,6 +147,8 @@
 				7A10000000000000000000A5 /* VHNodes in Frameworks */,
 				7A30000000000000000000A1 /* VHOnePassword in Frameworks */,
 				7A30000000000000000000A2 /* VHKeyBackup in Frameworks */,
+				7A70000000000000000000A1 /* VHRecovery in Frameworks */,
+				7A70000000000000000000A2 /* VHCloud in Frameworks */,
 				7A40000000000000000000A6 /* VHFinder in Frameworks */,
 				7A50000000000000000000A1 /* Sparkle in Frameworks */,
 			);
@@ -252,6 +256,8 @@
 				7A10000000000000000000C5 /* VHNodes */,
 				7A30000000000000000000C1 /* VHOnePassword */,
 				7A30000000000000000000C2 /* VHKeyBackup */,
+				7A70000000000000000000C1 /* VHRecovery */,
+				7A70000000000000000000C2 /* VHCloud */,
 				7A40000000000000000000C5 /* VHFinder */,
 				7A50000000000000000000C1 /* Sparkle */,
 			);
@@ -754,6 +760,14 @@
 		7A30000000000000000000C2 /* VHKeyBackup */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = VHKeyBackup;
+		};
+		7A70000000000000000000C1 /* VHRecovery */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = VHRecovery;
+		};
+		7A70000000000000000000C2 /* VHCloud */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = VHCloud;
 		};
 		7A40000000000000000000C1 /* VHCore */ = {
 			isa = XCSwiftPackageProductDependency;
