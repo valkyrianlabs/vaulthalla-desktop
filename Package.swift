@@ -22,6 +22,7 @@ let package = Package(
         .library(name: "VHOnePassword", targets: ["VHOnePassword"]),
         .library(name: "VHKeyBackup", targets: ["VHKeyBackup"]),
         .library(name: "VHRecovery", targets: ["VHRecovery"]),
+        .library(name: "VHCloud", targets: ["VHCloud"]),
         .library(name: "VHMCP", targets: ["VHMCP"]),
         .library(name: "VHFinder", targets: ["VHFinder"]),
         .executable(name: "vaulthalla-mcp", targets: ["vaulthalla-mcp"]),
@@ -47,6 +48,9 @@ let package = Package(
         // Vaulthalla's recovery formats in Swift (CryptoKit): KEV1 envelopes, the recovery seed, uids and the recovery
         // kit, byte for byte the server's and Vaulthalla Cloud's (vectors.json, vendored in its tests). #49.
         .target(name: "VHRecovery", dependencies: ["VHCore"], swiftSettings: strict),
+        // Vaulthalla Cloud (optional): this Mac as a linked installation (VHC1-Ed25519 signed requests, its key in the
+        // keychain) and the delivering side of a cloud restore: re-wrapping a vault's keys from a recovery kit.
+        .target(name: "VHCloud", dependencies: ["VHCore", "VHRecovery"], swiftSettings: strict),
         // Recovery keys (docs/architecture.md §6): vault key backup to 1Password, change detection and restore.
         .target(
             name: "VHKeyBackup",
@@ -74,6 +78,7 @@ let package = Package(
         ),
         .testTarget(name: "VHCoreTests", dependencies: ["VHCore"], swiftSettings: strict),
         .testTarget(name: "VHContractTests", dependencies: ["VHContract"], swiftSettings: strict),
+        .testTarget(name: "VHCloudTests", dependencies: ["VHCloud", "VHRecovery", "VHCore"], swiftSettings: strict),
         .testTarget(
             name: "VHRecoveryTests",
             dependencies: ["VHRecovery", "VHCore"],
