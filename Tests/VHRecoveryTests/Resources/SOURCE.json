@@ -1,0 +1,6 @@
+{
+  "file": "vectors.json",
+  "sha256": "6af59fbb8147f5c6b6a32b76680d2c65de1e2d3c8b299f9356227b585eeafd70",
+  "source": "valkyrianlabs/vl-keykit vectors/vectors.json v0.1.0 (= valkyrianlabs/vaulthalla-server design/encryption/vectors/vectors.json)",
+  "note": "A verbatim copy of the golden vectors every Vaulthalla implementation reproduces. Never edit it: a vector change starts in vaulthalla-server, then vl-keykit, then here (update the sha256)."
+}
