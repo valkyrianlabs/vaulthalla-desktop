@@ -189,6 +189,11 @@ Unchanged when no account is linked. When one is:
   whose every needed version has an envelope to the account key is "Protected by your recovery key"; "needs backup"
   notifications follow that, not 1Password. A vault outside it (BYOS or local, beyond the free allowance or not added)
   offers "Add to recovery key", a server operation.
+- **Recovery recipients are managed once, for the whole account** (decided, Cooper, 2026-11-14). Adding or removing
+  a recipient besides the account key (a kit, a key in 1Password, another person) signs the account's recovery policy
+  on this Mac with the account key and sends it to the cloud; every server verifies it against the key it pinned
+  and applies it to its covered vaults by itself. Desktop shows the policy's recipients and, per server, the
+  sequence it has applied. It never asks the customer to approve the same recipient on each server.
 - **1Password holds the offline copy**: an item with the account key as an ordinary recovery kit, which opens every
   covered vault from its bucket with no cloud and pins each vault's attestation keys. That needs one new helper
   operation and item layout in `Helpers/vaulthalla-1password`. Per-vault items (D6) become an optional second copy.
