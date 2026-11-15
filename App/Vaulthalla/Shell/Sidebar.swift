@@ -9,6 +9,8 @@ enum SidebarItem: Hashable {
     case allNodes
     /// Recovery Keys across every node.
     case allRecoveryKeys
+    /// A pane of the top-level Vaulthalla Cloud section (it spans every server, unpaired ones too).
+    case cloud(CloudSection)
     case node(NodeID)
     case section(NodeSection)
 }
@@ -23,6 +25,15 @@ struct Sidebar: View {
             Label("Recovery Keys", systemImage: NodeSection.recoveryKeys.systemImage)
                 .recoveryKeysBadge()
                 .tag(SidebarItem.allRecoveryKeys)
+
+            if model.cloud != nil {
+                Section("Vaulthalla Cloud") {
+                    ForEach(CloudSection.allCases) { section in
+                        Label(section.title, systemImage: section.systemImage)
+                            .tag(SidebarItem.cloud(section))
+                    }
+                }
+            }
 
             Section("Nodes") {
                 if model.nodes.isEmpty && model.registryProblem == nil {
@@ -93,13 +104,20 @@ struct Sidebar: View {
     private var selection: Binding<SidebarItem?> {
         Binding(
             get: {
-                if model.showsAllNodes { return model.allNodesPage == .recoveryKeys ? .allRecoveryKeys : .allNodes }
+                if model.showsAllNodes {
+                    switch model.allNodesPage {
+                    case .recoveryKeys: return .allRecoveryKeys
+                    case .cloud: return .cloud(model.cloudSection)
+                    case .overview: return .allNodes
+                    }
+                }
                 return model.selectedNodeID == nil ? nil : .section(model.selectedSection)
             },
             set: { item in
                 switch item {
                 case .allNodes: model.showAllNodes()
                 case .allRecoveryKeys: model.showAllRecoveryKeys()
+                case .cloud(let section): model.showCloud(section)
                 case .node(let id): model.selectNode(id)
                 case .section(let section): model.select(section)
                 case nil: break

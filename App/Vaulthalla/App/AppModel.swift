@@ -23,8 +23,13 @@ final class AppModel {
     private(set) var registryProblem: String?
 
     var showsAllNodes = true
-    /// What "All Nodes" shows: the overview, or Recovery Keys across every node.
+    /// What "All Nodes" shows: the overview, Recovery Keys across every node, or a Vaulthalla Cloud pane.
     var allNodesPage: AllNodesPage = .overview
+    /// The Vaulthalla Cloud pane shown while `allNodesPage` is `.cloud`.
+    var cloudSection: CloudSection = .account
+    /// Vaulthalla Cloud (optional, hidden until it opens): nil in previews and while neither `cloud.enabled` is set nor
+    /// this Mac is linked.
+    @ObservationIgnored private(set) var cloud: CloudModel?
     var selectedNodeID: NodeID?
     var selectedSection: NodeSection = .overview
     /// Which page of the Overview shows, and the panel and metric a followed warning points at.
@@ -131,6 +136,11 @@ final class AppModel {
         loadNodes()
         recoveryKeys.app = self
         if let keys {
+            let cloud = CloudModel(lease: store.lease)
+            if cloud.isVisible {
+                cloud.app = self
+                self.cloud = cloud
+            }
             sessions = NodeSessions(keys: keys, registry: store) { [weak self] id, event in self?.handle(event, from: id) }
             syncSessions()
             recoveryKeys.start()
@@ -626,6 +636,18 @@ final class AppModel {
     }
 
     /// Recovery Keys across every node (the All Nodes variant; the notification's action).
+    func showCloud(_ section: CloudSection) {
+        showsAllNodes = true
+        allNodesPage = .cloud
+        cloudSection = section
+    }
+
+    /// A paired node's transport for the cloud's node reads and confirmations; nil without a session.
+    func cloudTransport(for id: NodeID) -> (any NodeTransport)? {
+        guard let sessions, sessions.session(for: id) != nil else { return nil }
+        return SessionTransport { [weak sessions] in sessions?.session(for: id) }
+    }
+
     func showAllRecoveryKeys() {
         showsAllNodes = true
         allNodesPage = .recoveryKeys
@@ -731,6 +753,7 @@ final class AppModel {
 enum AllNodesPage: String, Hashable, Sendable {
     case overview
     case recoveryKeys
+    case cloud
 }
 
 struct RestorableSelection: Codable, Hashable, RawRepresentable {
