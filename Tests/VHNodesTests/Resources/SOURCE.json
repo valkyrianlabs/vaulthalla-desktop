@@ -1,0 +1,6 @@
+{
+  "file": "approval-vectors.json",
+  "source": "vaulthalla-server core/test-assets/device/approval-vectors.json",
+  "server_commit": "8ac37630",
+  "note": "verbatim; regenerate upstream with tools/dev/device_approval_vectors.py, then copy"
+}
