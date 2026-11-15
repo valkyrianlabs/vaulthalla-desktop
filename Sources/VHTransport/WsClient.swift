@@ -378,7 +378,7 @@ public actor WsClient {
         if let requestId = header.requestId, let entry = pending[requestId] {
             let refusal = header.data.map {
                 WsError.Refusal(code: $0.code, serverMin: $0.serverMin, serverMax: $0.serverMax,
-                                serverVersion: $0.serverVersion)
+                                serverVersion: $0.serverVersion, stepUp: $0.stepUp)
             }
             if let error = WsError.classify(status: header.status, error: header.error, refusal: refusal,
                                             command: entry.command) {
@@ -586,10 +586,17 @@ private struct RefusalData: Decodable {
     var serverMin: Int?
     var serverMax: Int?
     var serverVersion: String?
+    var stepUp: WsStepUp?
 
     init(from decoder: any Decoder) throws {
         let container = try? decoder.container(keyedBy: Keys.self)
         code = try? container?.decodeIfPresent(String.self, forKey: .code)
+        if code == "step_up_required", let family = try? container?.decodeIfPresent(String.self, forKey: .family) {
+            stepUp = WsStepUp(family: family, target: try? container?.decodeIfPresent(String.self, forKey: .target),
+                              methods: (try? container?.decodeIfPresent([String].self, forKey: .methods)) ?? [],
+                              maxAgeSeconds: try? container?.decodeIfPresent(Int.self, forKey: .maxAgeSeconds))
+            return
+        }
         guard code == "protocol_unsupported" else { return }
         serverMin = try? container?.decodeIfPresent(Int.self, forKey: .serverMin)
         serverMax = try? container?.decodeIfPresent(Int.self, forKey: .serverMax)
@@ -597,7 +604,8 @@ private struct RefusalData: Decodable {
     }
 
     private enum Keys: String, CodingKey {
-        case code
+        case code, family, target, methods
+        case maxAgeSeconds = "max_age_seconds"
         case serverMin = "server_min"
         case serverMax = "server_max"
         case serverVersion = "server_version"

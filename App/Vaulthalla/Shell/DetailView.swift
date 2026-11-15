@@ -12,6 +12,10 @@ struct DetailView: View {
                     .navigationTitle(model.selectedSection.title)
                     .navigationSubtitle(node.displayName)
                     .id(node.id)
+            } else if model.allNodesPage == .cloud, model.cloud != nil {
+                CloudView(section: model.cloudSection)
+                    .navigationTitle(model.cloudSection.title)
+                    .navigationSubtitle("Vaulthalla Cloud")
             } else if model.allNodesPage == .recoveryKeys {
                 SensitiveGate(title: "Recovery Keys") { AllRecoveryKeysView() }
                     .navigationTitle("Recovery Keys")

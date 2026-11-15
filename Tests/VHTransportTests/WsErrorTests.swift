@@ -24,6 +24,20 @@ import VHCore
         #expect(classify("brand_new_code")?.code == "brand_new_code")
     }
 
+    @Test func stepUpRequiredCarriesItsFamilyAndTarget() {
+        let stepUp = WsStepUp(family: "keys", target: "cloud.key.confirm:2:abcd", methods: ["device_approval", "console_approval"],
+                              maxAgeSeconds: 300)
+        let error = classify("step_up_required", "Approve this on a device", command: "cloud.key.confirm",
+                             data: WsError.Refusal(code: "step_up_required", stepUp: stepUp))
+        #expect(error == .stepUpRequired(stepUp, message: "Approve this on a device"))
+        #expect(error?.code == "step_up_required" && error?.message == "Approve this on a device")
+        #expect(stepUp.approvalKeyMayAnswer)
+        #expect(!WsStepUp(family: "secrets", target: nil, methods: ["console_approval"]).approvalKeyMayAnswer)
+        #expect(!WsStepUp(family: "keys", target: "x", methods: ["console_approval"]).approvalKeyMayAnswer)
+        // Without the data a daemon should send, it stays an ordinary refusal.
+        #expect(classify("step_up_required", "x") == .refused(code: "step_up_required", message: "x"))
+    }
+
     @Test func untypedCommandsUseEveryDeclaredConfirmation() {
         #expect(classify("user_delete", "q", command: "not.in.the.contract") == .needsConfirmation(code: "user_delete",
                                                                                                     message: "q"))

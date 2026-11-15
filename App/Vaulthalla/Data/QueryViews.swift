@@ -32,7 +32,7 @@ enum QueryProblem: Equatable {
         case .timeout: self = .noAnswerYet
         case .contractMismatch: self = .mismatch
         case .unauthorized(let message), .invalid(let message), .conflict(let message), .error(let message),
-             .needsConfirmation(_, let message), .refused(_, let message):
+             .needsConfirmation(_, let message), .refused(_, let message), .stepUpRequired(_, let message):
             self = .failed(message)
         case .unknownCommand: self = .failed(CompatibilityWords.unknownCommand)
         case .protocolUnsupported(let mismatch): self = .failed(mismatch.message)

@@ -1,0 +1,1866 @@
+{
+  "account_key": {
+    "chain_negative": [
+      {
+        "chain": [],
+        "description": "no statement",
+        "error": "bad_statement",
+        "index": 0,
+        "name": "empty"
+      },
+      {
+        "chain": [
+          {
+            "previous_signature_hex": null,
+            "signature_hex": "90c73e3d944ecc51ad4cfd758661b0e0e30ceb35efc8a87bcab3043228940a7e4554fc51d9df60989e5e0595adeca6614f9f338171fb1bc1742b11bcac33570b",
+            "statement": "vhc-account-key-v1\n0b7e4d21-6a3c-4f8e-b1d2-93c4e5f60718\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+          }
+        ],
+        "description": "a chain for another account",
+        "error": "account_mismatch",
+        "index": 0,
+        "name": "another_account"
+      },
+      {
+        "chain": [
+          {
+            "previous_signature_hex": null,
+            "signature_hex": "4e7f05cc1cdb0b7dc357826b765078ea170031ae4eb495bbcedf8d0e82ba6ea055125277e13f2305eecf44a4b03544d995bd5d48c41746183fbe9e02da2a3402",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\nsxbASpSvrDiEG4v0WoYWatozXQk0BNO91ebrI0iXi0Y\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+          }
+        ],
+        "description": "the X25519 line replaced after signing",
+        "error": "bad_signature",
+        "index": 0,
+        "name": "altered_line"
+      },
+      {
+        "chain": [
+          {
+            "previous_signature_hex": null,
+            "signature_hex": "b9ed06fd3154dc6da9738d03e3afd54a4336260ac7c815bff784225ab787edbae06440fea340b4b42249ac28b634b8a740149a90596140247cd2e70aa1fa5b06",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+          }
+        ],
+        "description": "a statement signed by a key it doesn't name",
+        "error": "bad_signature",
+        "index": 0,
+        "name": "signed_by_another_key"
+      },
+      {
+        "chain": [
+          {
+            "previous_signature_hex": "b9ed06fd3154dc6da9738d03e3afd54a4336260ac7c815bff784225ab787edbae06440fea340b4b42249ac28b634b8a740149a90596140247cd2e70aa1fa5b06",
+            "signature_hex": "4e7f05cc1cdb0b7dc357826b765078ea170031ae4eb495bbcedf8d0e82ba6ea055125277e13f2305eecf44a4b03544d995bd5d48c41746183fbe9e02da2a3402",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+          }
+        ],
+        "description": "generation 1 has no previous key",
+        "error": "bad_previous_signature",
+        "index": 0,
+        "name": "previous_signature_on_generation_1"
+      },
+      {
+        "chain": [
+          {
+            "previous_signature_hex": null,
+            "signature_hex": "4e7f05cc1cdb0b7dc357826b765078ea170031ae4eb495bbcedf8d0e82ba6ea055125277e13f2305eecf44a4b03544d995bd5d48c41746183fbe9e02da2a3402",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+          },
+          {
+            "previous_signature_hex": null,
+            "signature_hex": "009c7cb542f750d4f943ff6f8059c82ceceb3c5842da0dab2be75ec8c2ae932dce09915b9094355ecb5c3de92618dd4a69ac57da4229f549600e7c644635ab0c",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n3\nXTiFWLsPAN5UJIn01FHlM0APXk7cEyEtHc_SvDWSf00\n0j9eiwJlQJCEJYEr9rzc6luiYf9aNzpQmynlFE1REtM\n741a-97c7-d21a-4099-45fd-efcb-4ad4-825c\ncompromise"
+          }
+        ],
+        "description": "generation 2 is missing",
+        "error": "generation_gap",
+        "index": 1,
+        "name": "skipped_generation"
+      },
+      {
+        "chain": [
+          {
+            "previous_signature_hex": "57d057391f070ea28310fff57448fdb90d9c8f10ea9ccc2e3e4a9730969441eb72e0f36902ad20490af888e09f9b22121cbaed32161418710f3ac8642dabfd07",
+            "signature_hex": "667052fa8bb04774d1f9210716555c994055cc78477fc69b69f59bad9dcb378fd42436e38ff1b6ad6690d59cfd1e3a90d1cbaf374809c919f46ee09259a6f50f",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine"
+          },
+          {
+            "previous_signature_hex": null,
+            "signature_hex": "4e7f05cc1cdb0b7dc357826b765078ea170031ae4eb495bbcedf8d0e82ba6ea055125277e13f2305eecf44a4b03544d995bd5d48c41746183fbe9e02da2a3402",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+          }
+        ],
+        "description": "generation 2 first",
+        "error": "generation_gap",
+        "index": 0,
+        "name": "reordered"
+      },
+      {
+        "chain": [
+          {
+            "previous_signature_hex": null,
+            "signature_hex": "4e7f05cc1cdb0b7dc357826b765078ea170031ae4eb495bbcedf8d0e82ba6ea055125277e13f2305eecf44a4b03544d995bd5d48c41746183fbe9e02da2a3402",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+          },
+          {
+            "previous_signature_hex": null,
+            "signature_hex": "4e7f05cc1cdb0b7dc357826b765078ea170031ae4eb495bbcedf8d0e82ba6ea055125277e13f2305eecf44a4b03544d995bd5d48c41746183fbe9e02da2a3402",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+          }
+        ],
+        "description": "generation 1 twice",
+        "error": "generation_gap",
+        "index": 1,
+        "name": "repeated_generation"
+      },
+      {
+        "chain": [
+          {
+            "previous_signature_hex": null,
+            "signature_hex": "4e7f05cc1cdb0b7dc357826b765078ea170031ae4eb495bbcedf8d0e82ba6ea055125277e13f2305eecf44a4b03544d995bd5d48c41746183fbe9e02da2a3402",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+          },
+          {
+            "previous_signature_hex": "62d591bd507475b7d771a5e2c5e35f8bc5ee616015d3675ee51799156047afe1c8713db2f380265de4fa2e2f6f142fda0c168f0d917dae3d471a189a50e9c908",
+            "signature_hex": "04d47c54306232b22b4c46304c1cbd4e0553bf21642d95a28c11406aa40b984c3c1624e1a3aa9ef23aa9e0c15829195f0117fc691777e3cc454a25e3a341470f",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nda49-a4b1-ed9c-aeeb-a9dc-e8d0-3499-db71\nroutine"
+          }
+        ],
+        "description": "generation 2 names a fingerprint that isn't generation 1's",
+        "error": "previous_mismatch",
+        "index": 1,
+        "name": "previous_fingerprint_mismatch"
+      },
+      {
+        "chain": [
+          {
+            "previous_signature_hex": null,
+            "signature_hex": "4e7f05cc1cdb0b7dc357826b765078ea170031ae4eb495bbcedf8d0e82ba6ea055125277e13f2305eecf44a4b03544d995bd5d48c41746183fbe9e02da2a3402",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+          },
+          {
+            "previous_signature_hex": "d7e6d157756b768b9f860b595728379b2d406406585b5af626697edb7a7daae9d81625dd6ce6f410ea8bcac213b166d8cfef3f46143254fb7a5b7be1879a3009",
+            "signature_hex": "667052fa8bb04774d1f9210716555c994055cc78477fc69b69f59bad9dcb378fd42436e38ff1b6ad6690d59cfd1e3a90d1cbaf374809c919f46ee09259a6f50f",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine"
+          }
+        ],
+        "description": "generation 2's previous signature by a key that isn't generation 1's",
+        "error": "bad_previous_signature",
+        "index": 1,
+        "name": "bad_previous_signature"
+      },
+      {
+        "chain": [
+          {
+            "previous_signature_hex": null,
+            "signature_hex": "4e7f05cc1cdb0b7dc357826b765078ea170031ae4eb495bbcedf8d0e82ba6ea055125277e13f2305eecf44a4b03544d995bd5d48c41746183fbe9e02da2a3402",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+          },
+          {
+            "previous_signature_hex": "57d057391f070ea28310fff57448fdb90d9c8f10ea9ccc2e3e4a9730969441eb72e0f36902ad20490af888e09f9b22121cbaed32161418710f3ac8642dabfd07",
+            "signature_hex": "667052fa8bb04774d1f9210716555c994055cc78477fc69b69f59bad9dcb378fd42436e38ff1b6ad6690d59cfd1e3a90d1cbaf374809c919f46ee09259a6f50f",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine\n"
+          }
+        ],
+        "description": "a trailing newline on generation 2",
+        "error": "bad_statement",
+        "index": 1,
+        "name": "parse_error_in_chain"
+      }
+    ],
+    "fingerprint_text": {
+      "canonical": "b4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0",
+      "lenient_accepted": [
+        "B4AD-7378-E4DC-5D1D-118B-7242-10B4-31B0",
+        "b4ad7378e4dc5d1d118b724210b431b0",
+        "b4ad 7378 e4dc 5d1d 118b 7242 10b4 31b0"
+      ],
+      "refused": [
+        "b4ad-7378-e4dc-5d1d-118b-7242-10b4-31b",
+        "b4ad-7378-e4dc-5d1d-118b-7242-10b4-31b00",
+        "b4gd-7378-e4dc-5d1d-118b-7242-10b4-31b0"
+      ]
+    },
+    "follow": [
+      {
+        "chain": [
+          {
+            "previous_signature_hex": null,
+            "signature_hex": "4e7f05cc1cdb0b7dc357826b765078ea170031ae4eb495bbcedf8d0e82ba6ea055125277e13f2305eecf44a4b03544d995bd5d48c41746183fbe9e02da2a3402",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+          },
+          {
+            "previous_signature_hex": "57d057391f070ea28310fff57448fdb90d9c8f10ea9ccc2e3e4a9730969441eb72e0f36902ad20490af888e09f9b22121cbaed32161418710f3ac8642dabfd07",
+            "signature_hex": "667052fa8bb04774d1f9210716555c994055cc78477fc69b69f59bad9dcb378fd42436e38ff1b6ad6690d59cfd1e3a90d1cbaf374809c919f46ee09259a6f50f",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine"
+          }
+        ],
+        "expect": {
+          "accepted": 2,
+          "newest": 2
+        },
+        "name": "rotation_followed",
+        "pin": {
+          "fingerprint_hex": "b4ad7378e4dc5d1d118b724210b431b0",
+          "generation": 1
+        }
+      },
+      {
+        "chain": [
+          {
+            "previous_signature_hex": null,
+            "signature_hex": "4e7f05cc1cdb0b7dc357826b765078ea170031ae4eb495bbcedf8d0e82ba6ea055125277e13f2305eecf44a4b03544d995bd5d48c41746183fbe9e02da2a3402",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+          },
+          {
+            "previous_signature_hex": "57d057391f070ea28310fff57448fdb90d9c8f10ea9ccc2e3e4a9730969441eb72e0f36902ad20490af888e09f9b22121cbaed32161418710f3ac8642dabfd07",
+            "signature_hex": "667052fa8bb04774d1f9210716555c994055cc78477fc69b69f59bad9dcb378fd42436e38ff1b6ad6690d59cfd1e3a90d1cbaf374809c919f46ee09259a6f50f",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine"
+          },
+          {
+            "previous_signature_hex": null,
+            "signature_hex": "009c7cb542f750d4f943ff6f8059c82ceceb3c5842da0dab2be75ec8c2ae932dce09915b9094355ecb5c3de92618dd4a69ac57da4229f549600e7c644635ab0c",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n3\nXTiFWLsPAN5UJIn01FHlM0APXk7cEyEtHc_SvDWSf00\n0j9eiwJlQJCEJYEr9rzc6luiYf9aNzpQmynlFE1REtM\n741a-97c7-d21a-4099-45fd-efcb-4ad4-825c\ncompromise"
+          }
+        ],
+        "expect": {
+          "accepted": 2,
+          "newest": 3
+        },
+        "name": "replacement_waits",
+        "pin": {
+          "fingerprint_hex": "b4ad7378e4dc5d1d118b724210b431b0",
+          "generation": 1
+        }
+      },
+      {
+        "chain": [
+          {
+            "previous_signature_hex": null,
+            "signature_hex": "4e7f05cc1cdb0b7dc357826b765078ea170031ae4eb495bbcedf8d0e82ba6ea055125277e13f2305eecf44a4b03544d995bd5d48c41746183fbe9e02da2a3402",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+          },
+          {
+            "previous_signature_hex": "57d057391f070ea28310fff57448fdb90d9c8f10ea9ccc2e3e4a9730969441eb72e0f36902ad20490af888e09f9b22121cbaed32161418710f3ac8642dabfd07",
+            "signature_hex": "667052fa8bb04774d1f9210716555c994055cc78477fc69b69f59bad9dcb378fd42436e38ff1b6ad6690d59cfd1e3a90d1cbaf374809c919f46ee09259a6f50f",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine"
+          }
+        ],
+        "expect": {
+          "accepted": 2,
+          "newest": 2
+        },
+        "name": "unchanged",
+        "pin": {
+          "fingerprint_hex": "741a97c7d21a409945fdefcb4ad4825c",
+          "generation": 2
+        }
+      },
+      {
+        "chain": [
+          {
+            "previous_signature_hex": null,
+            "signature_hex": "4e7f05cc1cdb0b7dc357826b765078ea170031ae4eb495bbcedf8d0e82ba6ea055125277e13f2305eecf44a4b03544d995bd5d48c41746183fbe9e02da2a3402",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+          },
+          {
+            "previous_signature_hex": "57d057391f070ea28310fff57448fdb90d9c8f10ea9ccc2e3e4a9730969441eb72e0f36902ad20490af888e09f9b22121cbaed32161418710f3ac8642dabfd07",
+            "signature_hex": "667052fa8bb04774d1f9210716555c994055cc78477fc69b69f59bad9dcb378fd42436e38ff1b6ad6690d59cfd1e3a90d1cbaf374809c919f46ee09259a6f50f",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine"
+          },
+          {
+            "previous_signature_hex": null,
+            "signature_hex": "009c7cb542f750d4f943ff6f8059c82ceceb3c5842da0dab2be75ec8c2ae932dce09915b9094355ecb5c3de92618dd4a69ac57da4229f549600e7c644635ab0c",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n3\nXTiFWLsPAN5UJIn01FHlM0APXk7cEyEtHc_SvDWSf00\n0j9eiwJlQJCEJYEr9rzc6luiYf9aNzpQmynlFE1REtM\n741a-97c7-d21a-4099-45fd-efcb-4ad4-825c\ncompromise"
+          }
+        ],
+        "expect": {
+          "accepted": 3,
+          "newest": 3
+        },
+        "name": "confirmed_replacement",
+        "pin": {
+          "fingerprint_hex": "5592b9ec71e9baa95fb10de7e312e82a",
+          "generation": 3
+        }
+      },
+      {
+        "chain": [
+          {
+            "previous_signature_hex": null,
+            "signature_hex": "4e7f05cc1cdb0b7dc357826b765078ea170031ae4eb495bbcedf8d0e82ba6ea055125277e13f2305eecf44a4b03544d995bd5d48c41746183fbe9e02da2a3402",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+          },
+          {
+            "previous_signature_hex": null,
+            "signature_hex": "d6b06d3b78f6042e027736a70fdc5814f1e9214e7bdbce923db42a9149e2a451b940dadda8bf324f102d1813190a0d1aeaeea90515847c906db86224f6b23d0f",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\nsxbASpSvrDiEG4v0WoYWatozXQk0BNO91ebrI0iXi0Y\nGfpEhTztLjU2xrAgjeFSRigqafL4zFRLTpiABK7h3HI\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine"
+          }
+        ],
+        "expect": {
+          "accepted": 1,
+          "newest": 2
+        },
+        "name": "unsigned_substitute_waits",
+        "pin": {
+          "fingerprint_hex": "b4ad7378e4dc5d1d118b724210b431b0",
+          "generation": 1
+        }
+      },
+      {
+        "chain": [
+          {
+            "previous_signature_hex": null,
+            "signature_hex": "4e7f05cc1cdb0b7dc357826b765078ea170031ae4eb495bbcedf8d0e82ba6ea055125277e13f2305eecf44a4b03544d995bd5d48c41746183fbe9e02da2a3402",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+          }
+        ],
+        "expect": {
+          "error": "rollback"
+        },
+        "name": "rollback",
+        "pin": {
+          "fingerprint_hex": "741a97c7d21a409945fdefcb4ad4825c",
+          "generation": 2
+        }
+      },
+      {
+        "chain": [
+          {
+            "previous_signature_hex": null,
+            "signature_hex": "4e7f05cc1cdb0b7dc357826b765078ea170031ae4eb495bbcedf8d0e82ba6ea055125277e13f2305eecf44a4b03544d995bd5d48c41746183fbe9e02da2a3402",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+          },
+          {
+            "previous_signature_hex": null,
+            "signature_hex": "d6b06d3b78f6042e027736a70fdc5814f1e9214e7bdbce923db42a9149e2a451b940dadda8bf324f102d1813190a0d1aeaeea90515847c906db86224f6b23d0f",
+            "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\nsxbASpSvrDiEG4v0WoYWatozXQk0BNO91ebrI0iXi0Y\nGfpEhTztLjU2xrAgjeFSRigqafL4zFRLTpiABK7h3HI\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine"
+          }
+        ],
+        "expect": {
+          "error": "pin_mismatch"
+        },
+        "name": "substitute_under_pinned_generation",
+        "pin": {
+          "fingerprint_hex": "741a97c7d21a409945fdefcb4ad4825c",
+          "generation": 2
+        }
+      }
+    ],
+    "generations": [
+      {
+        "ed25519_pk_hex": "f4bb041dc2ca0a48abd1cbd642369a81ee97de80eeca1f276877ba294fe9438d",
+        "fingerprint_hex": "b4ad7378e4dc5d1d118b724210b431b0",
+        "fingerprint_text": "b4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0",
+        "link": "initial",
+        "name": "generation_1_initial",
+        "previous_signature_hex": null,
+        "seed_hex": "c8eb6960d3a273e9c2f79e98efb235ba",
+        "seed_text": "s3npjr6km9sykgqqktcezchnq8z",
+        "signature_hex": "4e7f05cc1cdb0b7dc357826b765078ea170031ae4eb495bbcedf8d0e82ba6ea055125277e13f2305eecf44a4b03544d995bd5d48c41746183fbe9e02da2a3402",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial",
+        "x25519_pk_hex": "daf1a661f9fb4ac2bc6bb42355e0751ecb10ed694b3f237dfea9e748fe8b7e32"
+      },
+      {
+        "ed25519_pk_hex": "5848a041e45368a8b39a42ee8f6c7a2040a15dc70a75509ac866e7108740ead1",
+        "fingerprint_hex": "741a97c7d21a409945fdefcb4ad4825c",
+        "fingerprint_text": "741a-97c7-d21a-4099-45fd-efcb-4ad4-825c",
+        "link": "rotation",
+        "name": "generation_2_rotation",
+        "previous_signature_hex": "57d057391f070ea28310fff57448fdb90d9c8f10ea9ccc2e3e4a9730969441eb72e0f36902ad20490af888e09f9b22121cbaed32161418710f3ac8642dabfd07",
+        "seed_hex": "fd85a10423974010b02b4dc1fd33cd24",
+        "seed_text": "zp2t2113jx011c1b9q0ztcyd4g6",
+        "signature_hex": "667052fa8bb04774d1f9210716555c994055cc78477fc69b69f59bad9dcb378fd42436e38ff1b6ad6690d59cfd1e3a90d1cbaf374809c919f46ee09259a6f50f",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "x25519_pk_hex": "f18e3afbaf7fd3ba0f3d0dffcb4a3d77706bd7268d4b07ace9bd826cb913ff12"
+      },
+      {
+        "ed25519_pk_hex": "d23f5e8b026540908425812bf6bcdcea5ba261ff5a373a509b29e5144d5112d3",
+        "fingerprint_hex": "5592b9ec71e9baa95fb10de7e312e82a",
+        "fingerprint_text": "5592-b9ec-71e9-baa9-5fb1-0de7-e312-e82a",
+        "link": "replacement",
+        "name": "generation_3_replacement",
+        "previous_signature_hex": null,
+        "seed_hex": "82e39c65e465b8871755f195543cf9f6",
+        "seed_text": "gbhsrsf4cpw8e5tny6an8f7syr3",
+        "signature_hex": "009c7cb542f750d4f943ff6f8059c82ceceb3c5842da0dab2be75ec8c2ae932dce09915b9094355ecb5c3de92618dd4a69ac57da4229f549600e7c644635ab0c",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n3\nXTiFWLsPAN5UJIn01FHlM0APXk7cEyEtHc_SvDWSf00\n0j9eiwJlQJCEJYEr9rzc6luiYf9aNzpQmynlFE1REtM\n741a-97c7-d21a-4099-45fd-efcb-4ad4-825c\ncompromise",
+        "x25519_pk_hex": "5d388558bb0f00de542489f4d451e533400f5e4edc13212d1dcfd2bc35927f4d"
+      }
+    ],
+    "public_id": "5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e",
+    "statement_negative": [
+      {
+        "description": "a newline after the reason",
+        "error": "bad_statement",
+        "name": "trailing_newline",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial\n"
+      },
+      {
+        "description": "CRLF line endings",
+        "error": "bad_statement",
+        "name": "crlf",
+        "statement": "vhc-account-key-v1\r\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\r\n1\r\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\r\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\r\n\r\ninitial"
+      },
+      {
+        "description": "a later version",
+        "error": "unsupported_version",
+        "name": "unsupported_version",
+        "statement": "vhc-account-key-v2\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+      },
+      {
+        "description": "not a statement",
+        "error": "bad_statement",
+        "name": "bad_magic",
+        "statement": "vhc-account-key\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+      },
+      {
+        "description": "the reason line is missing",
+        "error": "bad_statement",
+        "name": "six_lines",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n"
+      },
+      {
+        "description": "a non-canonical UUID",
+        "error": "bad_public_id",
+        "name": "upper_case_public_id",
+        "statement": "vhc-account-key-v1\n5F0C3A3E-8D1B-4C2A-9E47-6B1D2F3A4C5E\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+      },
+      {
+        "description": "no hyphens",
+        "error": "bad_public_id",
+        "name": "unhyphenated_public_id",
+        "statement": "vhc-account-key-v1\n5f0c3a3e8d1b4c2a9e476b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+      },
+      {
+        "description": "generations start at 1",
+        "error": "bad_generation",
+        "name": "generation_zero",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n0\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+      },
+      {
+        "description": "a leading zero",
+        "error": "bad_generation",
+        "name": "generation_leading_zero",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n01\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+      },
+      {
+        "description": "above 2^32 - 1",
+        "error": "bad_generation",
+        "name": "generation_too_large",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n4294967296\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+      },
+      {
+        "description": "a sign",
+        "error": "bad_generation",
+        "name": "generation_signed",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n+1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+      },
+      {
+        "description": "padding",
+        "error": "bad_base64url",
+        "name": "base64url_padded",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI=\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+      },
+      {
+        "description": "a symbol of the standard alphabet",
+        "error": "bad_base64url",
+        "name": "base64url_standard_alphabet",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n+vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+      },
+      {
+        "description": "non-zero trailing bits: another spelling of the same key",
+        "error": "bad_base64url",
+        "name": "base64url_trailing_bits",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjJ\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+      },
+      {
+        "description": "a 31-byte key",
+        "error": "bad_key",
+        "name": "key_too_short",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6Lfg\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+      },
+      {
+        "description": "u = 0, a low-order point",
+        "error": "bad_key",
+        "name": "x25519_low_order_zero",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\nAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+      },
+      {
+        "description": "u = 1, low order",
+        "error": "bad_key",
+        "name": "x25519_low_order_one",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\nAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+      },
+      {
+        "description": "u = p + 9, a second spelling of the base point",
+        "error": "bad_key",
+        "name": "x25519_non_canonical",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n9v_______________________________________38\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial"
+      },
+      {
+        "description": "a 33-byte key",
+        "error": "bad_key",
+        "name": "ed25519_too_long",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40A\n\ninitial"
+      },
+      {
+        "description": "generation 1 names a previous fingerprint",
+        "error": "bad_previous",
+        "name": "previous_on_generation_1",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n741a-97c7-d21a-4099-45fd-efcb-4ad4-825c\ninitial"
+      },
+      {
+        "description": "generation 2 names none",
+        "error": "bad_previous",
+        "name": "previous_missing",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\n\nroutine"
+      },
+      {
+        "description": "a non-canonical fingerprint",
+        "error": "bad_previous",
+        "name": "previous_upper_case",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nB4AD-7378-E4DC-5D1D-118B-7242-10B4-31B0\nroutine"
+      },
+      {
+        "description": "no separators",
+        "error": "bad_previous",
+        "name": "previous_no_separators",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad7378e4dc5d1d118b724210b431b0\nroutine"
+      },
+      {
+        "description": "generation 1 is initial",
+        "error": "bad_reason",
+        "name": "reason_routine_on_generation_1",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\nroutine"
+      },
+      {
+        "description": "only generation 1 is",
+        "error": "bad_reason",
+        "name": "reason_initial_on_generation_2",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\ninitial"
+      },
+      {
+        "description": "reasons are lower case",
+        "error": "bad_reason",
+        "name": "reason_unknown",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nRoutine"
+      }
+    ]
+  },
+  "codes": {
+    "refused": [
+      {
+        "kind": "request",
+        "name": "request_id_upper_case",
+        "payload": "{}",
+        "request_id": "0123456789ABCDEFGHJKMNPQRS"
+      },
+      {
+        "kind": "request",
+        "name": "request_id_short",
+        "payload": "{}",
+        "request_id": "0123456789abcdefghjkmnpqr"
+      },
+      {
+        "kind": "request",
+        "name": "request_id_symbol_u",
+        "payload": "{}",
+        "request_id": "0123456789abcdefghjkmnpqru"
+      },
+      {
+        "kind": "request",
+        "name": "request_id_uuid",
+        "payload": "{}",
+        "request_id": "0f8fad5b-d9cb-469f-a165-70867728950e"
+      },
+      {
+        "kind": "transfer",
+        "name": "transfer_public_id_upper_case",
+        "public_id": "0F8FAD5B-D9CB-469F-A165-70867728950E",
+        "temporary_public_key_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+      },
+      {
+        "kind": "transfer",
+        "name": "transfer_key_short",
+        "public_id": "0f8fad5b-d9cb-469f-a165-70867728950e",
+        "temporary_public_key_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+      },
+      {
+        "kind": "transfer",
+        "name": "transfer_key_compressed",
+        "public_id": "0f8fad5b-d9cb-469f-a165-70867728950e",
+        "temporary_public_key_hex": "020102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+      },
+      {
+        "kind": "transfer",
+        "name": "transfer_key_without_prefix",
+        "public_id": "0f8fad5b-d9cb-469f-a165-70867728950e",
+        "temporary_public_key_hex": "050102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f200102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+      },
+      {
+        "kind": "restore",
+        "name": "restore_vault_uid_upper_case",
+        "temporary_public_key_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+        "vault_uid": "0123456789ABCDEFGHJKMNPQRS"
+      },
+      {
+        "kind": "restore",
+        "name": "restore_key_p256",
+        "temporary_public_key_hex": "04f7771922bc1ae378beb309d3447fe83d251e68d56aafcc10359869eb7b1924648cc2373a1afd4ef670fc36cf55f5cee5733a008cd0e72ca5684f19d3976543a4",
+        "vault_uid": "0123456789abcdefghjkmnpqrs"
+      }
+    ],
+    "request": [
+      {
+        "code": "4c0c-4ab7-e42c-29ef",
+        "name": "cloud_design_vector",
+        "payload": "{\"generation\":1}",
+        "request_id": "0123456789abcdefghjkmnpqrs"
+      },
+      {
+        "code": "e1fd-425f-f3a1-e082",
+        "name": "empty_payload",
+        "payload": "",
+        "request_id": "y72q63b9fvnpm2p08qaa5g75qr"
+      },
+      {
+        "code": "6a4d-f579-bf25-a1c3",
+        "name": "utf8_payload",
+        "payload": "{\"label\":\"1Password: Familie Müller ✓\",\"sequence\":2}",
+        "request_id": "y72q63b9fvnpm2p08qaa5g75qr"
+      }
+    ],
+    "restore": [
+      {
+        "code": "6adc-ef02-f4a4-4fd0",
+        "name": "cloud_design_vector",
+        "temporary_public_key_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20",
+        "vault_uid": "0123456789abcdefghjkmnpqrs"
+      },
+      {
+        "code": "314a-ad21-9abc-aa1a",
+        "name": "x25519",
+        "temporary_public_key_hex": "2006e7b5a0fe855a87765e28e1f5ae4e609eb048a39f5b4ae30f70f04605d941",
+        "vault_uid": "gr3d3m7g2yvf6aktqg3jkk3e80"
+      }
+    ],
+    "transfer": [
+      {
+        "code": "a50d-b256-d985-6e9e",
+        "name": "cloud_design_vector",
+        "public_id": "0f8fad5b-d9cb-469f-a165-70867728950e",
+        "temporary_public_key_hex": "0102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f20"
+      },
+      {
+        "code": "f73a-1f0c-cb9d-acd7",
+        "name": "x25519",
+        "public_id": "5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e",
+        "temporary_public_key_hex": "7d8e6c7afa1287e608f881fe0f7298b39f8b21dbab90892da8b7d3b477950762"
+      },
+      {
+        "code": "9c04-b448-0740-cfdd",
+        "name": "p256",
+        "public_id": "5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e",
+        "temporary_public_key_hex": "04f7771922bc1ae378beb309d3447fe83d251e68d56aafcc10359869eb7b1924648cc2373a1afd4ef670fc36cf55f5cee5733a008cd0e72ca5684f19d3976543a4"
+      }
+    ]
+  },
+  "conventions": {
+    "errors": "a negative vector names the first check that fails, in the order of the format's header",
+    "hex": "lower case",
+    "integers": "big-endian",
+    "material": "seeds, keys and ephemeral keys are the first n bytes of SHA-256 chained over a label ('vhc-vector/...'); production draws them from the CSPRNG",
+    "public_id": "5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e"
+  },
+  "generated_by": "vectors/vhc_vectors.py",
+  "holder_proof": {
+    "negative": [
+      {
+        "description": "an upper-case installation id",
+        "error": "bad_installation_id",
+        "holder_pk_hex": "9cb2115a138ba4ff86a3d47b8e9248faddd360091e9ce23a516ed90fcbec7c46",
+        "installation_id": "5KZG18HKSM5S6XR7CXX36DSGZC",
+        "name": "installation_upper_case",
+        "signature_hex": "915648bbe60e5555cb109cc957936e76bbf30e85aa7a2c918b295d8de2ffcb40e36ad3b1ef9a4591b69693a895d037c8f4b51a625caa72752466b7a5187fb20a",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 1
+      },
+      {
+        "description": "25 symbols",
+        "error": "bad_installation_id",
+        "holder_pk_hex": "9cb2115a138ba4ff86a3d47b8e9248faddd360091e9ce23a516ed90fcbec7c46",
+        "installation_id": "5kzg18hksm5s6xr7cxx36dsgz",
+        "name": "installation_short",
+        "signature_hex": "915648bbe60e5555cb109cc957936e76bbf30e85aa7a2c918b295d8de2ffcb40e36ad3b1ef9a4591b69693a895d037c8f4b51a625caa72752466b7a5187fb20a",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 1
+      },
+      {
+        "description": "non-zero padding bits: another spelling",
+        "error": "bad_installation_id",
+        "holder_pk_hex": "9cb2115a138ba4ff86a3d47b8e9248faddd360091e9ce23a516ed90fcbec7c46",
+        "installation_id": "5kzg18hksm5s6xr7cxx36dsgzd",
+        "name": "installation_padding_bits",
+        "signature_hex": "915648bbe60e5555cb109cc957936e76bbf30e85aa7a2c918b295d8de2ffcb40e36ad3b1ef9a4591b69693a895d037c8f4b51a625caa72752466b7a5187fb20a",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 1
+      },
+      {
+        "description": "'i' isn't a base32 symbol",
+        "error": "bad_installation_id",
+        "holder_pk_hex": "9cb2115a138ba4ff86a3d47b8e9248faddd360091e9ce23a516ed90fcbec7c46",
+        "installation_id": "ikzg18hksm5s6xr7cxx36dsgzc",
+        "name": "installation_symbol_i",
+        "signature_hex": "915648bbe60e5555cb109cc957936e76bbf30e85aa7a2c918b295d8de2ffcb40e36ad3b1ef9a4591b69693a895d037c8f4b51a625caa72752466b7a5187fb20a",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 1
+      },
+      {
+        "description": "suite 0",
+        "error": "unsupported_suite",
+        "holder_pk_hex": "9cb2115a138ba4ff86a3d47b8e9248faddd360091e9ce23a516ed90fcbec7c46",
+        "installation_id": "5kzg18hksm5s6xr7cxx36dsgzc",
+        "name": "suite_0",
+        "signature_hex": "915648bbe60e5555cb109cc957936e76bbf30e85aa7a2c918b295d8de2ffcb40e36ad3b1ef9a4591b69693a895d037c8f4b51a625caa72752466b7a5187fb20a",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 0
+      },
+      {
+        "description": "suite 3",
+        "error": "unsupported_suite",
+        "holder_pk_hex": "9cb2115a138ba4ff86a3d47b8e9248faddd360091e9ce23a516ed90fcbec7c46",
+        "installation_id": "5kzg18hksm5s6xr7cxx36dsgzc",
+        "name": "suite_3",
+        "signature_hex": "915648bbe60e5555cb109cc957936e76bbf30e85aa7a2c918b295d8de2ffcb40e36ad3b1ef9a4591b69693a895d037c8f4b51a625caa72752466b7a5187fb20a",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 3
+      },
+      {
+        "description": "a 31-byte X25519 key",
+        "error": "bad_key",
+        "holder_pk_hex": "9cb2115a138ba4ff86a3d47b8e9248faddd360091e9ce23a516ed90fcbec7c",
+        "installation_id": "5kzg18hksm5s6xr7cxx36dsgzc",
+        "name": "x25519_short",
+        "signature_hex": "915648bbe60e5555cb109cc957936e76bbf30e85aa7a2c918b295d8de2ffcb40e36ad3b1ef9a4591b69693a895d037c8f4b51a625caa72752466b7a5187fb20a",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 1
+      },
+      {
+        "description": "u = 0, a low-order point",
+        "error": "bad_key",
+        "holder_pk_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+        "installation_id": "5kzg18hksm5s6xr7cxx36dsgzc",
+        "name": "x25519_zero",
+        "signature_hex": "915648bbe60e5555cb109cc957936e76bbf30e85aa7a2c918b295d8de2ffcb40e36ad3b1ef9a4591b69693a895d037c8f4b51a625caa72752466b7a5187fb20a",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 1
+      },
+      {
+        "description": "u = 1, low order (the cloud's registration accepts it today)",
+        "error": "bad_key",
+        "holder_pk_hex": "0100000000000000000000000000000000000000000000000000000000000000",
+        "installation_id": "5kzg18hksm5s6xr7cxx36dsgzc",
+        "name": "x25519_low_order_one",
+        "signature_hex": "915648bbe60e5555cb109cc957936e76bbf30e85aa7a2c918b295d8de2ffcb40e36ad3b1ef9a4591b69693a895d037c8f4b51a625caa72752466b7a5187fb20a",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 1
+      },
+      {
+        "description": "u = p + 9, a second spelling of the base point",
+        "error": "bad_key",
+        "holder_pk_hex": "f6ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f",
+        "installation_id": "5kzg18hksm5s6xr7cxx36dsgzc",
+        "name": "x25519_non_canonical",
+        "signature_hex": "915648bbe60e5555cb109cc957936e76bbf30e85aa7a2c918b295d8de2ffcb40e36ad3b1ef9a4591b69693a895d037c8f4b51a625caa72752466b7a5187fb20a",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 1
+      },
+      {
+        "description": "a 32-byte key under suite 2",
+        "error": "bad_key",
+        "holder_pk_hex": "9cb2115a138ba4ff86a3d47b8e9248faddd360091e9ce23a516ed90fcbec7c46",
+        "installation_id": "5kzg18hksm5s6xr7cxx36dsgzc",
+        "name": "x25519_key_as_p256",
+        "signature_hex": "915648bbe60e5555cb109cc957936e76bbf30e85aa7a2c918b295d8de2ffcb40e36ad3b1ef9a4591b69693a895d037c8f4b51a625caa72752466b7a5187fb20a",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 2
+      },
+      {
+        "description": "a compressed point",
+        "error": "bad_key",
+        "holder_pk_hex": "03b5941ccc82e0d02d09a2564be67ad4031397f5bcad69ac75d8aa33691255138a",
+        "installation_id": "5kzg18hksm5s6xr7cxx36dsgzc",
+        "name": "p256_compressed",
+        "signature_hex": "915648bbe60e5555cb109cc957936e76bbf30e85aa7a2c918b295d8de2ffcb40e36ad3b1ef9a4591b69693a895d037c8f4b51a625caa72752466b7a5187fb20a",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 2
+      },
+      {
+        "description": "65 bytes without the 0x04 prefix",
+        "error": "bad_key",
+        "holder_pk_hex": "05b5941ccc82e0d02d09a2564be67ad4031397f5bcad69ac75d8aa33691255138acd75f9db43c7a88fdf72057718a6ff58a5b3c4ab7b01f55e0ac6cca4b310ed67",
+        "installation_id": "5kzg18hksm5s6xr7cxx36dsgzc",
+        "name": "p256_without_prefix",
+        "signature_hex": "915648bbe60e5555cb109cc957936e76bbf30e85aa7a2c918b295d8de2ffcb40e36ad3b1ef9a4591b69693a895d037c8f4b51a625caa72752466b7a5187fb20a",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 2
+      },
+      {
+        "description": "a point off the curve (the cloud's registration accepts it today)",
+        "error": "bad_key",
+        "holder_pk_hex": "04b5941ccc82e0d02d09a2564be67ad4031397f5bcad69ac75d8aa33691255138acd75f9db43c7a88fdf72057718a6ff58a5b3c4ab7b01f55e0ac6cca4b310ed66",
+        "installation_id": "5kzg18hksm5s6xr7cxx36dsgzc",
+        "name": "p256_off_curve",
+        "signature_hex": "915648bbe60e5555cb109cc957936e76bbf30e85aa7a2c918b295d8de2ffcb40e36ad3b1ef9a4591b69693a895d037c8f4b51a625caa72752466b7a5187fb20a",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 2
+      },
+      {
+        "description": "the proof of another installation",
+        "error": "bad_signature",
+        "holder_pk_hex": "9cb2115a138ba4ff86a3d47b8e9248faddd360091e9ce23a516ed90fcbec7c46",
+        "installation_id": "3bhbwqsw9rnkvn4adgf4k4h6tw",
+        "name": "another_installation",
+        "signature_hex": "915648bbe60e5555cb109cc957936e76bbf30e85aa7a2c918b295d8de2ffcb40e36ad3b1ef9a4591b69693a895d037c8f4b51a625caa72752466b7a5187fb20a",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 1
+      },
+      {
+        "description": "the proof of another key",
+        "error": "bad_signature",
+        "holder_pk_hex": "a47968699b82618ac714f9b32e582cd7b9751733ca6f91594a9123139b959b6a",
+        "installation_id": "5kzg18hksm5s6xr7cxx36dsgzc",
+        "name": "another_holder_key",
+        "signature_hex": "915648bbe60e5555cb109cc957936e76bbf30e85aa7a2c918b295d8de2ffcb40e36ad3b1ef9a4591b69693a895d037c8f4b51a625caa72752466b7a5187fb20a",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 1
+      },
+      {
+        "description": "an X25519 key's proof presented for a P-256 key",
+        "error": "bad_signature",
+        "holder_pk_hex": "04b5941ccc82e0d02d09a2564be67ad4031397f5bcad69ac75d8aa33691255138acd75f9db43c7a88fdf72057718a6ff58a5b3c4ab7b01f55e0ac6cca4b310ed67",
+        "installation_id": "5kzg18hksm5s6xr7cxx36dsgzc",
+        "name": "another_suite",
+        "signature_hex": "915648bbe60e5555cb109cc957936e76bbf30e85aa7a2c918b295d8de2ffcb40e36ad3b1ef9a4591b69693a895d037c8f4b51a625caa72752466b7a5187fb20a",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 2
+      },
+      {
+        "description": "signed by a key that isn't the account's",
+        "error": "bad_signature",
+        "holder_pk_hex": "9cb2115a138ba4ff86a3d47b8e9248faddd360091e9ce23a516ed90fcbec7c46",
+        "installation_id": "5kzg18hksm5s6xr7cxx36dsgzc",
+        "name": "signed_by_another_key",
+        "signature_hex": "c1c7f24808acd0915283289ca2c7b81f85becb20f39ce2c140877270eb3e342bfe05a87d63040370cfb01546d613dd9d0acd17168832a444cb777abb8e6fa101",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 1
+      },
+      {
+        "description": "generation 2's text signed by generation 1",
+        "error": "bad_signature",
+        "holder_pk_hex": "9cb2115a138ba4ff86a3d47b8e9248faddd360091e9ce23a516ed90fcbec7c46",
+        "installation_id": "5kzg18hksm5s6xr7cxx36dsgzc",
+        "name": "signed_by_previous_generation",
+        "signature_hex": "4ae2b7d3c170d8c2d44850da179f0007cf1c5be711cbdf0000c1e47a8bcfd3d74928423aff5850633d6f6e40636ab04dba83a094fd4c0ca0db48f187171c0a0a",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 1
+      },
+      {
+        "description": "generation 1's proof checked against generation 2",
+        "error": "bad_signature",
+        "holder_pk_hex": "9cb2115a138ba4ff86a3d47b8e9248faddd360091e9ce23a516ed90fcbec7c46",
+        "installation_id": "5kzg18hksm5s6xr7cxx36dsgzc",
+        "name": "proof_of_previous_generation",
+        "signature_hex": "5a9d0f4d5cb252ba58097af9f9d48e304f1da4b8dfdcfb03577aaa5dafcb38c45884008f14c811d0c95cc173a9a069f4d3d4be101181028354b49fe09fb35408",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 1
+      },
+      {
+        "description": "the statement's own signature isn't a holder proof",
+        "error": "bad_signature",
+        "holder_pk_hex": "9cb2115a138ba4ff86a3d47b8e9248faddd360091e9ce23a516ed90fcbec7c46",
+        "installation_id": "5kzg18hksm5s6xr7cxx36dsgzc",
+        "name": "statement_signature",
+        "signature_hex": "667052fa8bb04774d1f9210716555c994055cc78477fc69b69f59bad9dcb378fd42436e38ff1b6ad6690d59cfd1e3a90d1cbaf374809c919f46ee09259a6f50f",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 1
+      },
+      {
+        "description": "one bit of the signature",
+        "error": "bad_signature",
+        "holder_pk_hex": "9cb2115a138ba4ff86a3d47b8e9248faddd360091e9ce23a516ed90fcbec7c46",
+        "installation_id": "5kzg18hksm5s6xr7cxx36dsgzc",
+        "name": "tampered",
+        "signature_hex": "915648bbe60e5555cb109dc957936e76bbf30e85aa7a2c918b295d8de2ffcb40e36ad3b1ef9a4591b69693a895d037c8f4b51a625caa72752466b7a5187fb20a",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 1
+      }
+    ],
+    "positive": [
+      {
+        "description": "a holder key in software (X25519)",
+        "holder_pk_hex": "9cb2115a138ba4ff86a3d47b8e9248faddd360091e9ce23a516ed90fcbec7c46",
+        "installation_id": "5kzg18hksm5s6xr7cxx36dsgzc",
+        "message": "vhc-account-key-holder-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n741a-97c7-d21a-4099-45fd-efcb-4ad4-825c\n5kzg18hksm5s6xr7cxx36dsgzc\n1\nnLIRWhOLpP-Go9R7jpJI-t3TYAkenOI6UW7ZD8vsfEY",
+        "name": "x25519_holder",
+        "seed_hex": "fd85a10423974010b02b4dc1fd33cd24",
+        "signature_hex": "915648bbe60e5555cb109cc957936e76bbf30e85aa7a2c918b295d8de2ffcb40e36ad3b1ef9a4591b69693a895d037c8f4b51a625caa72752466b7a5187fb20a",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 1
+      },
+      {
+        "description": "a Secure Enclave holder key (P-256)",
+        "holder_pk_hex": "04b5941ccc82e0d02d09a2564be67ad4031397f5bcad69ac75d8aa33691255138acd75f9db43c7a88fdf72057718a6ff58a5b3c4ab7b01f55e0ac6cca4b310ed67",
+        "installation_id": "5kzg18hksm5s6xr7cxx36dsgzc",
+        "message": "vhc-account-key-holder-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n741a-97c7-d21a-4099-45fd-efcb-4ad4-825c\n5kzg18hksm5s6xr7cxx36dsgzc\n2\nBLWUHMyC4NAtCaJWS-Z61AMTl_W8rWmsddiqM2kSVROKzXX520PHqI_fcgV3GKb_WKWzxKt7AfVeCsbMpLMQ7Wc",
+        "name": "p256_holder",
+        "seed_hex": "fd85a10423974010b02b4dc1fd33cd24",
+        "signature_hex": "108fa30517de89cb654529b008dfd4aa8b0091d9100f9156d72690951a3c901a8392925afe879934eaafd31073ba36c42345212f9f721e4baf3354e44dc7aa0c",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 2
+      },
+      {
+        "description": "vaulthalla-cloud tests/unit/keys/test_holder_proof.cpp: seed 0x01..0x10, holder key 0x20..0x3f",
+        "holder_pk_hex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+        "installation_id": "0123456789abcdefghjkmnpqr0",
+        "message": "vhc-account-key-holder-v1\n0f8fad5b-d9cb-469f-a165-70867728950e\n1\n241a-ef46-b4df-4b37-53c1-4a6f-3a28-709e\n0123456789abcdefghjkmnpqr0\n1\nICEiIyQlJicoKSorLC0uLzAxMjM0NTY3ODk6Ozw9Pj8",
+        "name": "cloud_unit_test",
+        "seed_hex": "0102030405060708090a0b0c0d0e0f10",
+        "signature_hex": "d4ceab1b6b59ba5016043394480069ef1cbf2cefaa3710e6d210ddadbca0d9bfed0cb3eaf6cc2226d325b351add19040d61283c8c3bba649750d3e04caace204",
+        "statement": "vhc-account-key-v1\n0f8fad5b-d9cb-469f-a165-70867728950e\n1\n7NX_UCk1Q9neYFqxDwGdGAN0KXAOQ0kFc_t1txsnJHk\n64Koxd9kb3Dq50rlg984Dh0568dC3uCaDKL4FhzGmoo\n\ninitial",
+        "suite": 1
+      }
+    ]
+  },
+  "kak1": {
+    "negative": [
+      {
+        "description": "not a KAK1 envelope",
+        "envelope_hex": "895648400d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e741a97c7d21a409945fdefcb4ad4825c39b009720e64166107448b2a9411601a0a79692ac139508386318f784d0df2380020f11699b5edbdc3da4eed9c4cfd5af76a0d8d1a73a223c5ae21781443341a4a46a43edb78ca18448f1ca955672ae83af44d2553953a22a84170175b02b781ed6f",
+        "error": "bad_magic",
+        "holder_sk_hex": "7dd021aa060867ac214adacf895fe626c8fb4b0ef039e3fbc28d33b219cb8256",
+        "name": "bad_magic",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite_expected": 1
+      },
+      {
+        "description": "a KEV1 magic",
+        "envelope_hex": "8956484b0d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e741a97c7d21a409945fdefcb4ad4825c39b009720e64166107448b2a9411601a0a79692ac139508386318f784d0df2380020f11699b5edbdc3da4eed9c4cfd5af76a0d8d1a73a223c5ae21781443341a4a46a43edb78ca18448f1ca955672ae83af44d2553953a22a84170175b02b781ed6f",
+        "error": "bad_magic",
+        "holder_sk_hex": "7dd021aa060867ac214adacf895fe626c8fb4b0ef039e3fbc28d33b219cb8256",
+        "name": "kev1_magic",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite_expected": 1
+      },
+      {
+        "description": "shorter than the fixed prefix",
+        "envelope_hex": "895648410d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e741a97c7d21a409945fdefcb4ad4825c39b009720e64166107448b2a9411601a0a79692ac139508386318f784d0df23800",
+        "error": "bad_magic",
+        "holder_sk_hex": "7dd021aa060867ac214adacf895fe626c8fb4b0ef039e3fbc28d33b219cb8256",
+        "name": "too_short",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite_expected": 1
+      },
+      {
+        "description": "version 2",
+        "envelope_hex": "895648410d0a1a0a00020001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e741a97c7d21a409945fdefcb4ad4825c39b009720e64166107448b2a9411601a0a79692ac139508386318f784d0df2380020f11699b5edbdc3da4eed9c4cfd5af76a0d8d1a73a223c5ae21781443341a4a46a43edb78ca18448f1ca955672ae83af44d2553953a22a84170175b02b781ed6f",
+        "error": "unsupported_version",
+        "holder_sk_hex": "7dd021aa060867ac214adacf895fe626c8fb4b0ef039e3fbc28d33b219cb8256",
+        "name": "unsupported_version",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite_expected": 1
+      },
+      {
+        "description": "suite 3",
+        "envelope_hex": "895648410d0a1a0a00010003000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e741a97c7d21a409945fdefcb4ad4825c39b009720e64166107448b2a9411601a0a79692ac139508386318f784d0df2380020f11699b5edbdc3da4eed9c4cfd5af76a0d8d1a73a223c5ae21781443341a4a46a43edb78ca18448f1ca955672ae83af44d2553953a22a84170175b02b781ed6f",
+        "error": "unsupported_suite",
+        "holder_sk_hex": "7dd021aa060867ac214adacf895fe626c8fb4b0ef039e3fbc28d33b219cb8256",
+        "name": "unknown_suite",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite_expected": 1
+      },
+      {
+        "description": "a P-256 envelope read as X25519",
+        "envelope_hex": "895648410d0a1a0a00010002000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e741a97c7d21a409945fdefcb4ad4825ce1ff10f6456776e8cb34ee1e63cb1f6da429ef63572d915ae8d95b942b12d2a500410475a5fc3d58721bc41d6df44bf12bc493b2591e379987d4e461c74075ae41330ff2a25a01bc24da7a362e621d6dd720b3af760b3c75ccaaa3c68bbafacc0f029df4ff02202523fab57d008e4997549c15031cdf0a400e54f13af15aaa63882db8",
+        "error": "unsupported_suite",
+        "holder_sk_hex": "7dd021aa060867ac214adacf895fe626c8fb4b0ef039e3fbc28d33b219cb8256",
+        "name": "suite_not_expected",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite_expected": 1
+      },
+      {
+        "description": "public id changed",
+        "envelope_hex": "895648410d0a1a0a00010001000000025e0c3a3e8d1b4c2a9e476b1d2f3a4c5e741a97c7d21a409945fdefcb4ad4825c39b009720e64166107448b2a9411601a0a79692ac139508386318f784d0df2380020f11699b5edbdc3da4eed9c4cfd5af76a0d8d1a73a223c5ae21781443341a4a46a43edb78ca18448f1ca955672ae83af44d2553953a22a84170175b02b781ed6f",
+        "error": "account_mismatch",
+        "holder_sk_hex": "7dd021aa060867ac214adacf895fe626c8fb4b0ef039e3fbc28d33b219cb8256",
+        "name": "another_account",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite_expected": 1
+      },
+      {
+        "description": "the reader expects generation 1",
+        "envelope_hex": "895648410d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e741a97c7d21a409945fdefcb4ad4825c39b009720e64166107448b2a9411601a0a79692ac139508386318f784d0df2380020f11699b5edbdc3da4eed9c4cfd5af76a0d8d1a73a223c5ae21781443341a4a46a43edb78ca18448f1ca955672ae83af44d2553953a22a84170175b02b781ed6f",
+        "error": "key_mismatch",
+        "holder_sk_hex": "7dd021aa060867ac214adacf895fe626c8fb4b0ef039e3fbc28d33b219cb8256",
+        "name": "older_generation_expected",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial",
+        "suite_expected": 1
+      },
+      {
+        "description": "fingerprint changed",
+        "envelope_hex": "895648410d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e751a97c7d21a409945fdefcb4ad4825c39b009720e64166107448b2a9411601a0a79692ac139508386318f784d0df2380020f11699b5edbdc3da4eed9c4cfd5af76a0d8d1a73a223c5ae21781443341a4a46a43edb78ca18448f1ca955672ae83af44d2553953a22a84170175b02b781ed6f",
+        "error": "key_mismatch",
+        "holder_sk_hex": "7dd021aa060867ac214adacf895fe626c8fb4b0ef039e3fbc28d33b219cb8256",
+        "name": "fingerprint_changed",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite_expected": 1
+      },
+      {
+        "description": "another holder key",
+        "envelope_hex": "895648410d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e741a97c7d21a409945fdefcb4ad4825c39b009720e64166107448b2a9411601a0a79692ac139508386318f784d0df2380020f11699b5edbdc3da4eed9c4cfd5af76a0d8d1a73a223c5ae21781443341a4a46a43edb78ca18448f1ca955672ae83af44d2553953a22a84170175b02b781ed6f",
+        "error": "recipient_mismatch",
+        "holder_sk_hex": "4e298c8e9efd781f56836074039a0bca23116fd143a8164c3e12427bfaab2e59",
+        "name": "wrong_holder",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite_expected": 1
+      },
+      {
+        "description": "one byte short",
+        "envelope_hex": "895648410d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e741a97c7d21a409945fdefcb4ad4825c39b009720e64166107448b2a9411601a0a79692ac139508386318f784d0df2380020f11699b5edbdc3da4eed9c4cfd5af76a0d8d1a73a223c5ae21781443341a4a46a43edb78ca18448f1ca955672ae83af44d2553953a22a84170175b02b781ed",
+        "error": "bad_length",
+        "holder_sk_hex": "7dd021aa060867ac214adacf895fe626c8fb4b0ef039e3fbc28d33b219cb8256",
+        "name": "truncated",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite_expected": 1
+      },
+      {
+        "description": "one byte more",
+        "envelope_hex": "895648410d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e741a97c7d21a409945fdefcb4ad4825c39b009720e64166107448b2a9411601a0a79692ac139508386318f784d0df2380020f11699b5edbdc3da4eed9c4cfd5af76a0d8d1a73a223c5ae21781443341a4a46a43edb78ca18448f1ca955672ae83af44d2553953a22a84170175b02b781ed6f00",
+        "error": "bad_length",
+        "holder_sk_hex": "7dd021aa060867ac214adacf895fe626c8fb4b0ef039e3fbc28d33b219cb8256",
+        "name": "extended",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite_expected": 1
+      },
+      {
+        "description": "an all-zero X25519 epk",
+        "envelope_hex": "895648410d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e741a97c7d21a409945fdefcb4ad4825c39b009720e64166107448b2a9411601a0a79692ac139508386318f784d0df23800200000000000000000000000000000000000000000000000000000000000000000a43edb78ca18448f1ca955672ae83af44d2553953a22a84170175b02b781ed6f",
+        "error": "bad_ephemeral",
+        "holder_sk_hex": "7dd021aa060867ac214adacf895fe626c8fb4b0ef039e3fbc28d33b219cb8256",
+        "name": "epk_low_order",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite_expected": 1
+      },
+      {
+        "description": "a P-256 epk off the curve",
+        "envelope_hex": "895648410d0a1a0a00010002000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e741a97c7d21a409945fdefcb4ad4825ce1ff10f6456776e8cb34ee1e63cb1f6da429ef63572d915ae8d95b942b12d2a500410475a5fc3d58721bc41d6df44bf12bc493b2591e379987d4e461c74075ae41330ff2a25a01bc24da7a362e621d6dd720b3af760b3c75ccaaa3c68bbafacc0f029cf4ff02202523fab57d008e4997549c15031cdf0a400e54f13af15aaa63882db8",
+        "error": "bad_ephemeral",
+        "holder_sk_hex": "318eeacadd6b51a34846bc8a0af84081d34dc9ce1a0e3a4ac7fbf1187ce876e5",
+        "name": "epk_off_curve",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite_expected": 2
+      },
+      {
+        "description": "the tag",
+        "envelope_hex": "895648410d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e741a97c7d21a409945fdefcb4ad4825c39b009720e64166107448b2a9411601a0a79692ac139508386318f784d0df2380020f11699b5edbdc3da4eed9c4cfd5af76a0d8d1a73a223c5ae21781443341a4a46a43edb78ca18448f1ca955672ae83af44d2553953a22a84170175b02b781ed6e",
+        "error": "wrap_auth_failed",
+        "holder_sk_hex": "7dd021aa060867ac214adacf895fe626c8fb4b0ef039e3fbc28d33b219cb8256",
+        "name": "tag_flipped",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite_expected": 1
+      },
+      {
+        "description": "generation changed",
+        "envelope_hex": "895648410d0a1a0a00010001000001025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e741a97c7d21a409945fdefcb4ad4825c39b009720e64166107448b2a9411601a0a79692ac139508386318f784d0df2380020f11699b5edbdc3da4eed9c4cfd5af76a0d8d1a73a223c5ae21781443341a4a46a43edb78ca18448f1ca955672ae83af44d2553953a22a84170175b02b781ed6f",
+        "error": "key_mismatch",
+        "holder_sk_hex": "7dd021aa060867ac214adacf895fe626c8fb4b0ef039e3fbc28d33b219cb8256",
+        "name": "prefix_tampered",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite_expected": 1
+      },
+      {
+        "description": "an authentic envelope of a seed that isn't generation 2's",
+        "envelope_hex": "895648410d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e741a97c7d21a409945fdefcb4ad4825c39b009720e64166107448b2a9411601a0a79692ac139508386318f784d0df2380020f11699b5edbdc3da4eed9c4cfd5af76a0d8d1a73a223c5ae21781443341a4a469150131c3a2d77766e75863e3869c26aa09227bf6d28f555890b979752e68ef3",
+        "error": "seed_mismatch",
+        "holder_sk_hex": "7dd021aa060867ac214adacf895fe626c8fb4b0ef039e3fbc28d33b219cb8256",
+        "name": "wrong_seed",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite_expected": 1
+      }
+    ],
+    "positive": [
+      {
+        "envelope_hex": "895648410d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e741a97c7d21a409945fdefcb4ad4825c39b009720e64166107448b2a9411601a0a79692ac139508386318f784d0df2380020f11699b5edbdc3da4eed9c4cfd5af76a0d8d1a73a223c5ae21781443341a4a46a43edb78ca18448f1ca955672ae83af44d2553953a22a84170175b02b781ed6f",
+        "ephemeral_sk_hex": "bff91d2ecd0cd34adde32e9c5b31081e12dcc96f0a4c711a6185703a2ff91762",
+        "holder_pk_hex": "04ce239195887af261587b5b766c6a40878d8a58ec1117ac1dfd9f05c9694d12",
+        "holder_sk_hex": "7dd021aa060867ac214adacf895fe626c8fb4b0ef039e3fbc28d33b219cb8256",
+        "name": "suite_1",
+        "recipient_id_hex": "39b009720e64166107448b2a9411601a0a79692ac139508386318f784d0df238",
+        "seed_hex": "fd85a10423974010b02b4dc1fd33cd24",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 1
+      },
+      {
+        "envelope_hex": "895648410d0a1a0a00010002000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e741a97c7d21a409945fdefcb4ad4825ce1ff10f6456776e8cb34ee1e63cb1f6da429ef63572d915ae8d95b942b12d2a500410475a5fc3d58721bc41d6df44bf12bc493b2591e379987d4e461c74075ae41330ff2a25a01bc24da7a362e621d6dd720b3af760b3c75ccaaa3c68bbafacc0f029df4ff02202523fab57d008e4997549c15031cdf0a400e54f13af15aaa63882db8",
+        "ephemeral_sk_hex": "38e637126158abee551a14d22297634e216d330c9fd66614ac17b9c1bf7a70b8",
+        "holder_pk_hex": "048bff853c14ee09a8fbc3232a360026c0e0d08647539d1724e34e6a115a444761a43151a8f46ecd9ac6493774765127e58fb795641c58050d6a53f04fcccb69de",
+        "holder_sk_hex": "318eeacadd6b51a34846bc8a0af84081d34dc9ce1a0e3a4ac7fbf1187ce876e5",
+        "name": "suite_2",
+        "recipient_id_hex": "e1ff10f6456776e8cb34ee1e63cb1f6da429ef63572d915ae8d95b942b12d2a5",
+        "seed_hex": "fd85a10423974010b02b4dc1fd33cd24",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "suite": 2
+      }
+    ]
+  },
+  "public_id": {
+    "accepted": [
+      {
+        "bytes_hex": "5f0c3a3e8d1b4c2a9e476b1d2f3a4c5e",
+        "text": "5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e"
+      },
+      {
+        "bytes_hex": "0b7e4d216a3c4f8eb1d293c4e5f60718",
+        "text": "0b7e4d21-6a3c-4f8e-b1d2-93c4e5f60718"
+      },
+      {
+        "bytes_hex": "0f8fad5bd9cb469fa16570867728950e",
+        "text": "0f8fad5b-d9cb-469f-a165-70867728950e"
+      }
+    ],
+    "refused": [
+      "5F0C3A3E-8D1B-4C2A-9E47-6B1D2F3A4C5E",
+      "5f0c3a3e8d1b4c2a9e476b1d2f3a4c5e",
+      "{5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e}",
+      "urn:uuid:5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e",
+      "5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5",
+      "5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e0",
+      "5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n",
+      "5f0c3a3e8-d1b-4c2a-9e47-6b1d2f3a4c5e",
+      "gf0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e",
+      ""
+    ]
+  },
+  "recovery_policy": {
+    "negative": [
+      {
+        "description": "a newline after the last line",
+        "error": "bad_recipient",
+        "name": "trailing_newline",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n3\n2\n2026-12-01T00:00:00Z\n",
+        "signature_hex": "147a1c1e08119f5fcd0c58b1a92faed3647637e100317f6bcca64d2440754171cdb2de89e947aab8987a37b12e8300b7b59c5d1fc4b07bef99130d68957d9e08"
+      },
+      {
+        "description": "a later version",
+        "error": "unsupported_version",
+        "name": "unsupported_version",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v2\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-11-14T12:00:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer UmVjb3Zlcnkga2l0IDIwMjYtMTE account\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "f028cbbccd3aa54d269b03330becc9a4c8316f6fbd166d50fe95ff4cc6be8c77c14289635914f06dc8da9ac09b3c80fab1d995ad24b9065fec0dbac1c108bf0c"
+      },
+      {
+        "description": "not a policy",
+        "error": "bad_policy",
+        "name": "bad_magic",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-11-14T12:00:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer UmVjb3Zlcnkga2l0IDIwMjYtMTE account\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "eee63037cd94e89a7a017e7eb6bf2dee60881b67fb518023c109346d1fe6b49b41ce43989e9bde44c1a0b07a9f84ecb7730752f1b14b11cf5974dece295d9602"
+      },
+      {
+        "description": "issued_at is missing",
+        "error": "bad_policy",
+        "name": "too_short",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2",
+        "signature_hex": "2000ac03af712fac6758881858255517939c4d2dfcb7b36b39e75a475c14cc5cc378e3bddba65b8dc2a97166b3e993cac5dc2dc1ae5c1952be05dac3a726190c"
+      },
+      {
+        "description": "a non-canonical UUID",
+        "error": "bad_public_id",
+        "name": "bad_public_id",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5F0C3A3E-8D1B-4C2A-9E47-6B1D2F3A4C5E\n1\n2\n2026-11-14T12:00:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer UmVjb3Zlcnkga2l0IDIwMjYtMTE account\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "862f39e40fc3d979da955fafdcf31b25bb5186de954a2aa5c8d67b839f2f150626d96503e2407524c5ad37ed69f302f6a9a30b5e09d558c3fb9b3383651e6802"
+      },
+      {
+        "description": "sequences start at 1",
+        "error": "bad_sequence",
+        "name": "sequence_zero",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n0\n2\n2026-11-14T12:00:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer UmVjb3Zlcnkga2l0IDIwMjYtMTE account\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "c12949a152d38657f345d13497f5ffece3d41ebf3bae4d2d7acc0a976c78304c92b5e53c4d4e5c1bc77d927d5f2872b41cc9b806ca0aa99158dde1563cb9e109"
+      },
+      {
+        "description": "a leading zero",
+        "error": "bad_sequence",
+        "name": "sequence_leading_zero",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n01\n2\n2026-11-14T12:00:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer UmVjb3Zlcnkga2l0IDIwMjYtMTE account\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "bd90ddc959b8a1dfd479b599330d182e21c9a0904e63ef974035c11b75f454e56031bb9dd6cccb8fac997bfff35623e3f8c9b22de6d38563163a6ba5d4350604"
+      },
+      {
+        "description": "generations start at 1",
+        "error": "bad_generation",
+        "name": "generation_zero",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n0\n2026-11-14T12:00:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer UmVjb3Zlcnkga2l0IDIwMjYtMTE account\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "2770502b6fe4ac513c6a0678dedc4b63dcd5690e8b4055d1066a52409d794a9a5a3a0f52c19e275d3590e0a40b9dccc5036fe755c86da21cb5818062700aa506"
+      },
+      {
+        "description": "2026 isn't a leap year",
+        "error": "bad_issued_at",
+        "name": "issued_at_impossible_day",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-02-29T00:00:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer UmVjb3Zlcnkga2l0IDIwMjYtMTE account\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "a67324962085d7065d2e87115789282df94875396270f660cd9f28679be9b6a7dc38d9981862f153dd2ea8fe6eec45f4a25be9de9b15b6ed5054565b36307206"
+      },
+      {
+        "description": "UTC is written Z",
+        "error": "bad_issued_at",
+        "name": "issued_at_offset",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-11-14T12:00:00+00:00\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer UmVjb3Zlcnkga2l0IDIwMjYtMTE account\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "0931507f00f667e9b205251d11ce1592cd098f022936dbf19f4b0f9dcd637030382e419688a3196ecceef6fd38a9e75ef86b4b2825ad253106d87bbcd9b64e0a"
+      },
+      {
+        "description": "no fractions",
+        "error": "bad_issued_at",
+        "name": "issued_at_fraction",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-11-14T12:00:00.5Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer UmVjb3Zlcnkga2l0IDIwMjYtMTE account\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "2e93e5464c2c4c523ac6063234e78b7ea7b8802be7ec353246b48cba626619ee65839a8d2c5cb7b2d7b7094f1e8e6e2c7804e9ccd8c209c1ade10324b3fa3305"
+      },
+      {
+        "description": "65 recipients",
+        "error": "too_many_recipients",
+        "name": "too_many_recipients",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-11-14T12:00:00Z\nEG61HlNQ_5gCoNuQAez3Y436Xlqr2LrJ-VN8HzjqrWE ME8pOgqIq5uLTQ40p9BbAsJ82hDRrlA8frql-ABz_Ac 1 customer cjQ0 account\nE5Gx-sKUrNLnbgvzAaH4KugbdXq5r0V0IjxkEapT4Bk ptEV0e2PiqCn9enonwVIUBCQMh9nj3qVKAw_YXAh11A 1 customer cjI0 account\nHJqjT52j_uwHhyNGOQxq24bTQBoqKv62KPP2585uOgA 11HGIoI2fWpjsX0xM1t0uOp3FmZBi3PAD_0YeVH4rXk 1 customer cjYy account\nInYHrIu7Ex4duppFCWznVsIzxaZG0bdXOoKxw55bDO4 IajkO2m-fFyW735uirHyIssVFXMHXur1XBvyGf-BBBU 1 customer cjQ account\nIujc9_KX2YP8F8Kr7Rc_70BSa3WSLjMoY4YlGcFHSrI lN9jnRsb4ik7L-YF03EJneHbUZ5NLvpZVOHU7ONVtmI 1 customer cjI account\nJLQRT--4MISm-XWS0vQK86FQP98S-6cthOHE4W-_On8 VthFGILWkx-AXw-JSRqIlY7VsI05c8OLKLIFqKmNIm8 1 customer cjM5 account\nJ1wejbBWY4OgMnl-6nDyXy5jq3wRORK3MZYEiM0EQAY 1n7UBDu5sOUu9rpqycr0GVlU2d1Z3X6knnyl3ZDZ3gY 1 customer cjUw account\nJ-65Qe46XvcJp2lFIpZMHOFbrMXzHH0boJWC3KYpNyI vwMURd6vz6wyqvBlJqpqktxGeKnrrb9_aY8_ofPhuic 1 customer cjYw account\nK3CAnpXt25l0q7xW78ZeIy7Oxxj_uKaWLqDHjK_gV3k JvhovsDK81mzLw_XgvcsB4bqOgxfLtKAGbdJcHHceGA 1 customer cjA account\nNAhieAwRZ6PMhPCf-YUbYyJNylSpKeBh2V9mlCMnn84 di1FajgZJCqZm9NLEZvbHnvnBZAbFkz2rjhBzfZ_x1M 1 customer cjQx account\nQI7cYqK0aCZgJ6DoMiT0fsYu4kWj3r8x5pITljXcHGM 9u_3PE5KF_BdpLX7WZVrzCPPolosLkBWnPbcbwFxAUE 1 customer cjU5 account\nSOUN5ekJSwn0EdgEqXacV-U0dUDSgquFqFIXgzs5e90 GbrCUVN4GSciz9NRzByS5tXrKxrsd6bMR7pclA8kmnw 1 customer cjUy account\nTCfpOcYyHYhQlb-XUweNJu_jOVFb0MEnsvCMpuqDsJ8 d-bQtrOX_5TrTXoutHUEqHguOfAjTCO_dWSI6otU7RY 1 customer cjI5 account\nTMuqFk5V3s_E-t-t422yQQcKy8iKKbIXicXby2TD-ik Ie6rWyt2m5ruu9G-mKGu7vDSBuBaZlVCc5M0iex_9S8 1 customer cjU4 account\nTzfv6zHR8_pbdK9390KlBJ2KJsW_9OjxdCkjERJwzdI U1tlR4Qtn9zJ6mgELz9j_qA5VNN0bHi2j7nwAmM67j4 1 customer cjMw account\nVYAUdDzQ0rZF9ndIBKZXzth7gkEjpPZXYLE54pAKHxQ O-k4RcZKo0vTZpfY-8lWg3TqtSHujkRL-3sFb_g82Q8 1 customer cjEz account\nWatQ9fm8uchjnhAuF38XVWqFUUf7U5cn-7I4sFm3-hg FzPag3kwjwHnGOvq01q7TUayEYtpb1tmmEQ729asmlc 1 customer cjEy account\nWdo25Bac9RU19FPJDqMiV70mjXPsTneXISdOmw5Axwc Hy5NhYgqscLXehlFQJNDhEFKHgree7Sn6sLIeKt2Qgk 1 customer cjI2 account\nW-HTBoINdI4sDKGDIfLDkzx20_9fy5yBTVkVpbzQbh0 pVjMK_-3shIp9WFMKHT42MBGlHXqutTAWhCzOwIO1Wk 1 customer cjU2 account\nXVMI2z5yX38wIk7m6dqJTa8r9Tm844P7Otfl0bA_Feg __jkS64JixwjNjtBXAicN902cp4Z1_CMJWyOD_3e2Xs 1 customer cjQ1 account\naIN0s2dgVNNbCSxcXJR8p2VYa-WAeB2KsBUdMjht0GE Ljdf29aMhjr7QCXNAUjc70cxpg3IX83W3pFFFeUd6zk 1 customer cjQ2 account\nbSeK4sTrJkbRh6mxk2__qxfNNqhaL4NfcYjrhxtXcFk S8PFlDE_ZvReu2X9BK20clsUSjAhusTQatvG-Sd_BCc 1 customer cjI4 account\ndLsOZtH5Zqt55rHOI4a88XIzJBE4iCgrOftjNHk_UVQ N6WHaryNphwpyq3357ZGKVu9q_GlaQNZ-6odpCuq_HE 1 customer cjIz account\ndwt2MdaUrwaT_CSQSthy7x1lMjCajZg4XULEzxddkqI vOXHXSCCfLp6-1WThKpb4ekJ-L8CDhaBHhsEzHUYHEc 1 customer cjY account\neMj9uYiKMyM7J8hHNwppB_mulRWWzQPB_Inv2kkktiM vD2JG6_BZ0gSHQFmzNtS7kcSzi0KF3Km41pQGNPI9BU 1 customer cjI1 account\nexdPmfTt1pDq6DM0RyJGb_N72ma-nyd9A3VxskT9mp0 hDhCWXO4lGi1ULxLj_ESh7xC5jYfANVWxOE4c0w8ClI 1 customer cjI3 account\nfKfaoPK79stm6Xa-xNqEHm8UOiHSnJRcNwh-WU3lXjQ vaYMtQedmhgF-rX4WmQ7dKFvQPaxCLif-T4krpmYXxs 1 customer cjUx account\ngSH2VsARLgjR4W3bGGFZeVQSDuqq7JpkUQCvg5B6oD8 _77va_2EuuiMiKhfqOmUbioH61E9oxunQj4FG8rUUBU 1 customer cjM account\ng-4GTV9-HawdJtLzau8L_n7IfGEhMTxYtLURCpcRh3s jDDQWmmFIxbD9rv7WkK-qotR5pyRT5rhlB8LzUd3dCc 1 customer cjM4 account\nhpgJPG4h7CVNjz8MxKOPZrgsC-HznvoI5q2M9YMQN1c kVBT1Ja7ILppO8xKEww__AvaFMQaaoq_1PnyNc2z_nw 1 customer cjQ3 account\niDz_8gbDNpxMDoN-2msANdk1yAEJkz2U7T9FBeyQVnQ lMYWQ8O4vzwKbwvO2kUiLnPZbmNaMfW2ztMmD7WSRTo 1 customer cjE2 account\nlE0IUN8gaIXAeQekGR7RKHcnQRRqaXkPDD6Zodd2SLI Qvs-b2wIpeFkoKveaYGMzMfrlaAMvDEI7VM3y9_3gxM 1 customer cjYx account\noL24q_5btmRsGEInz41S07AfZyzHbGaq930_g5teEEg gEiIAv_b2lKf1U57DNzZ4cuqy2D6JqwjNvFmFfbPfhM 1 customer cjQz account\noPQSVWoMQ4bYjP4fZYSwLlI1Sbf8zwoCHgjI40OVIVY LhP1g-JgQhgw4qOwXki_xpSUJGtqtk5prCTGpleHb2c 1 customer cjE account\noV1Z1hUWn9rOTNNWpo-BVt6QT-6U1--OIjCISmmOwNQ Rcr_2NNjvX7Wjpag1Wwb3onD-7R7gAStyVbc82JNclE 1 customer cjIx account\npEgaCGRI3AnXY2NHstc61xhx8VbAZ-HZZecClh32VDU bKjZrskhnR-s_xJHT-shDwmZKqDDbhdUHTj1y7onrHk 1 customer cjE0 account\npzRlK3Ag_zKfChWyIA9NCkc6J0DxIN1brt07byd1KEw Cknac6iVoKt7HgKXahFu3COTkp-b6-x775hnkpQeVB8 1 customer cjM2 account\nrjNxcF-IC3LKmMw0Ga0L01KyFjQXCHmmhVRTrFqMwbc NxsE__S5zp3szh1efbxRPzmVF_z85KHaLQIez9MdyjE 1 customer cjY0 account\nsBG0q2U7JkYwsekkDKJCzlTrE2_jVOL2ONuKoM0y-14 reVidlOqrXkyfe8teCsM7gUO2xx-JI2GPXmmmJbrD2A 1 customer cjQ5 account\nt8Fv2DKHtqGyxGQJyYyIu1XAjV4RHF5d_iNuY7AJjLw MuphiDkkZtA6WNcA8gM2TiSUnQc-MeIlOiM_SBRb-lU 1 customer cjQw account\nvSNqesT20_3jUAMywcpKniqwVTZm1IMtG7G9YV4mMEU TS0vjoY2maUyQEvEZfop2tOf5W3swgjCh9EQiBLhYgg 1 customer cjU0 account\nviI8hof2tGnFUSzPIkYgvY5rlvZr0eW2vmQS_fX1kwk RsWUe0huAOk5DaUiMd5u3GmQGC9Vh6mlw_5jFjtgzUg 1 customer cjE3 account\nwRUyyzGM1YBIeTkuyMArv0ck6rSEcYldlvHDLe83HZM 9FPmbS6HQSVB9mH5oFq9LeJ8XUOewY34pPwJeaGxgUM 1 customer cjIy account\nwa4-AAJqAYtX-veV5HhKjcXzwjnXnRK5Z7JwK3BX-Fc tZ58Q2xUi4duyl9xd0WUB6NHUvJCy_vmeeqCb9XaOGc 1 customer cjUz account\nwmpBfdmFmV0bK-xSmTdRuAjQN8elAXWc6rBY0tRo2QE fMYloU7-Sh4qx45cXT_7m6hJWS-tTibguZmg5tvDkVY 1 customer cjE5 account\nxI3UwwcwHbajuuC33rpVUS7l15YB5y7bz7PilKNhu5o i52K7yzkg9UsSso_4w05ErW3fUJSBdIl45Zbzvzcslk 1 customer cjk account\nxfrjSGWAwKQSGr_P1armE2NS8ptgoFVqxHWPmCvZ7kg 2wXmLIGfgWtZBMSeykeeqMUWe21hjQnnFG99oS-v1EA 1 customer cjMy account\nyKRIBSTR4Yf5d5MwHbD8V2uWbeiCLu_Z1jXO1TTwYFQ -3wco2na9xyNoqbYqiu9c6FlFkebvFZWqwIyFkUfEzI 1 customer cjU account\nyrrcl5ryYztvcJ3268aDiQ2UoDthI9HaPRXfNwTs0yE WdNK0O1bFNq1Z7_T6VO_nrcAx7hhdqfg9D5WkcrSWkM 1 customer cjg account\ny3V65eDbyXFthTcxyc0FEXR3Gyqp1_4-xvvZNNG8Beg -Lp5pi5Y2oPVEEaKhMinewajcOfdWxFahRqdmnxcJUc 1 customer cjM3 account\n0aNQ6ksHLbnPeQn2eq9fxEQRD__m1MtnVoVX5y-F06E gWYTXrxKKk_wrHU-SnFrTYnRv93g169PBbFZHECzbkU 1 customer cjM0 account\n1UcJ2r6bjyDw99vuvenub95bN-VgsF2ZPp44M4RJwe8 NPaqkARiwp4c1JR5FaOuMzcwWGD-MxqNUjIDehumOzc 1 customer cjEx account\n1kJQGCitCnqouQjDiweKk6xIMFqbuVVNpkX34IEff8U fgXYYTfS103tgiNhgAQVUvel96_GRdxNIycaBGe2KSY 1 customer cjEw account\n1mPx8zvlRyq_ZmgXtGSiwU0NOw18Rfbnf6LJfMYDLKw fbcEWOvq-MySnmqp5kcV0PHL9OLYeIZLjUK4yoFfh2c 1 customer cjQ4 account\n2weozTXn62jVnM9BpfVAyGxeY-FvSvJIR4rdjflVCIs NMqECvEorNYBp5e0rKrY5QzTBzeLo-xTN21n4DXFRSg 1 customer cjM1 account\n3ITG3Tq4MmISBQWinSrarsI5dYxwMV78a1BOM8KKpOo KBUaoNqRDXqg15udtCASndZ7_UpN7fuUC4kCpeWWeUM 1 customer cjMz account\n3WpZ4OjSxejmF4sfq7GICdfPxsmyeIgjECarxkLZbZk 0QTAId4k62CNwiMG6gW42xBWhfvKxCx5X5R9rlmFGEQ 1 customer cjE4 account\n3oTGOoqW8_Ep1V3cbqC2WWopF72ir9BBn0TyMc9eZx0 wOqZ9pu2CDIOt_6bnYqHA_-GreqR-T0w9ACuMSIvjn4 1 customer cjIw account\n4eWaDHa4dWt1mUQadvUW5thDaUjQDM9chLX4M1SSJ4g nL8S_kBZnUHLbcMd0yYCZThcKk70jRnFFFNZnEkskwk 1 customer cjU3 account\n4qnTgvAfgBCChDykIAZQu3vsVzDqwXyMjoR6jc0Utco G1-uSpK4Owv4LfnPGAcC3eF5OLMLP43f4SBMIFHcVFs 1 customer cjYz account\n4yV9eI86-DZP1GrkWYqT3X2kizL9yHN-teJo4D0xnn0 TPEI5-rkIml8jRcxRF747B423bL_wHqQua5hk6kV7H0 1 customer cjMx account\n7myPBIyd9GSDU3sn-EIV0TsvNzEQh6UNpKjngp4qGZ0 atsquQa8bTHuDvzHPqRAacth1C_9s1sEPwQ1ohHyVBY 1 customer cjU1 account\n8Eico6-SsXvufEYT48-O0mAtQDqD94vUlkuKX_WQDW4 PTAoOFkFV2JETVVuLdbmhk0tJOE5TrcNaaaoA10nt0w 1 customer cjE1 account\n_Pn_PMsXitGoqN6KHovcXJ345GgWID9Xz1gFy16TCp8 AlMliyGlquFdtzoSNDmONP-owY4SLrhlCIa0vinUn2s 1 customer cjc account\n_meLE29PJPQ1Hy_VUWauxa9nPvyrZQw5Bg27FeT3i2Q gxroBNEuIucI_f-hnq0SjBA-Z0ZnXeSB3viJYBHS42s 1 customer cjQy account",
+        "signature_hex": "21036727dd758fca08b7dd991d139e36283af8a5022e41ca8cc4f2dabf00fe720b0dde340a4e56a651da54dab5962c1471eb42f2eccae3bc71ed1db52aa6cb01"
+      },
+      {
+        "description": "two spaces between fields",
+        "error": "bad_recipient",
+        "name": "double_space",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-11-14T12:00:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c  e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer UmVjb3Zlcnkga2l0IDIwMjYtMTE account\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "1aae9fad5503053a3538b2887fe4a87ece3f5641d9e59ccd202a684eedf57d38b5e9b6ef18099a34ca7d855c543e9793a150d883e79083e2ad9dc73d1a0ee702"
+      },
+      {
+        "description": "the scope is missing",
+        "error": "bad_recipient",
+        "name": "five_fields",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-11-14T12:00:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer UmVjb3Zlcnkga2l0IDIwMjYtMTE\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "888c754c57d3609a28c8dc3f8e7d95e3bd8b6c0c71d3aea1aab321f6951fccf1799bcbefa2862b435c1e43ce8d6844515ad5e02dece934aec39c13ace68d0001"
+      },
+      {
+        "description": "a 31-byte recipient id",
+        "error": "bad_recipient",
+        "name": "recipient_id_short",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-11-14T12:00:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJw e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer UmVjb3Zlcnkga2l0IDIwMjYtMTE account\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "8b8699f6b92b84a4e93ba77fd278b42792df03a068bba04ba9572e2ea702c758b26d77e1f8a4c67d3fae9cb256ee3a3a469e341bb1d06b641f5effd8128df106"
+      },
+      {
+        "description": "padding",
+        "error": "bad_base64url",
+        "name": "key_padded",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-11-14T12:00:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA= 1 customer UmVjb3Zlcnkga2l0IDIwMjYtMTE account\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "3bfdcb6a223883db8844d3bb4e7c0b5d72b0d48cd9a5827d1c3fbc643e293ae19be9a94e2ef544de11971d82806bcc4cda7b069d2f91670811ea38240135ac0f"
+      },
+      {
+        "description": "u = 0, a low-order point",
+        "error": "bad_key",
+        "name": "key_low_order",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-11-14T12:00:00Z\nZmh6rfhivXdsj8GLjp-OIAiXFIVu4jOzkCpZHQ1fKSU AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA 1 customer UmVjb3Zlcnkga2l0IDIwMjYtMTE account\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "03e9a7e0efe7c784d27892e1a28bab7ce20036413729362257e6d8399e6b5d9137b0422fa87d1b24625d79eb85fb23c40f014b31a5ca9c00d2f25a7df084d80e"
+      },
+      {
+        "description": "a recipient id that isn't SHA-256 of the key",
+        "error": "recipient_id_mismatch",
+        "name": "recipient_id_mismatch",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-11-14T12:00:00Z\nHTeDZFbIfcXKrE0EU4tuljilCwQPlZk7cC4YCG2yonQ e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer UmVjb3Zlcnkga2l0IDIwMjYtMTE account\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "57ee791c197a549b2bfe271ad568946521f8bb5599bf65efcaf4fcc6cc651347d69b3a151ade31d3ac073d7d048d0841335218ed5834197d14f0c95e24708402"
+      },
+      {
+        "description": "P-256 isn't a policy suite",
+        "error": "unsupported_suite",
+        "name": "suite_2",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-11-14T12:00:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 2 customer UmVjb3Zlcnkga2l0IDIwMjYtMTE account\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "bbf4558cef2e1993d8e7910619f9ae8a02d03201211e406da898f414c6307c006eb92aec9fd93fe58cc45d77f273ce84a878ba6a6d02250a697aa72838f13009"
+      },
+      {
+        "description": "only customer recipients",
+        "error": "unsupported_class",
+        "name": "class_custodian",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-11-14T12:00:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 custodian UmVjb3Zlcnkga2l0IDIwMjYtMTE account\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "d648719d76eb96ebc7d86ec3d22831fa887bf73bea6296e3c809583ec9cad279b853f0e939520528eb090f84076225d0f77508173e2342dfef560c6c11813a0b"
+      },
+      {
+        "description": "an empty label",
+        "error": "bad_label",
+        "name": "label_empty",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-11-14T12:00:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer  account\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "686429ead170f057920b1f01751cdaa95d6cb2e0a3c690281593ab5f9e1b15a3bc197bde74e3cf07b11d0c21b5b41c474e0a5be719971f7a43ee70b0c60fd405"
+      },
+      {
+        "description": "a newline in the label",
+        "error": "bad_label",
+        "name": "label_control",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-11-14T12:00:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer a2l0Cm5leHQ account\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "1a1ffe1c0006ce01838ad910cd44195150575ccd75958fe9c57832754f3730e01513028d7e566a0ce747e21e49f317713918c39fe0d4986f3227412f48713d02"
+      },
+      {
+        "description": "not UTF-8",
+        "error": "bad_label",
+        "name": "label_invalid_utf8",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-11-14T12:00:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer a2l0IMMo account\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "46adeacbb37fec252f7eea8646a347c9e1233f511b9186cc92cd5e783045a15864e984aebe4cc370ae2023c73934335815163649ba8e76bf64b31faabb6e1e0e"
+      },
+      {
+        "description": "an overlong form",
+        "error": "bad_label",
+        "name": "label_overlong_utf8",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-11-14T12:00:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer a2l0IMCv account\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "f39c3b523c6180a4f932969f7b9699ead06ed9a5a10c6b7401095a5870ce69216fd7338e5daa5bb714ca0f1a040b3e0372fc5ae002b8d145bb0a3c8d937d3c04"
+      },
+      {
+        "description": "129 bytes",
+        "error": "bad_label",
+        "name": "label_too_long",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-11-14T12:00:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer a2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tra2tr account\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "6d1a19d4c5dd9f3a2d741c3e5d6d0602b6331ef161349a3731357f49ddbc77c59739163857d7996fdd4a09c00e436d1613d2b3d06c5c95c40c3d6f562cb41209"
+      },
+      {
+        "description": "a list of vaults is reserved",
+        "error": "unsupported_scope",
+        "name": "scope_vaults",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-11-14T12:00:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer UmVjb3Zlcnkga2l0IDIwMjYtMTE vaults\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "10834c9b18930893297f1655688c9267ed9878dc02a13783872f2f59305efd8cd930242a5048fb29f04ce1913fad5b6e83026276bc01ccd9859f3608d4c70106"
+      },
+      {
+        "description": "recipients not in recipient_id order",
+        "error": "unsorted_recipients",
+        "name": "unsorted",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-11-14T12:00:00Z\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer Yg account\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer YQ account",
+        "signature_hex": "deb3ce226755f6f8a9b9334b28e2cefe506e02b9244ca6fac66697d6b2728330ead0d7d345a00d7c084edccbef10448cf3c2e3f7b98f6a682ad6ccc2cc2bea09"
+      },
+      {
+        "description": "one key listed twice",
+        "error": "unsorted_recipients",
+        "name": "duplicate",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-11-14T12:00:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer YQ account\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer Yg account",
+        "signature_hex": "6ef1db7ed47f3975f1a0a2d8b486be09f446f7d74945b31e089aa036f882c061c9eee62fe27c9bb69af0a6262e75eec753fc1a9dc9d53a74f2499c44129acd04"
+      },
+      {
+        "description": "a policy for another account",
+        "error": "account_mismatch",
+        "name": "another_account",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n0b7e4d21-6a3c-4f8e-b1d2-93c4e5f60718\n1\n2\n2026-11-14T12:00:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer a2l0 account",
+        "signature_hex": "7551c150df125c023bc75abeb183e6ca7d5720d564488d7d61541354ac198f27c49f984076737bec75849a2a461c6b2b57aa658027553ca1d3f8eb70f95fd20d"
+      },
+      {
+        "description": "signed by generation 1 while generation 2 is pinned",
+        "error": "generation_mismatch",
+        "name": "older_generation",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n1\n2026-11-14T12:00:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer a2l0 account",
+        "signature_hex": "76bb1260a5a3b32becd8d7eeee9b9252dc7094c19a121274d7e7d6712d46235fe54108256b8252e0d4a12227b09c7c89993dcc116ea6279130e85a37d6d0a60e"
+      },
+      {
+        "description": "generation 3 is not pinned",
+        "error": "generation_mismatch",
+        "name": "newer_generation_unpinned",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n3\n2026-11-14T12:00:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer a2l0 account",
+        "signature_hex": "645d5fd75a785e5ce1b3f176d288707fed5a899bc9e62f2ca92ee6e709013c379e4355063e3de6fd1dd2222b2c9994f45be7cbff8d14e887c043ff09b131bb0f"
+      },
+      {
+        "description": "names generation 2, signed by generation 1",
+        "error": "bad_signature",
+        "name": "signed_by_previous_generation",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-11-14T12:00:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer UmVjb3Zlcnkga2l0IDIwMjYtMTE account\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "8584e1a975641906db6e0dca6fbd84e93c0e17f5fd26f071d38490ce32433757564b9d9ba45a1ff8b14e462fc8ec481a9dc15a3dd38381c481048c791b9ffc07"
+      },
+      {
+        "description": "issued_at changed after signing",
+        "error": "bad_signature",
+        "name": "altered_after_signing",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-11-14T12:00:01Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer UmVjb3Zlcnkga2l0IDIwMjYtMTE account\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "f0e69ae97e6a4d4c68e3dab2f729be5430bc90bf128a45eb176f8b6076b70c5338023235766616ab5a0d62d3a85bb58c672a86584e96462900aaa5e0c76a850d"
+      },
+      {
+        "description": "the account key is a recipient through the pin, not the policy",
+        "error": "account_key_listed",
+        "name": "account_key_listed",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-11-14T12:00:00Z\nANNbHIjmqNWjt2GqMlxbVaTq-0A4w2lTngw27D1dxeE 8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI 1 customer YWNjb3VudCBrZXk account",
+        "signature_hex": "1132be8a60d945956db43d4ebe3390079345abeace097474fb1634ed71e5a8b6cabeec5489211d72e16bdc93d3d400484cdb96ffee23906b9127477d01acd202"
+      }
+    ],
+    "next_sequence": [
+      {
+        "candidate": 1,
+        "next": true,
+        "stored": 0
+      },
+      {
+        "candidate": 2,
+        "next": true,
+        "stored": 1
+      },
+      {
+        "candidate": 3,
+        "next": false,
+        "stored": 1
+      },
+      {
+        "candidate": 2,
+        "next": false,
+        "stored": 2
+      },
+      {
+        "candidate": 1,
+        "next": false,
+        "stored": 2
+      },
+      {
+        "candidate": 0,
+        "next": false,
+        "stored": 4294967295
+      }
+    ],
+    "positive": [
+      {
+        "hash_hex": "8c050ec63ecc095c743bfe16e972c4d155ed46b3b06fe2629fa0dbd0051de09e",
+        "name": "two_recipients",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2\n2026-11-14T12:00:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer UmVjb3Zlcnkga2l0IDIwMjYtMTE account\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "f0e69ae97e6a4d4c68e3dab2f729be5430bc90bf128a45eb176f8b6076b70c5338023235766616ab5a0d62d3a85bb58c672a86584e96462900aaa5e0c76a850d"
+      },
+      {
+        "hash_hex": "430a4f5f6c8f567a2e3514d0a764a6a7658245e9866daa38659835aaf12c4e46",
+        "name": "three_recipients",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n2\n2026-11-15T08:30:00Z\nE4obnvJHkGYugr2krOLdDsr2XQiwgA9v9Lv1oMNNJ9c e_x79dGi1o5Pj8VdkJ_xxBwTeYsMrlPldYOHq9OjITA 1 customer UmVjb3Zlcnkga2l0IDIwMjYtMTE account\nHTeDZFbIfcXKrE0EU4tuljilCwQPlZk7cC4YCG2yonQ pBVeNY356sC9bF9sIhU6B5w25tG4XZ6Y_3Dny5mXBV4 1 customer SW5ncmlkIOKckw account\n0xcubIaA6PQV2vt7-wEC0z4N8XM0lkigzLDf5k2wBGM Vd_-b4wh3C4SvzqXhV-T_jdnFyiwSXVnx5svItwTlj4 1 customer MVBhc3N3b3JkOiBGYW1pbGllIE3DvGxsZXI account",
+        "signature_hex": "933f5d19d93808d023825f4fd9190f44b096e66d9551b65b08de674d5d5afadffa30c7ee9bcb1efe944057e4bb12e37d2cce57801ce95220b01766215df87b06"
+      },
+      {
+        "hash_hex": "baaa68940ae0158c94f085718ae94a3150cde22cd0678ce8704c3563bcb5ab9b",
+        "name": "no_recipients",
+        "pinned_generation": 2,
+        "policy": "vhc-recovery-policy-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n3\n2\n2026-12-01T00:00:00Z",
+        "signature_hex": "cf52e64495f55c5d2ca85e3e3ce7166efb9252282fafd446e6a9a6ea53149bd1610557aa3bbc277e4ade3404e80c322c2c55a6509241c4383f0b253e98f7370d"
+      }
+    ],
+    "sequence": [
+      {
+        "floor": {
+          "hash_hex": "0000000000000000000000000000000000000000000000000000000000000000",
+          "sequence": 0
+        },
+        "name": "first_policy",
+        "policy": "two_recipients",
+        "verdict": "newer"
+      },
+      {
+        "floor": {
+          "hash_hex": "8c050ec63ecc095c743bfe16e972c4d155ed46b3b06fe2629fa0dbd0051de09e",
+          "sequence": 1
+        },
+        "name": "same_policy",
+        "policy": "two_recipients",
+        "verdict": "unchanged"
+      },
+      {
+        "floor": {
+          "hash_hex": "8c050ec63ecc095c743bfe16e972c4d155ed46b3b06fe2629fa0dbd0051de09e",
+          "sequence": 1
+        },
+        "name": "next_policy",
+        "policy": "three_recipients",
+        "verdict": "newer"
+      },
+      {
+        "floor": {
+          "hash_hex": "8c050ec63ecc095c743bfe16e972c4d155ed46b3b06fe2629fa0dbd0051de09e",
+          "sequence": 1
+        },
+        "name": "skipped_ahead",
+        "policy": "no_recipients",
+        "verdict": "newer"
+      },
+      {
+        "floor": {
+          "hash_hex": "430a4f5f6c8f567a2e3514d0a764a6a7658245e9866daa38659835aaf12c4e46",
+          "sequence": 2
+        },
+        "name": "rollback",
+        "policy": "two_recipients",
+        "verdict": "older"
+      },
+      {
+        "floor": {
+          "hash_hex": "430a4f5f6c8f567a2e3514d0a764a6a7658245e9866daa38659835aaf12c4e46",
+          "sequence": 1
+        },
+        "name": "equivocation",
+        "policy": "two_recipients",
+        "verdict": "conflict"
+      }
+    ]
+  },
+  "schema": "vhc-keykit-vectors/1",
+  "storage_credential": {
+    "negative": [
+      {
+        "context": {
+          "installation_id": "t8strmqnma7qe89214v79ecrmc",
+          "key_id": "005f3c2a9b1d4e60000000007",
+          "vault_uid_hex": "ac0f07aba2f01b8ff94320f2cfd1b53f"
+        },
+        "description": "not a sealed credential",
+        "error": "bad_magic",
+        "name": "bad_magic",
+        "sealed_hex": "895648420d0a1a0a000100018c0d94a385baaf2d4e2ee5b0ecdb2abbaa3030c789c267e4264a995632bb104b6da582215832719ccb96349c528d5426072899cdeb88e9166d713699b7cd040797cea7205756f8635166d3b3f1e6d1",
+        "server_sk_hex": "67456465b2205ff2b2f41f7928f96ef85e3c942a8719f696993bace377dd47c7"
+      },
+      {
+        "context": {
+          "installation_id": "t8strmqnma7qe89214v79ecrmc",
+          "key_id": "005f3c2a9b1d4e60000000007",
+          "vault_uid_hex": "ac0f07aba2f01b8ff94320f2cfd1b53f"
+        },
+        "description": "shorter than the prefix",
+        "error": "bad_magic",
+        "name": "too_short",
+        "sealed_hex": "895648430d0a1a0a000100018c0d94a385baaf2d4e2ee5b0ecdb2abbaa3030c789c267e4264a995632bb10",
+        "server_sk_hex": "67456465b2205ff2b2f41f7928f96ef85e3c942a8719f696993bace377dd47c7"
+      },
+      {
+        "context": {
+          "installation_id": "t8strmqnma7qe89214v79ecrmc",
+          "key_id": "005f3c2a9b1d4e60000000007",
+          "vault_uid_hex": "ac0f07aba2f01b8ff94320f2cfd1b53f"
+        },
+        "description": "version 2",
+        "error": "unsupported_version",
+        "name": "unsupported_version",
+        "sealed_hex": "895648430d0a1a0a000200018c0d94a385baaf2d4e2ee5b0ecdb2abbaa3030c789c267e4264a995632bb104b6da582215832719ccb96349c528d5426072899cdeb88e9166d713699b7cd040797cea7205756f8635166d3b3f1e6d1",
+        "server_sk_hex": "67456465b2205ff2b2f41f7928f96ef85e3c942a8719f696993bace377dd47c7"
+      },
+      {
+        "context": {
+          "installation_id": "t8strmqnma7qe89214v79ecrmc",
+          "key_id": "005f3c2a9b1d4e60000000007",
+          "vault_uid_hex": "ac0f07aba2f01b8ff94320f2cfd1b53f"
+        },
+        "description": "suite 2",
+        "error": "unsupported_suite",
+        "name": "suite_2",
+        "sealed_hex": "895648430d0a1a0a000100028c0d94a385baaf2d4e2ee5b0ecdb2abbaa3030c789c267e4264a995632bb104b6da582215832719ccb96349c528d5426072899cdeb88e9166d713699b7cd040797cea7205756f8635166d3b3f1e6d1",
+        "server_sk_hex": "67456465b2205ff2b2f41f7928f96ef85e3c942a8719f696993bace377dd47c7"
+      },
+      {
+        "context": {
+          "installation_id": "t8strmqnma7qe89214v79ecrmc",
+          "key_id": "005f3c2a9b1d4e60000000007",
+          "vault_uid_hex": "ac0f07aba2f01b8ff94320f2cfd1b53f"
+        },
+        "description": "no secret byte",
+        "error": "bad_length",
+        "name": "empty_secret",
+        "sealed_hex": "895648430d0a1a0a000100018c0d94a385baaf2d4e2ee5b0ecdb2abbaa3030c789c267e4264a995632bb104b0797cea7205756f8635166d3b3f1e6d1",
+        "server_sk_hex": "67456465b2205ff2b2f41f7928f96ef85e3c942a8719f696993bace377dd47c7"
+      },
+      {
+        "context": {
+          "installation_id": "t8strmqnma7qe89214v79ecrmc",
+          "key_id": "005f3c2a9b1d4e60000000007",
+          "vault_uid_hex": "ac0f07aba2f01b8ff94320f2cfd1b53f"
+        },
+        "description": "a secret above 1024 bytes",
+        "error": "bad_length",
+        "name": "too_long",
+        "sealed_hex": "895648430d0a1a0a000100018c0d94a385baaf2d4e2ee5b0ecdb2abbaa3030c789c267e4264a995632bb104b000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000",
+        "server_sk_hex": "67456465b2205ff2b2f41f7928f96ef85e3c942a8719f696993bace377dd47c7"
+      },
+      {
+        "context": {
+          "installation_id": "t8strmqnma7qe89214v79ecrmc",
+          "key_id": "005f3c2a9b1d4e60000000007",
+          "vault_uid_hex": "ac0f07aba2f01b8ff94320f2cfd1b53f"
+        },
+        "description": "an all-zero epk",
+        "error": "bad_ephemeral",
+        "name": "epk_low_order",
+        "sealed_hex": "895648430d0a1a0a0001000100000000000000000000000000000000000000000000000000000000000000006da582215832719ccb96349c528d5426072899cdeb88e9166d713699b7cd040797cea7205756f8635166d3b3f1e6d1",
+        "server_sk_hex": "67456465b2205ff2b2f41f7928f96ef85e3c942a8719f696993bace377dd47c7"
+      },
+      {
+        "context": {
+          "installation_id": "t8strmqnma7qe89214v79ecrmc",
+          "key_id": "005f3c2a9b1d4e60000000007",
+          "vault_uid_hex": "ac0f07aba2f01b8ff94320f2cfd1b53f"
+        },
+        "description": "the tag",
+        "error": "auth_failed",
+        "name": "tag_flipped",
+        "sealed_hex": "895648430d0a1a0a000100018c0d94a385baaf2d4e2ee5b0ecdb2abbaa3030c789c267e4264a995632bb104b6da582215832719ccb96349c528d5426072899cdeb88e9166d713699b7cd040797cea7205756f8635166d3b3f1e6d0",
+        "server_sk_hex": "67456465b2205ff2b2f41f7928f96ef85e3c942a8719f696993bace377dd47c7"
+      },
+      {
+        "context": {
+          "installation_id": "ajzrtc5z8ch0n71s7jytj5n3w8",
+          "key_id": "005f3c2a9b1d4e60000000007",
+          "vault_uid_hex": "ac0f07aba2f01b8ff94320f2cfd1b53f"
+        },
+        "description": "opened by another installation",
+        "error": "auth_failed",
+        "name": "another_installation",
+        "sealed_hex": "895648430d0a1a0a000100018c0d94a385baaf2d4e2ee5b0ecdb2abbaa3030c789c267e4264a995632bb104b6da582215832719ccb96349c528d5426072899cdeb88e9166d713699b7cd040797cea7205756f8635166d3b3f1e6d1",
+        "server_sk_hex": "67456465b2205ff2b2f41f7928f96ef85e3c942a8719f696993bace377dd47c7"
+      },
+      {
+        "context": {
+          "installation_id": "t8strmqnma7qe89214v79ecrmc",
+          "key_id": "005f3c2a9b1d4e60000000007",
+          "vault_uid_hex": "ad0f07aba2f01b8ff94320f2cfd1b53f"
+        },
+        "description": "opened for another vault",
+        "error": "auth_failed",
+        "name": "another_vault",
+        "sealed_hex": "895648430d0a1a0a000100018c0d94a385baaf2d4e2ee5b0ecdb2abbaa3030c789c267e4264a995632bb104b6da582215832719ccb96349c528d5426072899cdeb88e9166d713699b7cd040797cea7205756f8635166d3b3f1e6d1",
+        "server_sk_hex": "67456465b2205ff2b2f41f7928f96ef85e3c942a8719f696993bace377dd47c7"
+      },
+      {
+        "context": {
+          "installation_id": "t8strmqnma7qe89214v79ecrmc",
+          "key_id": "005f3c2a9b1d4e60000000008",
+          "vault_uid_hex": "ac0f07aba2f01b8ff94320f2cfd1b53f"
+        },
+        "description": "opened under another key id",
+        "error": "auth_failed",
+        "name": "another_key_id",
+        "sealed_hex": "895648430d0a1a0a000100018c0d94a385baaf2d4e2ee5b0ecdb2abbaa3030c789c267e4264a995632bb104b6da582215832719ccb96349c528d5426072899cdeb88e9166d713699b7cd040797cea7205756f8635166d3b3f1e6d1",
+        "server_sk_hex": "67456465b2205ff2b2f41f7928f96ef85e3c942a8719f696993bace377dd47c7"
+      }
+    ],
+    "positive": [
+      {
+        "context": {
+          "installation_id": "t8strmqnma7qe89214v79ecrmc",
+          "key_id": "005f3c2a9b1d4e60000000007",
+          "vault_uid_hex": "ac0f07aba2f01b8ff94320f2cfd1b53f"
+        },
+        "ephemeral_sk_hex": "5b2d410fd442363b4b63fc6e0591d007badb36920770d5776c8801f5947cd84f",
+        "name": "b2_application_key",
+        "sealed_base64url": "iVZIQw0KGgoAAQABjA2Uo4W6ry1OLuWw7Nsqu6owMMeJwmfkJkqZVjK7EEttpYIhWDJxnMuWNJxSjVQmByiZzeuI6RZtcTaZt80EB5fOpyBXVvhjUWbTs_Hm0Q",
+        "sealed_hex": "895648430d0a1a0a000100018c0d94a385baaf2d4e2ee5b0ecdb2abbaa3030c789c267e4264a995632bb104b6da582215832719ccb96349c528d5426072899cdeb88e9166d713699b7cd040797cea7205756f8635166d3b3f1e6d1",
+        "secret": "K005b11aaf773dbd95162b1f14fa7d0",
+        "server_pk_hex": "6e6f4ef7cbdae9a6cd96eb6c6ee54b6f4bddfe3a0e9ad3b12d2ef0f69ee8e20b",
+        "server_sk_hex": "67456465b2205ff2b2f41f7928f96ef85e3c942a8719f696993bace377dd47c7"
+      }
+    ]
+  },
+  "vault_label": {
+    "negative": [
+      {
+        "account_x25519_sk_hex": "a252319c897493f56a579dcfe1e3d49b567ab73ba43acff0c3c9b2cb6e94d248",
+        "description": "not a sealed label",
+        "error": "bad_magic",
+        "name": "bad_magic",
+        "sealed_hex": "8956484d0d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e81d0789554d530d014e404bd15c3a24e741a97c7d21a409945fdefcb4ad4825c51c7871e7e9eb78c180d64cdfe2a3045effb40f72d43d46e71b7469a52c0ad7dba5a268d03a9328d237f2bdbd822810945250100be833cc889485edf62d71dd4885348d284b0b9e557c43c371631c5c406f3b07b6a9d4c51f5bb2402be3123f1601120289ba462c95c23911192df308570ffdabebfb5b89050ff70f376537830159c53b36e2f7afa057b88a0e804f82d017bafafcfdc1b7e6a065ffd63a41e953c2054cbcbf9af65f0ca45b825fcf8d1",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "vault_uid_hex": "81d0789554d530d014e404bd15c3a24e"
+      },
+      {
+        "account_x25519_sk_hex": "a252319c897493f56a579dcfe1e3d49b567ab73ba43acff0c3c9b2cb6e94d248",
+        "description": "shorter than the prefix",
+        "error": "bad_magic",
+        "name": "too_short",
+        "sealed_hex": "8956484c0d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e81d0789554d530d014e404bd15c3a24e741a97c7d21a409945fdefcb4ad4825c51c7871e7e9eb78c180d64cdfe2a3045effb40f72d43d46e71b7469a52c0ad",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "vault_uid_hex": "81d0789554d530d014e404bd15c3a24e"
+      },
+      {
+        "account_x25519_sk_hex": "a252319c897493f56a579dcfe1e3d49b567ab73ba43acff0c3c9b2cb6e94d248",
+        "description": "version 2",
+        "error": "unsupported_version",
+        "name": "unsupported_version",
+        "sealed_hex": "8956484c0d0a1a0a00020001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e81d0789554d530d014e404bd15c3a24e741a97c7d21a409945fdefcb4ad4825c51c7871e7e9eb78c180d64cdfe2a3045effb40f72d43d46e71b7469a52c0ad7dba5a268d03a9328d237f2bdbd822810945250100be833cc889485edf62d71dd4885348d284b0b9e557c43c371631c5c406f3b07b6a9d4c51f5bb2402be3123f1601120289ba462c95c23911192df308570ffdabebfb5b89050ff70f376537830159c53b36e2f7afa057b88a0e804f82d017bafafcfdc1b7e6a065ffd63a41e953c2054cbcbf9af65f0ca45b825fcf8d1",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "vault_uid_hex": "81d0789554d530d014e404bd15c3a24e"
+      },
+      {
+        "account_x25519_sk_hex": "a252319c897493f56a579dcfe1e3d49b567ab73ba43acff0c3c9b2cb6e94d248",
+        "description": "P-256 isn't a label suite",
+        "error": "unsupported_suite",
+        "name": "suite_2",
+        "sealed_hex": "8956484c0d0a1a0a00010002000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e81d0789554d530d014e404bd15c3a24e741a97c7d21a409945fdefcb4ad4825c51c7871e7e9eb78c180d64cdfe2a3045effb40f72d43d46e71b7469a52c0ad7dba5a268d03a9328d237f2bdbd822810945250100be833cc889485edf62d71dd4885348d284b0b9e557c43c371631c5c406f3b07b6a9d4c51f5bb2402be3123f1601120289ba462c95c23911192df308570ffdabebfb5b89050ff70f376537830159c53b36e2f7afa057b88a0e804f82d017bafafcfdc1b7e6a065ffd63a41e953c2054cbcbf9af65f0ca45b825fcf8d1",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "vault_uid_hex": "81d0789554d530d014e404bd15c3a24e"
+      },
+      {
+        "account_x25519_sk_hex": "a252319c897493f56a579dcfe1e3d49b567ab73ba43acff0c3c9b2cb6e94d248",
+        "description": "public id changed",
+        "error": "account_mismatch",
+        "name": "another_account",
+        "sealed_hex": "8956484c0d0a1a0a00010001000000025e0c3a3e8d1b4c2a9e476b1d2f3a4c5e81d0789554d530d014e404bd15c3a24e741a97c7d21a409945fdefcb4ad4825c51c7871e7e9eb78c180d64cdfe2a3045effb40f72d43d46e71b7469a52c0ad7dba5a268d03a9328d237f2bdbd822810945250100be833cc889485edf62d71dd4885348d284b0b9e557c43c371631c5c406f3b07b6a9d4c51f5bb2402be3123f1601120289ba462c95c23911192df308570ffdabebfb5b89050ff70f376537830159c53b36e2f7afa057b88a0e804f82d017bafafcfdc1b7e6a065ffd63a41e953c2054cbcbf9af65f0ca45b825fcf8d1",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "vault_uid_hex": "81d0789554d530d014e404bd15c3a24e"
+      },
+      {
+        "account_x25519_sk_hex": "a252319c897493f56a579dcfe1e3d49b567ab73ba43acff0c3c9b2cb6e94d248",
+        "description": "opened for another vault",
+        "error": "vault_mismatch",
+        "name": "another_vault",
+        "sealed_hex": "8956484c0d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e81d0789554d530d014e404bd15c3a24e741a97c7d21a409945fdefcb4ad4825c51c7871e7e9eb78c180d64cdfe2a3045effb40f72d43d46e71b7469a52c0ad7dba5a268d03a9328d237f2bdbd822810945250100be833cc889485edf62d71dd4885348d284b0b9e557c43c371631c5c406f3b07b6a9d4c51f5bb2402be3123f1601120289ba462c95c23911192df308570ffdabebfb5b89050ff70f376537830159c53b36e2f7afa057b88a0e804f82d017bafafcfdc1b7e6a065ffd63a41e953c2054cbcbf9af65f0ca45b825fcf8d1",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "vault_uid_hex": "80d0789554d530d014e404bd15c3a24e"
+      },
+      {
+        "account_x25519_sk_hex": "3cf3214e364cf0f08974da8f0d9803a1ea2ac14ecbc0218e3f1067f967ec3732",
+        "description": "the reader expects generation 1",
+        "error": "key_mismatch",
+        "name": "older_generation_expected",
+        "sealed_hex": "8956484c0d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e81d0789554d530d014e404bd15c3a24e741a97c7d21a409945fdefcb4ad4825c51c7871e7e9eb78c180d64cdfe2a3045effb40f72d43d46e71b7469a52c0ad7dba5a268d03a9328d237f2bdbd822810945250100be833cc889485edf62d71dd4885348d284b0b9e557c43c371631c5c406f3b07b6a9d4c51f5bb2402be3123f1601120289ba462c95c23911192df308570ffdabebfb5b89050ff70f376537830159c53b36e2f7afa057b88a0e804f82d017bafafcfdc1b7e6a065ffd63a41e953c2054cbcbf9af65f0ca45b825fcf8d1",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n1\n2vGmYfn7SsK8a7QjVeB1HssQ7WlLPyN9_qnnSP6LfjI\n9LsEHcLKCkir0cvWQjaage6X3oDuyh8naHe6KU_pQ40\n\ninitial",
+        "vault_uid_hex": "81d0789554d530d014e404bd15c3a24e"
+      },
+      {
+        "account_x25519_sk_hex": "a252319c897493f56a579dcfe1e3d49b567ab73ba43acff0c3c9b2cb6e94d248",
+        "description": "one byte short",
+        "error": "bad_length",
+        "name": "truncated",
+        "sealed_hex": "8956484c0d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e81d0789554d530d014e404bd15c3a24e741a97c7d21a409945fdefcb4ad4825c51c7871e7e9eb78c180d64cdfe2a3045effb40f72d43d46e71b7469a52c0ad7dba5a268d03a9328d237f2bdbd822810945250100be833cc889485edf62d71dd4885348d284b0b9e557c43c371631c5c406f3b07b6a9d4c51f5bb2402be3123f1601120289ba462c95c23911192df308570ffdabebfb5b89050ff70f376537830159c53b36e2f7afa057b88a0e804f82d017bafafcfdc1b7e6a065ffd63a41e953c2054cbcbf9af65f0ca45b825fcf8",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "vault_uid_hex": "81d0789554d530d014e404bd15c3a24e"
+      },
+      {
+        "account_x25519_sk_hex": "a252319c897493f56a579dcfe1e3d49b567ab73ba43acff0c3c9b2cb6e94d248",
+        "description": "one byte more",
+        "error": "bad_length",
+        "name": "extended",
+        "sealed_hex": "8956484c0d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e81d0789554d530d014e404bd15c3a24e741a97c7d21a409945fdefcb4ad4825c51c7871e7e9eb78c180d64cdfe2a3045effb40f72d43d46e71b7469a52c0ad7dba5a268d03a9328d237f2bdbd822810945250100be833cc889485edf62d71dd4885348d284b0b9e557c43c371631c5c406f3b07b6a9d4c51f5bb2402be3123f1601120289ba462c95c23911192df308570ffdabebfb5b89050ff70f376537830159c53b36e2f7afa057b88a0e804f82d017bafafcfdc1b7e6a065ffd63a41e953c2054cbcbf9af65f0ca45b825fcf8d100",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "vault_uid_hex": "81d0789554d530d014e404bd15c3a24e"
+      },
+      {
+        "account_x25519_sk_hex": "a252319c897493f56a579dcfe1e3d49b567ab73ba43acff0c3c9b2cb6e94d248",
+        "description": "an all-zero epk",
+        "error": "bad_ephemeral",
+        "name": "epk_low_order",
+        "sealed_hex": "8956484c0d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e81d0789554d530d014e404bd15c3a24e741a97c7d21a409945fdefcb4ad4825c0000000000000000000000000000000000000000000000000000000000000000ba5a268d03a9328d237f2bdbd822810945250100be833cc889485edf62d71dd4885348d284b0b9e557c43c371631c5c406f3b07b6a9d4c51f5bb2402be3123f1601120289ba462c95c23911192df308570ffdabebfb5b89050ff70f376537830159c53b36e2f7afa057b88a0e804f82d017bafafcfdc1b7e6a065ffd63a41e953c2054cbcbf9af65f0ca45b825fcf8d1",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "vault_uid_hex": "81d0789554d530d014e404bd15c3a24e"
+      },
+      {
+        "account_x25519_sk_hex": "a252319c897493f56a579dcfe1e3d49b567ab73ba43acff0c3c9b2cb6e94d248",
+        "description": "the tag",
+        "error": "auth_failed",
+        "name": "tag_flipped",
+        "sealed_hex": "8956484c0d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e81d0789554d530d014e404bd15c3a24e741a97c7d21a409945fdefcb4ad4825c51c7871e7e9eb78c180d64cdfe2a3045effb40f72d43d46e71b7469a52c0ad7dba5a268d03a9328d237f2bdbd822810945250100be833cc889485edf62d71dd4885348d284b0b9e557c43c371631c5c406f3b07b6a9d4c51f5bb2402be3123f1601120289ba462c95c23911192df308570ffdabebfb5b89050ff70f376537830159c53b36e2f7afa057b88a0e804f82d017bafafcfdc1b7e6a065ffd63a41e953c2054cbcbf9af65f0ca45b825fcf8d0",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "vault_uid_hex": "81d0789554d530d014e404bd15c3a24e"
+      },
+      {
+        "account_x25519_sk_hex": "3cf3214e364cf0f08974da8f0d9803a1ea2ac14ecbc0218e3f1067f967ec3732",
+        "description": "opened with another X25519 key",
+        "error": "auth_failed",
+        "name": "wrong_key",
+        "sealed_hex": "8956484c0d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e81d0789554d530d014e404bd15c3a24e741a97c7d21a409945fdefcb4ad4825c51c7871e7e9eb78c180d64cdfe2a3045effb40f72d43d46e71b7469a52c0ad7dba5a268d03a9328d237f2bdbd822810945250100be833cc889485edf62d71dd4885348d284b0b9e557c43c371631c5c406f3b07b6a9d4c51f5bb2402be3123f1601120289ba462c95c23911192df308570ffdabebfb5b89050ff70f376537830159c53b36e2f7afa057b88a0e804f82d017bafafcfdc1b7e6a065ffd63a41e953c2054cbcbf9af65f0ca45b825fcf8d1",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "vault_uid_hex": "81d0789554d530d014e404bd15c3a24e"
+      },
+      {
+        "account_x25519_sk_hex": "a252319c897493f56a579dcfe1e3d49b567ab73ba43acff0c3c9b2cb6e94d248",
+        "description": "an empty name",
+        "error": "bad_label",
+        "name": "empty",
+        "sealed_hex": "8956484c0d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e81d0789554d530d014e404bd15c3a24e741a97c7d21a409945fdefcb4ad4825c6bbef1f89f1def7637046fa93655770b99a963bb81857858efc5afec323af56aa34f4093fdea8ed68a04f0a61f8a3a0053bcc03dbc02477c49d8f351c43387975d6ffe64c056a22430a1fbb9f44f776f09a3c8e6ac035b051327761463cc7205368f5cf1bafe355f808b7b3199eb32ac5153cb6d10a735b666ce71b3af1f42f3a8e7681522312bd157a0060b9162efcbc1e20676adced8f86f5245686549252e289d1749199cb5b205b1a15934ed192d",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "vault_uid_hex": "81d0789554d530d014e404bd15c3a24e"
+      },
+      {
+        "account_x25519_sk_hex": "a252319c897493f56a579dcfe1e3d49b567ab73ba43acff0c3c9b2cb6e94d248",
+        "description": "a non-zero byte after the padding starts",
+        "error": "bad_label",
+        "name": "bytes_after_padding",
+        "sealed_hex": "8956484c0d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e81d0789554d530d014e404bd15c3a24e741a97c7d21a409945fdefcb4ad4825c6bbef1f89f1def7637046fa93655770b99a963bb81857858efc5afec323af56acd2e2df6fdea8ed68a04f0a61f8a3a0053bcc03dbc02477c49d8f351c43387975d6ffe64c056a22430a1fbb9f44f776f09a3c8e6ac035b051327761463cc7205368f5cf1bafe355f808b7b3199eb32ac5153cb6d10a735b666ce71b3af1f42f3a8e7681522312bd157a0060b9162efcbc1e20676adced8f86f52456865492556e4b9a5f3312edd40a5e4e0bfe4b59fbc",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "vault_uid_hex": "81d0789554d530d014e404bd15c3a24e"
+      },
+      {
+        "account_x25519_sk_hex": "a252319c897493f56a579dcfe1e3d49b567ab73ba43acff0c3c9b2cb6e94d248",
+        "description": "not UTF-8",
+        "error": "bad_label",
+        "name": "invalid_utf8",
+        "sealed_hex": "8956484c0d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e81d0789554d530d014e404bd15c3a24e741a97c7d21a409945fdefcb4ad4825c6bbef1f89f1def7637046fa93655770b99a963bb81857858efc5afec323af56ac12e24b302ea8ed68a04f0a61f8a3a0053bcc03dbc02477c49d8f351c43387975d6ffe64c056a22430a1fbb9f44f776f09a3c8e6ac035b051327761463cc7205368f5cf1bafe355f808b7b3199eb32ac5153cb6d10a735b666ce71b3af1f42f3a8e7681522312bd157a0060b9162efcbc1e20676adced8f86f5245686549252ef8c4701ca8ce45b3dea00f0b488f8512",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "vault_uid_hex": "81d0789554d530d014e404bd15c3a24e"
+      },
+      {
+        "account_x25519_sk_hex": "a252319c897493f56a579dcfe1e3d49b567ab73ba43acff0c3c9b2cb6e94d248",
+        "description": "a tab",
+        "error": "bad_label",
+        "name": "control_character",
+        "sealed_hex": "8956484c0d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e81d0789554d530d014e404bd15c3a24e741a97c7d21a409945fdefcb4ad4825c6bbef1f89f1def7637046fa93655770b99a963bb81857858efc5afec323af56ad72e229a958ffcb38a04f0a61f8a3a0053bcc03dbc02477c49d8f351c43387975d6ffe64c056a22430a1fbb9f44f776f09a3c8e6ac035b051327761463cc7205368f5cf1bafe355f808b7b3199eb32ac5153cb6d10a735b666ce71b3af1f42f3a8e7681522312bd157a0060b9162efcbc1e20676adced8f86f5245686549252e08a8b4536f9a48335e3256cf76a6a5d1",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "vault_uid_hex": "81d0789554d530d014e404bd15c3a24e"
+      }
+    ],
+    "positive": [
+      {
+        "account_x25519_sk_hex": "a252319c897493f56a579dcfe1e3d49b567ab73ba43acff0c3c9b2cb6e94d248",
+        "ephemeral_sk_hex": "d2fb5e4833de3c2b6d0361cd0e8e94c7106b88e2db3fc389689bb4862a06c73c",
+        "label": "Family photos",
+        "label_bytes": 13,
+        "name": "ascii",
+        "sealed_hex": "8956484c0d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e81d0789554d530d014e404bd15c3a24e741a97c7d21a409945fdefcb4ad4825c51c7871e7e9eb78c180d64cdfe2a3045effb40f72d43d46e71b7469a52c0ad7dba5a268d03a9328d237f2bdbd822810945250100be833cc889485edf62d71dd4885348d284b0b9e557c43c371631c5c406f3b07b6a9d4c51f5bb2402be3123f1601120289ba462c95c23911192df308570ffdabebfb5b89050ff70f376537830159c53b36e2f7afa057b88a0e804f82d017bafafcfdc1b7e6a065ffd63a41e953c2054cbcbf9af65f0ca45b825fcf8d1",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "vault_uid_hex": "81d0789554d530d014e404bd15c3a24e"
+      },
+      {
+        "account_x25519_sk_hex": "a252319c897493f56a579dcfe1e3d49b567ab73ba43acff0c3c9b2cb6e94d248",
+        "ephemeral_sk_hex": "1c02fe118f41e479ca95dfd71d830c00971f12d82828321aed0f50174b4925bb",
+        "label": "Fotos – Familie 📷",
+        "label_bytes": 22,
+        "name": "utf8",
+        "sealed_hex": "8956484c0d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e81d0789554d530d014e404bd15c3a24e741a97c7d21a409945fdefcb4ad4825cb99c61ef7ec1bbecc4b20bd9a42a8dd9cc3a3d7fb0dd48fb4367d2b809cd97714d9e81106819cfb32f40fdc1918f822a71c9249776f09e6fa24b6c546ef456d6e1275d3b4f52381343577b24657a22d34512357e70d048291561af5f956b4c2ed9c2acef05dcc7fff1e3ea162154cc801933b84bd7b45f36c41b7513fa354a73d6a1a12d4ccfaa452ae0e9bdc8025c76d01ef8f93111bb3b81b4030d675bd2ae7cfd231a1ead737c8865cca43d40d45f",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "vault_uid_hex": "81d0789554d530d014e404bd15c3a24e"
+      },
+      {
+        "account_x25519_sk_hex": "a252319c897493f56a579dcfe1e3d49b567ab73ba43acff0c3c9b2cb6e94d248",
+        "ephemeral_sk_hex": "e8d0980aab69819081d3413e8d87fde172182cbe773d20fb8a6593ac09f24c6a",
+        "label": "vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvé",
+        "label_bytes": 128,
+        "name": "max_length",
+        "sealed_hex": "8956484c0d0a1a0a00010001000000025f0c3a3e8d1b4c2a9e476b1d2f3a4c5e81d0789554d530d014e404bd15c3a24e741a97c7d21a409945fdefcb4ad4825cd7c9e405c1eb63952e0c34fc0b752af0d99ed5e54525b2aaf3182845c3cda401908117d76e7b4df0227dd08402251a01aec5e57f31db13b2751589189670b19a2007fe88aa3e7963aeff0d8856c29c1802783929f724f854c82c2c793ba9a48d60aaa961b3dedf1821cb2943da1fc7f29d8ff47851fc4cd7e70f8e3661e7d7e609d04ab569e5396b5f4695bacce3a053bac0372be844d3692253f53ece16ca948a683313903473e395d3185ebbd4d5d5",
+        "statement": "vhc-account-key-v1\n5f0c3a3e-8d1b-4c2a-9e47-6b1d2f3a4c5e\n2\n8Y46-69_07oPPQ3_y0o9d3Br1yaNSwes6b2CbLkT_xI\nWEigQeRTaKizmkLuj2x6IEChXccKdVCayGbnEIdA6tE\nb4ad-7378-e4dc-5d1d-118b-7242-10b4-31b0\nroutine",
+        "vault_uid_hex": "81d0789554d530d014e404bd15c3a24e"
+      }
+    ]
+  }
+}

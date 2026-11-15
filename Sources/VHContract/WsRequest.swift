@@ -23,6 +23,10 @@ public enum WsAuth: String, Sendable, CaseIterable {
     case device
     /// Every session, signed in or not, pairing-only included (`meta.hello`).
     case any
+    /// A sign-in waiting for its second factor (server 1.22: `auth.mfa.verify`, `auth.mfa.cancel`).
+    case pending
+    /// A signed-in user who must enroll a second factor before anything else (server 1.22: `auth.mfa.*.enroll.*`).
+    case enrollment
 }
 
 /// The payload of a command whose handler reads nothing from it (contract input `none` or `token`). It is sent as

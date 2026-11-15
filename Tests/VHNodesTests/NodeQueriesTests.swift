@@ -236,6 +236,8 @@ final class ScriptedNode: NodeTransport {
     enum Reply: Sendable {
         case ok(JSONValue)
         case refuse(String, code: String)
+        /// An error as the client would have decoded it (a step-up with its data).
+        case fail(WsError)
     }
 
     typealias Responder = @Sendable (JSONValue) -> Reply
@@ -285,6 +287,8 @@ final class ScriptedNode: NodeTransport {
         case .refuse(let message, let code):
             throw WsError.classify(status: "ERROR", error: message, refusal: .init(code: code), command: command)
                 ?? .error(message)
+        case .fail(let error):
+            throw error
         }
     }
 }

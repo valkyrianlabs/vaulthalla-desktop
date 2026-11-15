@@ -24,7 +24,7 @@ vault's row into Finder).
 
 | Path | What |
 |---|---|
-| `Package.swift`, `Sources/`, `Tests/` | VaulthallaKit: `VHCore` (models, secret handling), `VHContract` (generated daemon contract), `VHTransport` (ws client, mTLS), `VHIdentity` (device keys and certificates), `VHOnePassword` (1Password helper client, backup status), `VHRecovery` (KEV1 envelopes, the recovery seed, uids and the recovery kit, against the shared golden vectors), `VHCloud` (optional Vaulthalla Cloud link: VHC1-signed requests, linking, delivering a cloud restore from a recovery kit), `VHMCP` (the MCP bridge), `VHFinder` (File Provider domains and the replica: items, versions, errors, conflicts, the per-domain database) |
+| `Package.swift`, `Sources/`, `Tests/` | VaulthallaKit: `VHCore` (models, secret handling), `VHContract` (generated daemon contract), `VHTransport` (ws client, mTLS), `VHIdentity` (device keys and certificates), `VHOnePassword` (1Password helper client, backup status), `VHRecovery` (KEV1 envelopes, the recovery seed, uids and the recovery kit, against the shared golden vectors), `VHKeykit` (vl-keykit's account key formats through its C API: statements, chains, KAK1, holder proofs, labels, policies, comparison codes; tested against the library's vectors), `VHCloud` (optional Vaulthalla Cloud link: VHC1-signed requests, linking, delivering a cloud restore from a recovery kit), `VHMCP` (the MCP bridge), `VHFinder` (File Provider domains and the replica: items, versions, errors, conflicts, the per-domain database) |
 | `Sources/vaulthalla-mcp/` | the stdio MCP bridge the app embeds at `Contents/Helpers/vaulthalla-mcp` (see "AI agents" below) |
 | `Helpers/vaulthalla-1password/` | the Go helper that backs vault keys up to 1Password (desktop-app authorization); `./build.sh`, see its README |
 | `App/` | the Xcode project: SwiftUI app, design system, features. Source folders are synchronized: add files on disk, no project edits |
@@ -36,9 +36,14 @@ vault's row into Finder).
 
 ## Build
 
-Needs Xcode 27 and Go (`brew install go`): the app embeds the Go 1Password helper and builds it from source.
+Needs Xcode 27 and Go (`brew install go`): the app embeds the Go 1Password helper and builds it from source. The
+account recovery key's formats come from vl-keykit's C API as `VLKeykit.xcframework`, built from the source pinned in
+`tools/keykit/vlkeykit.pin` into `build/vlkeykit/` (never committed) before the package resolves; it needs
+`brew install meson ninja pkg-config openssl@3 nlohmann-json`. The source tarball is committed under
+`tools/keykit/vendor/`, so no access to the private `valkyrianlabs/vl-keykit` repository is needed.
 
 ```sh
+tools/keykit/build-vlkeykit.sh                              # once, and after the pin changes
 swift test                                                  # VaulthallaKit
 VH_LIVE_NODE=<host>:36982 swift test --filter Live         # against a live daemon (docs/interop-testing.md)
 open App/Vaulthalla.xcodeproj                               # or:

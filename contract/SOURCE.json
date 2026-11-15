@@ -1,10 +1,10 @@
 {
-  "server_version": "1.20.0",
-  "server_commit": "a57ee43f",
+  "server_version": "1.22.2",
+  "server_commit": "8ac37630",
   "server_branch": "main",
   "source": "web/src/util/generated/wsContract.json",
   "contract_version": 3,
-  "ws_hash": "056cfd712b9e8341a251678acac0ae408f236bfb5b2b042eba62f1f1c8fe3c5e",
-  "models_hash": "90e903c4b40419ac7c469d4461938664799af1b82168f8db763ef46d1bdc6b81",
-  "note": "server release v1.20.0"
+  "ws_hash": "c12116b3d4ebaea58683952674e3c202483606a21c19da3c266b8baa7a6be120",
+  "models_hash": "1427024ab1e309b71608b7da8b2903394e714b88de07253553bba968dca0f839",
+  "note": "server main 8ac37630 (the generated contract is byte for byte feat/cloud-key-manager 50fc6ab8's, merged as #447): cloud.account_key, vault.remote.*, the device approval key"
 }

@@ -56,7 +56,8 @@ public struct NodeDigest: Sendable, Hashable {
             case .contractMismatch: self = .failed("Not readable by this version.")
             case .protocolUnsupported(let mismatch): self = .failed(mismatch.message)
             case .unauthorized(let message), .notFound(let message), .invalid(let message), .conflict(let message),
-                 .error(let message), .needsConfirmation(_, let message), .refused(_, let message):
+                 .error(let message), .needsConfirmation(_, let message), .refused(_, let message),
+                 .stepUpRequired(_, let message):
                 self = .failed(message)
             }
         }
