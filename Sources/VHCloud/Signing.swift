@@ -80,12 +80,3 @@ public enum Base64URL {
         return data
     }
 }
-
-/// The restore code both devices show for a Vaulthalla Cloud restore (the cloud's docs/design/recovery-restore.md):
-/// SHA-256("vhc-restore-v1\n" + vault uid + "\n" + base64(temporary public key)), the first 8 bytes as four groups of
-/// four hex digits. Desktop computes it itself: the cloud's `restore_code` field is a convenience, never trusted.
-public enum RestoreCode {
-    public static func of(vaultUid: String, temporaryPublicKey: Data) -> String {
-        VHC1.groups(VHC1.sha256Hex(Data(("vhc-restore-v1\n" + vaultUid + "\n" + temporaryPublicKey.base64EncodedString()).utf8)))
-    }
-}
