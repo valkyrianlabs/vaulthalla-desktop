@@ -39,8 +39,8 @@ vault's row into Finder).
 Needs Xcode 27 and Go (`brew install go`): the app embeds the Go 1Password helper and builds it from source. The
 account recovery key's formats come from vl-keykit's C API as `VLKeykit.xcframework`, built from the source pinned in
 `tools/keykit/vlkeykit.pin` into `build/vlkeykit/` (never committed) before the package resolves; it needs
-`brew install meson ninja pkg-config openssl@3 nlohmann-json` and read access to `valkyrianlabs/vl-keykit` (`GH_TOKEN`,
-or `VLKEYKIT_REPO=<local clone>`).
+`brew install meson ninja pkg-config openssl@3 nlohmann-json`. The source tarball is committed under
+`tools/keykit/vendor/`, so no access to the private `valkyrianlabs/vl-keykit` repository is needed.
 
 ```sh
 tools/keykit/build-vlkeykit.sh                              # once, and after the pin changes

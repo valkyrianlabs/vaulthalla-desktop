@@ -56,10 +56,9 @@ jobs:
       - name: Contract is generated, not edited
         run: python3 tools/gen-contract.py --check && python3 tools/test_gen_contract.py
       # VLKeykit.xcframework from the pinned vl-keykit source (tools/keykit/vlkeykit.pin), before SwiftPM resolves the
-      # package: Package.swift's binary target points at it. vl-keykit is private: the org token reads it.
+      # package: Package.swift's binary target points at it. The source tarball is committed, so no token is needed.
       - name: VLKeykit
         env:
-          GH_TOKEN: ${{ secrets.RELEASE_FINALIZE_TOKEN }}
           HOMEBREW_NO_AUTO_UPDATE: 1
         run: |
           brew install --quiet meson ninja pkg-config openssl@3 nlohmann-json

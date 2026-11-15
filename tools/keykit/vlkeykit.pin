@@ -1,10 +1,12 @@
 # The vl-keykit source VLKeykit.xcframework is built from (tools/keykit/build-vlkeykit.sh). Shell syntax, sourced.
 #
 # VLKEYKIT_SOURCE is one of
+#   file:<path in this repository>#sha256=<hex digest>      a source tarball committed here, checked before it is unpacked
 #   git+<repository URL or local path>#<full commit>       a revision, cloned and checked out
 #   <https URL of a release tarball>#sha256=<hex digest>    a release, downloaded and checked before it is unpacked
 #
-# Moving to the v0.3.0 release is this one line, e.g.
-#   VLKEYKIT_SOURCE=https://github.com/valkyrianlabs/vl-keykit/releases/download/v0.3.0/vl-keykit-0.3.0.tar.gz#sha256=<hex>
+# The tarball is committed (as vaulthalla-server and vaulthalla-cloud commit theirs under subprojects/packagecache), so
+# no build, CI included, needs a token for the private vl-keykit repository. This one is `git archive` of vl-keykit
+# main at ace2ad0f (0.3.0, not yet tagged); replace it with the v0.3.0 release tarball once that is published.
 VLKEYKIT_VERSION=0.3.0
-VLKEYKIT_SOURCE=git+https://github.com/valkyrianlabs/vl-keykit.git#ace2ad0f7bddbcb8f8d268c61cd66983e9b26d1c
+VLKEYKIT_SOURCE=file:tools/keykit/vendor/vl-keykit-0.3.0-ace2ad0f.tar.gz#sha256=f2e9f350e0cc50863edb6c9d5824f41e9cdd149c20ab3be508442a6011a1dfdd

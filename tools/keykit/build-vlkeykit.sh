@@ -10,7 +10,7 @@
 #
 # Environment:
 #   VLKEYKIT_REPO   a local clone to take a git pin's commit from instead of the pinned URL (the commit must be in it)
-#   GH_TOKEN        read access to valkyrianlabs/vl-keykit (private) when cloning or downloading from GitHub
+#   GH_TOKEN        only for a git or https pin of the private repository; the committed tarball needs none
 #
 # Needs Xcode, meson, ninja, pkg-config and Homebrew's openssl@3 and nlohmann-json (brew install meson ninja
 # pkg-config openssl@3 nlohmann-json). The framework is a static arm64 library with libcrypto linked in; nothing here
@@ -51,6 +51,17 @@ authed() {  # a github.com URL with the token, when there is one
 }
 
 case "$VLKEYKIT_SOURCE" in
+    file:*)
+        spec="${VLKEYKIT_SOURCE#file:}"
+        path="$root/${spec%%#*}"
+        want="${spec##*#sha256=}"
+        [[ "$want" =~ ^[0-9a-f]{64}$ ]] || { echo "vlkeykit.pin: a file pin ends in #sha256=<64 hex digits>" >&2; exit 1; }
+        [[ -f "$path" ]] || { echo "vlkeykit.pin: $path is missing" >&2; exit 1; }
+        have="$(shasum -a 256 "$path" | cut -d' ' -f1)"
+        [[ "$have" == "$want" ]] || { echo "the tarball's SHA-256 is $have, the pin says $want" >&2; exit 1; }
+        mkdir -p "$src"
+        tar -xf "$path" -C "$src" --strip-components 1
+        ;;
     git+*)
         spec="${VLKEYKIT_SOURCE#git+}"
         url="${spec%%#*}"
@@ -74,7 +85,7 @@ case "$VLKEYKIT_SOURCE" in
         tar -xzf "$out/source.tar.gz" -C "$src" --strip-components 1
         rm "$out/source.tar.gz"
         ;;
-    *) echo "vlkeykit.pin: VLKEYKIT_SOURCE is git+<url>#<commit> or <https url>#sha256=<hex>" >&2; exit 1 ;;
+    *) echo "vlkeykit.pin: VLKEYKIT_SOURCE is file:<path>#sha256=<hex>, git+<url>#<commit> or <https url>#sha256=<hex>" >&2; exit 1 ;;
 esac
 
 grep -q "version: '$VLKEYKIT_VERSION'" "$src/meson.build" || {
