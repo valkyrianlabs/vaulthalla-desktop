@@ -25,8 +25,11 @@ key's flows, node mapping, portal links and wording), `Sources/VHKeykit` (vl-key
   from another device (a transfer whose code both screens show) or by typing the recovery code, the fingerprint
   computed here, the offline copy (print, or record one), rotation, devices asking for the key.
 
-Storage usage, the per-vault storage switch and leaving managed storage wait for the server's `cloud.storage.*`
-commands and are not shown.
+- **Storage**: per paired server with `cloud.storage.managed_remotes`: usage against the plan's quota (the account's
+  daily figure) and what the server holds, the default for new vaults, the one-time offer for vaults that existed
+  before, each vault's switch with its state and reason in words (`ManagedStorageWording`), an ended plan's notice
+  with "Make Them Local Now", and "Leave Managed Storage", which opens the portal address the server returns. Every
+  change is a `cloud.storage.*` command to that server; turning a vault off asks first.
 
 ## Keys
 

@@ -34,6 +34,7 @@ struct CloudView: View {
                         case .account: CloudAccountPane(cloud: cloud)
                         case .servers: CloudServersPane(cloud: cloud)
                         case .vaults: CloudVaultsPane(cloud: cloud)
+                        case .storage: CloudStoragePane(cloud: cloud)
                         case .recoveryKey: CloudRecoveryKeyPane(cloud: cloud)
                         }
                     }
@@ -54,6 +55,7 @@ struct CloudView: View {
         case .account: "This Mac's link and your plan."
         case .servers: "Every server of your account and every node this Mac is paired with."
         case .vaults: "Every vault on every server, by its identity in your account."
+        case .storage: "Usage against your plan, and which vaults each server keeps in Vaulthalla Cloud."
         case .recoveryKey: "One recovery key for your whole account. Only your devices can unlock it."
         }
     }
@@ -324,7 +326,6 @@ private struct CloudVaultsPane: View {
                     Button("Show Names") { Task { await cloud.openLabels() } }.controlSize(.small)
                 }
             }
-            // Where each vault is stored and its storage switch come with the server's managed storage (cloud.storage.*).
         }
     }
 
@@ -526,5 +527,147 @@ private struct CloudRecoveryKeyPane: View {
                     .font(.caption).foregroundStyle(.fgSubtle)
             }
         }
+    }
+}
+
+// MARK: - Storage
+
+/// Managed storage, per server that has it (`cloud.storage.managed_remotes`): usage, the plan's state, the offer for
+/// vaults that existed before, the default for new vaults, each vault's switch and state, an ended plan's notice, and
+/// leaving. Every change goes to the server over its own connection (no step-up); the server carries it out.
+private struct CloudStoragePane: View {
+    @Environment(AppModel.self) private var app
+    var cloud: CloudModel
+    @State private var turningOff: (vault: WsModel.CloudStorageVault, node: Node)?
+
+    var body: some View {
+        let nodes = app.nodes.filter { $0.pairing.isPaired && cloud.hasManagedStorage($0.id) }
+        if nodes.isEmpty {
+            Panel {
+                EmptyState("No server keeps vaults here yet", systemImage: "externaldrive.badge.icloud",
+                           message: "A paired server with a Vaulthalla version that supports it shows its vaults here.")
+            }
+        }
+        ForEach(nodes) { node in
+            if let status = cloud.nodeFacts[node.id]?.storage {
+                serverPanels(status, node: node)
+            } else {
+                Panel(title: node.displayName) {
+                    Text(cloud.nodeFacts[node.id]?.storageError ?? "Waiting for \(node.displayName) to answer.").foregroundStyle(.fgMuted)
+                }
+            }
+        }
+        .confirmationDialog("Make this vault local again?", isPresented: .init(get: { turningOff != nil }, set: { if !$0 { turningOff = nil } }),
+                            titleVisibility: .visible, presenting: turningOff.map { [$0.vault.vaultID] }) { _ in
+            Button("Make Local", role: .destructive) {
+                if let t = turningOff { Task { await cloud.setStorage(t.vault, on: false, node: t.node) } }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            let server = turningOff?.node.displayName ?? "The server"
+            Text("\(server) first downloads every file it doesn't have yet and checks it, which needs that much free space. Then the vault stops using its storage. Deleting the copy in Vaulthalla Cloud is a separate step, in your browser.")
+        }
+    }
+
+    @ViewBuilder
+    private func serverPanels(_ s: WsModel.CloudStorageStatus, node: Node) -> some View {
+        if let ended = s.ended {
+            Callout(tone: .danger, systemImage: "exclamationmark.octagon") {
+                Text("Your plan ended. \(node.displayName)'s vaults in Vaulthalla Cloud stay attached without access until \(date(ended.convertsAt)), or until you confirm. Then they become local; files held only in their storage are listed as lost, and nothing on \(node.displayName) is deleted.")
+                if ended.confirmedBy == nil {
+                    Button("Make Them Local Now") { Task { await cloud.confirmEnded(node: node) } }
+                        .controlSize(.small).disabled(cloud.busy)
+                }
+            }
+        }
+        Panel(title: node.displayName, subtitle: s.available ? nil
+              : ManagedStorageWording.unavailable(linked: s.linked, accountKey: s.accountKey, entitlement: s.entitlement,
+                                                  server: node.displayName)) {
+            VStack(alignment: .leading, spacing: 10) {
+                if let usage = ManagedStorageWording.usage(used: s.usedBytes, quota: s.quotaBytes, day: s.usageDay) {
+                    if let used = s.usedBytes, let quota = s.quotaBytes, quota > 0 {
+                        ProgressView(value: min(Double(used) / Double(quota), 1)).frame(maxWidth: 360)
+                    }
+                    Text(usage).font(.callout)
+                }
+                Text("\(ByteCountFormatter.string(fromByteCount: s.managedLocalBytes, countStyle: .decimal)) of it is also held on \(node.displayName). Usage is updated daily.")
+                    .font(.caption).foregroundStyle(.fgSubtle)
+                if s.available {
+                    Toggle("Keep new vaults in Vaulthalla Cloud", isOn: .init(get: { s.newVaults },
+                                                                            set: { v in Task { await cloud.setNewVaults(v, node: node) } }))
+                        .disabled(cloud.busy)
+                    Text("New vaults are stored once they hold their first file.").font(.caption).foregroundStyle(.fgSubtle)
+                }
+            }
+        } actions: {
+            Button("Leave Managed Storage…") { cloud.leaveManagedStorage(s) }.controlSize(.small)
+        }
+        if s.offerOpen, !s.offered.isEmpty {
+            Panel(title: "\(s.offered.count) existing vault\(s.offered.count == 1 ? "" : "s") on \(node.displayName) can be stored in Vaulthalla Cloud",
+                  subtitle: "Nothing is uploaded until you choose. Each vault keeps its own switch afterwards.") {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(s.offered, id: \.vaultID) { v in
+                        HStack {
+                            Text(v.vaultName)
+                            Spacer()
+                            Text(ByteCountFormatter.string(fromByteCount: v.localBytes, countStyle: .decimal)).foregroundStyle(.fgMuted)
+                        }
+                    }
+                    HStack {
+                        Button("Store All") { Task { await cloud.answerOffer(accept: true, node: node) } }
+                            .buttonStyle(.borderedProminent)
+                        Button("Keep Them Local") { Task { await cloud.answerOffer(accept: false, node: node) } }
+                    }
+                    .disabled(cloud.busy)
+                }
+            }
+        }
+        Panel(title: "Vaults on \(node.displayName)") {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(s.vaults, id: \.vaultID) { v in
+                    let line = ManagedStorageWording.line(wording(v), server: node.displayName)
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(v.vaultName).font(.headline)
+                            Text(line.text).font(.caption).foregroundStyle(tone(line.tone))
+                            if let lost = v.lost, !lost.files.isEmpty {
+                                Text(lost.files.prefix(3).map(\.path).joined(separator: ", ") + (lost.files.count > 3 ? ", …" : ""))
+                                    .font(.caption2).foregroundStyle(.fgSubtle)
+                            }
+                        }
+                        Spacer()
+                        if v.storage != "own" {
+                            Toggle("", isOn: .init(get: { v.switch == "on" }, set: { on in
+                                if on { Task { await cloud.setStorage(v, on: true, node: node) } } else { turningOff = (v, node) }
+                            }))
+                            .toggleStyle(.switch)
+                            .labelsHidden()
+                            .disabled(cloud.busy || !s.available && v.switch != "on")
+                            .accessibilityLabel("Store \(v.vaultName) in Vaulthalla Cloud")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func wording(_ v: WsModel.CloudStorageVault) -> ManagedStorageWording.Vault {
+        ManagedStorageWording.Vault(storage: v.storage, switchOn: v.switch.map { $0 == "on" }, state: v.state, reason: v.reason,
+                                    access: v.access, bytesDone: v.progress?.bytesDone, bytesTotal: v.progress?.bytesTotal,
+                                    etaSeconds: v.progress?.etaSeconds, lostFiles: v.lost?.files.count ?? 0, lastError: v.lastError)
+    }
+
+    private func tone(_ t: ManagedStorageWording.Tone) -> Color {
+        switch t {
+        case .ok: StatusTone.ok.color
+        case .info: StatusTone.info.color
+        case .warn: StatusTone.warn.color
+        case .danger: StatusTone.danger.color
+        case .neutral: .secondary
+        }
+    }
+
+    private func date(_ seconds: Int64) -> String {
+        Date(timeIntervalSince1970: TimeInterval(seconds)).formatted(date: .abbreviated, time: .shortened)
     }
 }
