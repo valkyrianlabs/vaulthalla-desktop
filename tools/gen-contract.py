@@ -75,7 +75,7 @@ MODELS_FILE_LINES = 2500
 CONTRACT_VERSIONS = {2, 3}
 # The member a relaxed field carries in the (copied) contract while it is generated.
 RELAXED = "_relaxed_by_baseline"
-AUTH_LEVELS = {"public", "session", "human", "share", "pairing", "device", "any"}
+AUTH_LEVELS = {"public", "session", "human", "share", "pairing", "device", "any", "pending", "enrollment"}
 INPUTS = {"payload", "none", "token"}
 
 SWIFT_KEYWORDS = {
