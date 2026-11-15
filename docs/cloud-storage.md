@@ -4,8 +4,8 @@ Desktop's part of Vaulthalla Cloud managed storage in wave 1: the account and it
 nodes to the cloud's deployments, a top-level "Vaulthalla Cloud" section, the key manager as the default backup, and
 the engineering under it. It says what the later Mac App Store app and wave 4 need the structure to allow, without
 designing either. The cloud's routes and ceremonies are in vaulthalla-cloud `docs/design/`; the server's commands
-are in `managed-remotes.md` and `attach-remote.md`, designed in parallel and named here generically. **Nothing is
-built.**
+are in `managed-remotes.md` and `attach-remote.md`, designed in parallel and named here generically. Written before anything was built; [`cloud.md`](cloud.md) says
+what is.
 
 ## Decided and proposed
 
@@ -250,6 +250,15 @@ Not designed here. Wave 1 must not preclude vaults that have no server:
   puts an operation-level seam (list, fetch a range, conditional write, delete, thumbnails) under `VaultReplica`, with
   `NodeLink` as one implementation. Wave 1 adds no new ws-specific calls to `VaultReplica`.
 - **Keys.** The app-only group can later be granted to the extension, or the agent can hand it vault keys.
+
+**Built since (2026-11-15), up to the sync engine:** the cloud settled wave 4 as a hold per Mac and vault, with no
+deployment for a Mac (vaulthalla-cloud `account-model.md` "As built" 16 to 21, `managed-storage.md` 25 and 26).
+Desktop has its client side (`Sources/VHCloud/DeviceAccess*.swift`, [`cloud.md`](cloud.md), "Desktop-only vaults"):
+registering, the switch, the sealed short-lived bucket key and its renewal, every refusal typed, `moved_to`, the
+release, and a read-only "Vaults kept by a Mac" panel. What the sync engine adds: the operation-level seam under
+`VaultReplica` above, signing S3 requests with `DeviceAccess.withCredentials`, telling `DeviceAccess` when the provider
+refuses the key (`providerRefusedKey()`), enrolling and labelling the vault, reporting an ejection's conversion
+(`POST /v1/storage/vaults/{uid}/ejected`), and the app starting one `DeviceAccess` per vault this Mac holds.
 
 ## Work items, in landing order
 

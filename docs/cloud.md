@@ -7,7 +7,7 @@ The design is [`cloud-storage.md`](cloud-storage.md); the protocols are valkyria
 `recovery-restore.md`.
 
 Code: `Sources/VHCloud` (the client, models, transport, the link and account-key stores, holder keys, the account
-key's flows, node mapping, portal links and wording), `Sources/VHKeykit` (vl-keykit's C API; every key format),
+key's flows, node mapping, portal links and wording, Desktop-only vault access), `Sources/VHKeykit` (vl-keykit's C API; every key format),
 `Sources/VHNodes/DeviceApproval.swift` (the approval key answering a server's `keys` step-up),
 `App/Vaulthalla/Features/Cloud` (the section). Release builds talk to `https://api.vaulthalla.cloud` and open
 `https://app.vaulthalla.cloud` only; debug builds read `cloud.endpoint` and `cloud.portal` from the defaults.
@@ -29,7 +29,46 @@ key's flows, node mapping, portal links and wording), `Sources/VHKeykit` (vl-key
   daily figure) and what the server holds, the default for new vaults, the one-time offer for vaults that existed
   before, each vault's switch with its state and reason in words (`ManagedStorageWording`), an ended plan's notice
   with "Make Them Local Now", and "Leave Managed Storage", which opens the portal address the server returns. Every
-  change is a `cloud.storage.*` command to that server; turning a vault off asks first.
+  change is a `cloud.storage.*` command to that server; turning a vault off asks first. Above them, **Vaults kept by
+  a Mac** (Desktop-only vaults, from the cloud's `GET /v1/storage`): who holds each vault (this Mac, another Mac by
+  name, a server, or nobody yet), its storage's state, and the holding Mac's key with its expiry and renewal in words
+  (`DeviceAccessWording`), plus "Moved to the server *nas*" after a restore. The only action is **Stop Holding** on
+  this Mac's own vault (it narrows access; nothing local is deleted). The pane says that this version doesn't sync
+  these vaults and asks for no storage key.
+
+## Desktop-only vaults (wave 4, client side)
+
+A vault with no server, kept in managed storage by one Mac. The cloud's contract is vaulthalla-cloud
+`docs/design/account-model.md` ("As built" 16 to 21) and `managed-storage.md` ("As built" 25 and 26); the client
+follows the daemon's code (`src/accounts/Deployments.cpp`, `src/storage/`). Built in `Sources/VHCloud`, short of the
+sync engine:
+
+- **Routes** (`DeviceAccessClient.swift`): `GET /v1/storage` (`CloudStorage`, with `desktop`, the caller's own
+  `credential` and `moved_to`), `GET /v1/vaults/{uid}` (`CloudVault.desktop`), registering a vault with no deployment
+  (`POST /v1/vaults`, idempotent for the Mac that holds it), the writer's storage switch
+  (`PUT /v1/storage/vaults/{uid}`), the credential request and its acknowledgement, and the release
+  (`DELETE /v1/vaults/{uid}/replica`). The error envelope's `reason` is kept (`CloudError.declined`) and mapped to
+  `DeviceAccessError`, one case per reason the daemon gives (`held_by_server`, `held_by_desktop` with the other Mac's
+  name, `unplaced`, `no_such_vault`, `no_such_key`, `key_<state>`, `bucket_not_ready`, `bucket_off`, `bucket_deleting`,
+  `ejecting`, `account_key_unconfirmed`), 402, 429 and 401, each with plain words.
+- **The exchange** (`DeviceAccess`): a fresh one-time X25519 key per request (vl-keykit's `vl_keykit_credential_key`
+  through `VHKeykit.CredentialKey`), the `sealed_secret` opened bound to this Mac's installation id, the vault uid and
+  the `key_id`, then acknowledged; a box that doesn't open, a Mac key without `expires_at`/`renew_after`, or a key id
+  outside URL-unreserved characters is never used or acknowledged.
+- **Renewal**: at `renew_after` (12 hours before the 24-hour `expires_at`, the cloud's defaults); the cloud's view is
+  read every 30 minutes; `state` `expired` or `superseded` (a restricted plan, over quota) drops the key and renews at
+  once; failures back off from 30 seconds, doubling to 30 minutes (longer when a 429 says so), never past the key's
+  expiry, where the key is forgotten even offline. `storage_access` `none` (suspended, ended) pauses with no key; the
+  waiting reasons (bucket, offline copy, ejection) are checked every 15 minutes. A key the cloud revoked while this
+  Mac still holds the vault stops the loop (a tombstone keeps it stopped across launches) until the person asks
+  again; a vault moved to a server (`moved_to`), placed on another Mac, released, removed, or an unlinked Mac stops it
+  too. Every stop keeps local files.
+- **The secret** lives in memory (`SecretBytes`) and in the account's app-only keychain items (`BucketKeyStore`:
+  `storage-key.<uid>` says what the key is, `storage-key.<uid>.<key id>` holds the secret's bytes, written only by the
+  credential owner), never in UserDefaults, a file, a log or an error; it is deleted when the key is replaced,
+  superseded, expires or is revoked, and on unlink. `DeviceAccess.withCredentials` lends it to a signer for one call.
+- **Not wired into the app**: the app reads the cloud's view only and never starts `DeviceAccess`, since nothing
+  would use a key before the sync engine exists; there is no flow that creates a Desktop-only vault.
 
 ## Keys
 
@@ -40,3 +79,4 @@ key's flows, node mapping, portal links and wording), `Sources/VHKeykit` (vl-key
   enclave); a signed build asks for Touch ID or the password at each use. It is unwrapped inside vl-keykit for one
   operation at a time.
 - A transfer's temporary key is the new holder key itself, so the delivered KAK1 is kept as it is.
+- A Desktop-only vault's bucket key (short-lived) lives in the same app-only items, in two items per vault (above).

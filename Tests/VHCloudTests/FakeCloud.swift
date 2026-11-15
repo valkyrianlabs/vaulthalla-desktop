@@ -329,7 +329,7 @@ final class FakeCloud: CloudTransport, @unchecked Sendable {
          "expires_at": 4102444800]
     }
 
-    private func verifies(_ r: URLRequest) -> Bool {
+    func verifies(_ r: URLRequest) -> Bool {
         guard let auth = r.value(forHTTPHeaderField: "Authorization"), let pk = linkKey,
               let key = try? Curve25519.Signing.PublicKey(rawRepresentation: pk) else { return false }
         var fields: [String: String] = [:]
