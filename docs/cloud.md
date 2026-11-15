@@ -32,7 +32,8 @@ key's flows, node mapping, portal links and wording, Desktop-only vault access),
   change is a `cloud.storage.*` command to that server; turning a vault off asks first. Above them, **Vaults kept by
   a Mac** (Desktop-only vaults, from the cloud's `GET /v1/storage`): who holds each vault (this Mac, another Mac by
   name, a server, or nobody yet), its storage's state, and the holding Mac's key with its expiry and renewal in words
-  (`DeviceAccessWording`), plus "Moved to the server *nas*" after a restore. The only action is **Stop Holding** on
+  (`DeviceAccessWording`, why a key went from the cloud's `revoked_reason`), and what this Mac lost from the cloud's
+  `released` (stopped holding it, taken off by the account holder, given to another Mac by name, moved to a server). The only action is **Stop Holding** on
   this Mac's own vault (it narrows access; nothing local is deleted). The pane says that this version doesn't sync
   these vaults and asks for no storage key.
 
@@ -48,21 +49,30 @@ sync engine:
   (`POST /v1/vaults`, idempotent for the Mac that holds it), the writer's storage switch
   (`PUT /v1/storage/vaults/{uid}`), the credential request and its acknowledgement, and the release
   (`DELETE /v1/vaults/{uid}/replica`). The error envelope's `reason` is kept (`CloudError.declined`) and mapped to
-  `DeviceAccessError`, one case per reason the daemon gives (`held_by_server`, `held_by_desktop` with the other Mac's
-  name, `unplaced`, `no_such_vault`, `no_such_key`, `key_<state>`, `bucket_not_ready`, `bucket_off`, `bucket_deleting`,
-  `ejecting`, `account_key_unconfirmed`), 402, 429 and 401, each with plain words.
+  `DeviceAccessError`, one case per reason the daemon gives (managed-storage.md "As built" 27's table: `held_by_server`
+  and `held_by_desktop` with the holder's name from the envelope's `details`, `unplaced`, `no_such_vault`,
+  `no_such_key`, `key_<state>`, `bucket_not_ready`, `bucket_off`, `bucket_deleting`, `ejecting`, `ejected`,
+  `account_key_unconfirmed`, `payment_required` with its `details.cause`, `step_up_required`, `switch_only`,
+  `installation_only`/`portal_only`, the 400 `invalid_*`, `provider_unavailable`, `provider_key_id_invalid`), 429 (with
+  `Retry-After`) and 401, each with plain words. A 404 without a reason is a route the daemon doesn't serve.
 - **The exchange** (`DeviceAccess`): a fresh one-time X25519 key per request (vl-keykit's `vl_keykit_credential_key`
   through `VHKeykit.CredentialKey`), the `sealed_secret` opened bound to this Mac's installation id, the vault uid and
   the `key_id`, then acknowledged; a box that doesn't open, a Mac key without `expires_at`/`renew_after`, or a key id
-  outside URL-unreserved characters is never used or acknowledged.
+  outside the URL-unreserved set (which the daemon also enforces) is never used or acknowledged.
 - **Renewal**: at `renew_after` (12 hours before the 24-hour `expires_at`, the cloud's defaults); the cloud's view is
   read every 30 minutes; `state` `expired` or `superseded` (a restricted plan, over quota) drops the key and renews at
   once; failures back off from 30 seconds, doubling to 30 minutes (longer when a 429 says so), never past the key's
   expiry, where the key is forgotten even offline. `storage_access` `none` (suspended, ended) pauses with no key; the
-  waiting reasons (bucket, offline copy, ejection) are checked every 15 minutes. A key the cloud revoked while this
-  Mac still holds the vault stops the loop (a tombstone keeps it stopped across launches) until the person asks
-  again; a vault moved to a server (`moved_to`), placed on another Mac, released, removed, or an unlinked Mac stops it
-  too. Every stop keeps local files.
+  waiting reasons (bucket, offline copy, ejection) are checked every 15 minutes. A key gone while this Mac still holds
+  the vault follows its `revoked_reason`: `account_holder` (and `other`, or a reason this version doesn't know) stops
+  the loop, kept stopped across launches by a tombstone, until the person asks for a new key; the plan's reasons
+  (`suspended`, `ended`, `no_plan`, `restricted`, `over_quota`) renew by themselves once `storage_access` allows a key
+  again, as do the key's own lifecycle (`replaced`, `not_acknowledged`, `not_delivered`, `access_changed`) and an old
+  hold's reasons after the vault is placed here again; `installation_revoked` stops as unlinked, `ejection` waits.
+  Losing the vault follows `released`: taken off by the account holder (`hold_removed`) or given to another Mac
+  (`hold_reassigned`) stops until the account holder places it here again, which the next view shows and which
+  restarts it; `released` (this Mac) and `moved` (`moved_to`, a server) stop the same way; an unlinked Mac stays
+  stopped. Every stop keeps local files.
 - **The secret** lives in memory (`SecretBytes`) and in the account's app-only keychain items (`BucketKeyStore`:
   `storage-key.<uid>` says what the key is, `storage-key.<uid>.<key id>` holds the secret's bytes, written only by the
   credential owner), never in UserDefaults, a file, a log or an error; it is deleted when the key is replaced,

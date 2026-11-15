@@ -21,8 +21,9 @@ final class ManualClock: DeviceAccessClock, @unchecked Sendable {
 /// Vaulthalla Cloud's Desktop-only vault routes, written from the daemon's code (vaulthalla-cloud main):
 /// `src/accounts/Deployments.cpp` (`registerVault`, `requireVault`, `heldElsewhere`, `releaseHold`, the
 /// `/v1/vaults` routes and their reasons), `src/storage/ManagedStorage.cpp` (`overview`, `vaultView`, `keyView`,
-/// `setVault`, `issueCredential`, `acknowledge`, the hooks that revoke keys) and `src/http/Errors.cpp` (the error
-/// envelope with `reason`). The numbers are the daemon's defaults (`storage.desktop_key_minutes` 1440,
+/// `setVault`, `issueCredential`, `acknowledge`, the hooks that revoke keys, `publicRevokeReason`), `accounts::lastRelease`
+/// and `holderDetails`, and `src/http/Errors.cpp` (the error envelope with `reason` and `details`); every refusal of
+/// these routes carries its reason, as managed-storage.md "As built" 27's table lists them. The numbers are the daemon's defaults (`storage.desktop_key_minutes` 1440,
 /// `storage.desktop_renew_minutes` 720, `storage.credentials_per_hour` 10). Secrets are sealed with vl-keykit to the
 /// one-time key the request sends, exactly as the cloud does; linking and VHC1 verification are ``FakeCloud``'s.
 final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
@@ -48,13 +49,16 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
         var expiresAt: Date
         var renewAfter: Date
         var revokeReason: String?
+        var revokedAt: Date?
         var secret: Data
     }
 
     struct Hold {
         var installation: String
         var active: Bool
-        var removedReason: String?
+        var removedReason: String?  // desktop, owner, reassigned, moved, revoked (Deployments.cpp `releaseHold`)
+        var removedTo: String?
+        var removedAt: Date?
     }
 
     struct Vault {
@@ -128,7 +132,10 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
     /// `PUT /v1/vaults/{uid}/desktop` by the owner: the vault moves to `installation`; the old Mac's keys go
     /// (`desktop_reassigned`).
     func ownerPlaces(_ uid: String, on installation: String) {
-        lock.withLock { releaseHold(uid, reason: "reassigned"); vaults[uid]!.holds.append(Hold(installation: installation, active: true)) }
+        lock.withLock {
+            releaseHold(uid, reason: "reassigned", to: installation)
+            vaults[uid]!.holds.append(Hold(installation: installation, active: true))
+        }
     }
 
     /// `DELETE /v1/vaults/{uid}/desktop` by the owner (`desktop_owner`).
@@ -140,6 +147,7 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
             for i in vaults[uid]!.keys.indices where !["revoking", "revoked"].contains(vaults[uid]!.keys[i].state) {
                 vaults[uid]!.keys[i].state = "revoked"
                 vaults[uid]!.keys[i].revokeReason = "owner"
+                vaults[uid]!.keys[i].revokedAt = clock.now
             }
         }
     }
@@ -152,7 +160,13 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
         }
     }
 
-    /// Billing's state, and what storage's `account.enforce` does with it (ManagedStorage `decide` and the swap).
+    /// The account holder places a vault (back) on this Mac.
+    func ownerPlacesHere(_ uid: String) {
+        lock.withLock { releaseHold(uid, reason: "reassigned", to: mac); vaults[uid]!.holds.append(Hold(installation: mac, active: true)) }
+    }
+
+    /// Billing's state, and what storage's `account.enforce` does with it (ManagedStorage `decide`, Jobs.cpp's swap:
+    /// keys revoked as `enforce_<cause>`).
     func entitle(_ state: String, overQuota: Bool = false) {
         lock.withLock {
             entitlementState = state
@@ -164,12 +178,11 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
             for uid in order {
                 for i in vaults[uid]!.keys.indices {
                     let k = vaults[uid]!.keys[i]
-                    if storageAccess == "none", !["revoking", "revoked"].contains(k.state) {
-                        vaults[uid]!.keys[i].state = "revoked"
-                        vaults[uid]!.keys[i].revokeReason = "entitlement_\(state)"
+                    if storageAccess == "none", ["issued", "active", "superseded"].contains(k.state) {
+                        revoke(uid, i, "enforce_\(cause)")
                     } else if storageAccess != "none", k.access != storageAccess {
                         if k.state == "active" { vaults[uid]!.keys[i].state = "superseded" }
-                        if k.state == "issued" { vaults[uid]!.keys[i].state = "revoked"; vaults[uid]!.keys[i].revokeReason = "swap" }
+                        if k.state == "issued" { revoke(uid, i, "enforce_\(cause)") }
                     }
                 }
             }
@@ -182,8 +195,7 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
             for uid in order {
                 for i in vaults[uid]!.keys.indices where ["issued", "active", "superseded"].contains(vaults[uid]!.keys[i].state)
                     && vaults[uid]!.keys[i].expiresAt <= clock.now {
-                    vaults[uid]!.keys[i].state = "revoked"
-                    vaults[uid]!.keys[i].revokeReason = "expired"
+                    revoke(uid, i, "expired")
                 }
             }
         }
@@ -194,17 +206,45 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
 
     // MARK: the daemon's logic
 
-    private func releaseHold(_ uid: String, reason: String) {
+    private func revoke(_ uid: String, _ i: Int, _ reason: String) {
+        vaults[uid]!.keys[i].state = "revoked"
+        vaults[uid]!.keys[i].revokeReason = reason
+        vaults[uid]!.keys[i].revokedAt = clock.now
+    }
+
+    private func releaseHold(_ uid: String, reason: String, to: String? = nil) {
         guard let i = vaults[uid]!.holds.lastIndex(where: \.active) else { return }
         let installation = vaults[uid]!.holds[i].installation
         vaults[uid]!.holds[i].active = false
         vaults[uid]!.holds[i].removedReason = reason
+        vaults[uid]!.holds[i].removedTo = to
+        vaults[uid]!.holds[i].removedAt = clock.now
         // Hooks::onDesktopReleased: that Mac's keys for the bucket go.
         for k in vaults[uid]!.keys.indices where vaults[uid]!.keys[k].installation == installation
             && !["revoking", "revoked"].contains(vaults[uid]!.keys[k].state) {
-            vaults[uid]!.keys[k].state = "revoked"
-            vaults[uid]!.keys[k].revokeReason = "desktop_\(reason)"
+            revoke(uid, k, "desktop_\(reason)")
         }
+    }
+
+    /// ManagedStorage.cpp `publicRevokeReason`, verbatim.
+    static func publicRevokeReason(_ r: String) -> String {
+        if r == "owner" { return "account_holder" }
+        if r == "enforce_suspended" { return "suspended" }
+        if r == "enforce_ended" { return "ended" }
+        if r == "enforce_restricted" { return "restricted" }
+        if r == "enforce_over_quota" { return "over_quota" }
+        if r.hasPrefix("enforce_") { return "no_plan" }
+        if r == "desktop_desktop" { return "released" }
+        if r == "desktop_owner" { return "hold_removed" }
+        if r == "desktop_reassigned" { return "hold_reassigned" }
+        if r == "desktop_moved" { return "moved" }
+        if r == "desktop_revoked" || r.hasPrefix("installation_") { return "installation_revoked" }
+        if r == "ack_timeout" { return "not_acknowledged" }
+        if r == "replaced" || r == "replaced_unacknowledged" { return "replaced" }
+        if r == "swap_grace" { return "access_changed" }
+        if r == "unsealable" || r == "unrecorded" || r == "invalid_key_id" { return "not_delivered" }
+        if r == "ejection_tidy" { return "ejection" }
+        return "other"
     }
 
     private func keyView(_ v: Vault, _ installation: String) -> [String: Any] {
@@ -215,11 +255,15 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
             return ["key_id": k.id, "state": k.expiresAt <= clock.now ? "expired" : k.state, "access": k.access,
                     "expires_at": secs(k.expiresAt), "renew_after": secs(k.renewAfter)]
         }
-        if let last = v.keys.filter({ $0.installation == installation }).max(by: { $0.issuedAt < $1.issuedAt }),
-           last.revokeReason == "expired" {
+        guard let last = v.keys.filter({ $0.installation == installation }).max(by: { $0.issuedAt < $1.issuedAt }) else {
+            return ["state": "none"]
+        }
+        if last.revokeReason == "expired" {
             return ["state": "expired", "access": last.access, "expires_at": secs(last.expiresAt), "renew_after": secs(last.renewAfter)]
         }
-        return ["state": "none"]
+        // Every key here is a Mac's (no deployment): the Mac is told why.
+        return ["state": "none", "revoked_reason": Self.publicRevokeReason(last.revokeReason ?? ""),
+                "revoked_at": last.revokedAt.map { secs($0) as Any } ?? NSNull()]
     }
 
     private func vaultView(_ v: Vault, _ installation: String) -> [String: Any] {
@@ -245,6 +289,18 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
            !v.replicas.isEmpty, !v.holds.contains(where: { $0.installation == installation && $0.active }) {
             out["moved_to"] = ["deployment_id": v.replicas[0], "name": "nas"]
         }
+        // accounts::lastRelease: this Mac's newest hold, removed (not by its revocation), nothing newer.
+        if let h = v.holds.last(where: { $0.installation == installation }), !h.active, h.removedReason != "revoked" {
+            let r = h.removedReason!
+            var to: Any = NSNull()
+            if let t = h.removedTo {
+                to = ["kind": "desktop", "installation_id": t, "name": names[t] ?? NSNull()] as [String: Any]
+            } else if let m = out["moved_to"] as? [String: Any] {
+                to = ["kind": "server", "deployment_id": m["deployment_id"]!, "name": m["name"]!]
+            }
+            out["released"] = ["reason": r == "desktop" ? "released" : r == "owner" ? "hold_removed" : r == "reassigned" ? "hold_reassigned" : r,
+                               "to": to, "at": secs(h.removedAt!)]
+        }
         return out
     }
 
@@ -256,13 +312,17 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
         return out
     }
 
-    /// Deployments.cpp `heldElsewhere`.
-    private func heldElsewhere(_ v: Vault) -> (Int, String, String) {
-        if !v.replicas.isEmpty { return (409, "held_by_server", "the server \"nas\" holds this vault") }
-        if let h = v.holder {
-            return (409, "held_by_desktop", "the Mac \"\(names[h] ?? "Mac")\" holds this vault; for now one Mac writes to a vault")
+    /// Deployments.cpp `heldElsewhere` with `holderDetails`.
+    private func heldElsewhere(_ v: Vault) -> (Int, String, String, [String: String]) {
+        if !v.replicas.isEmpty {
+            return (409, "held_by_server", "the server \"nas\" holds this vault",
+                    ["holder": "server", "deployment_id": v.replicas[0], "name": "nas"])
         }
-        return (409, "unplaced", "no device holds this vault; the account holder places it in the portal")
+        if let h = v.holder {
+            return (409, "held_by_desktop", "the Mac \"\(names[h] ?? "Mac")\" holds this vault; for now one Mac writes to a vault",
+                    ["holder": "desktop", "installation_id": h, "name": names[h] ?? "Mac"])
+        }
+        return (409, "unplaced", "no device holds this vault; the account holder places it in the portal", [:])
     }
 
     private func secs(_ d: Date) -> Int64 { Int64(d.timeIntervalSince1970.rounded(.down)) }
@@ -277,15 +337,18 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
              HTTPURLResponse(url: request.url!, statusCode: status, httpVersion: nil, headerFields: headers)!)
         }
         // src/http/Errors.cpp errorResponse: `reason` only when the Error has one.
-        func refuse(_ status: Int, _ code: String, _ message: String, reason: String? = nil,
+        func refuse(_ status: Int, _ code: String, _ message: String, reason: String? = nil, details: [String: String] = [:],
                     headers: [String: String]? = nil) -> (Data, HTTPURLResponse) {
             var error: [String: Any] = ["code": code, "message": message]
             if let reason { error["reason"] = reason }
+            if !details.isEmpty { error["details"] = details }
             return reply(status, ["error": error], headers: headers)
         }
-        func conflict(_ r: (Int, String, String)) -> (Data, HTTPURLResponse) { refuse(r.0, "conflict", r.2, reason: r.1) }
+        func conflict(_ r: (Int, String, String, [String: String])) -> (Data, HTTPURLResponse) {
+            refuse(r.0, "conflict", r.2, reason: r.1, details: r.3)
+        }
         guard !installationRevoked, base.verifies(request) else {
-            return refuse(401, "unauthenticated", "request signature rejected")
+            return refuse(401, "unauthenticated", "request signature rejected", reason: "request_not_verified")
         }
         if let f = failNext {
             failNext = nil
@@ -306,13 +369,16 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
                                "ejection_portal_url": "https://app.vaulthalla.test/storage/leave", "provider": "fake",
                                "vaults": order.map { vaultView(vaults[$0]!, me) }])
         case ("GET", 3) where parts[1] == "vaults":
-            guard let v = vaults[parts[2]] else { return refuse(404, "not_found", "no such vault") }
+            guard let v = vaults[parts[2]] else { return refuse(404, "not_found", "no such vault", reason: "no_such_vault") }
             return reply(200, vaultJSON(v))
         case ("POST", 2) where path == "/v1/vaults":
             guard let uid = body["vault_uid"] as? String, Uid(base32: uid) != nil else {
-                return refuse(400, "invalid_argument", "`vault_uid` is the vault's uid (26 lower-case base32 symbols)")
+                return refuse(400, "invalid_argument", "`vault_uid` is the vault's uid (26 lower-case base32 symbols)",
+                              reason: "invalid_vault_uid")
             }
-            if body["origin_vault_id"] != nil { return refuse(400, "invalid_argument", "a Desktop's vault has no `origin_vault_id`") }
+            if body["origin_vault_id"] != nil {
+                return refuse(400, "invalid_argument", "a Desktop's vault has no `origin_vault_id`", reason: "desktop_has_no_origin")
+            }
             if let v = vaults[uid] {
                 if v.holder == me { return reply(200, vaultJSON(v).merging(["created": false]) { $1 }) }
                 return conflict(heldElsewhere(v))
@@ -327,11 +393,14 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
             return reply(204, [:])
         case ("PUT", 4) where parts[1] == "storage" && parts[2] == "vaults":
             let uid = parts[3]
-            guard var v = vaults[uid] else { return refuse(404, "not_found", "no such vault") }
+            guard var v = vaults[uid] else { return refuse(404, "not_found", "no such vault", reason: "no_such_vault") }
             if body["content_retention_days"] != nil, v.holder != me {
-                return refuse(403, "forbidden", "a Desktop changes the switch only; retention is the server's or the portal's")
+                return refuse(403, "forbidden", "a Desktop changes the switch only; retention is the server's or the portal's",
+                              reason: "switch_only")
             }
-            guard let enabled = body["enabled"] as? Bool else { return refuse(400, "invalid_argument", "send `enabled`") }
+            guard let enabled = body["enabled"] as? Bool else {
+                return refuse(400, "invalid_argument", "`enabled` is true or false", reason: "invalid_enabled")
+            }
             if v.bucketState == "none", enabled {
                 v.bucketState = "waiting"
             } else if enabled, v.bucketState == "off" {
@@ -345,7 +414,8 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
         case ("POST", 5) where parts[1] == "storage" && parts[2] == "vaults" && parts[4] == "credentials":
             let uid = parts[3]
             guard let pkText = body["public_key"] as? String, let pk = Base64URL.decode(pkText), pk.count == 32 else {
-                return refuse(400, "invalid_argument", "`public_key` is the one-time X25519 public key, base64url of 32 bytes")
+                return refuse(400, "invalid_argument", "`public_key` is the one-time X25519 public key, base64url of 32 bytes",
+                              reason: "invalid_public_key")
             }
             // requireVault(Write) for a Desktop.
             guard let v = vaults[uid] else { return refuse(404, "not_found", "no such vault", reason: "no_such_vault") }
@@ -359,13 +429,17 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
                 return refuse(409, "conflict", "this vault's bucket isn't ready", reason: "bucket_not_ready")
             }
             if let e = ejection, e != "refused" { return refuse(409, "conflict", "this account's storage is being ejected", reason: "ejecting") }
-            if storageAccess == "none" { return refuse(402, "payment_required", "managed storage needs an active plan (\(cause))") }
+            if storageAccess == "none" {
+                return refuse(402, "payment_required", "managed storage needs an active plan (\(cause))", reason: "payment_required",
+                              details: ["cause": cause])
+            }
             let recent = order.flatMap { vaults[$0]!.keys }.filter { $0.installation == me && $0.issuedAt > clock.now - 3600 }.count
             if recent >= Self.credentialsPerHour {
-                return refuse(429, "rate_limited", "too many storage credentials requested in the last hour; try later")
+                return refuse(429, "rate_limited", "too many storage credentials requested in the last hour; try later",
+                              reason: "rate_limited")
             }
             counter += 1
-            let keyID = "005fake\(counter)"
+            let keyID = "key-\(counter)"  // FakeProvider's ids (As built 27)
             let secret = Data("SECRET-\(counter)-\(UUID().uuidString)".utf8)
             let issued = Date(timeIntervalSince1970: clock.now.timeIntervalSince1970.rounded(.down))
             let expires = issued + Self.keyMinutes * 60
@@ -375,8 +449,7 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
                                                      vaultUid: Data(Uid(base32: uid)!.bytes), keyID: keyID, to: pk)
             // A new request revokes this Mac's earlier key still `issued` (a lost response).
             for i in vaults[uid]!.keys.indices where vaults[uid]!.keys[i].installation == me && vaults[uid]!.keys[i].state == "issued" {
-                vaults[uid]!.keys[i].state = "revoked"
-                vaults[uid]!.keys[i].revokeReason = "replaced_unacknowledged"
+                revoke(uid, i, "replaced_unacknowledged")
             }
             vaults[uid]!.keys.append(Key(id: keyID, installation: me, access: storageAccess, state: "issued", issuedAt: issued,
                                          expiresAt: expires, renewAfter: renew, secret: secret))
@@ -397,8 +470,7 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
             guard state == "issued" else { return refuse(409, "conflict", "this key is \(state); ask for a new one", reason: "key_\(state)") }
             for j in vaults[uid]!.keys.indices where vaults[uid]!.keys[j].installation == me && j != i
                 && ["active", "superseded"].contains(vaults[uid]!.keys[j].state) {
-                vaults[uid]!.keys[j].state = "revoked"
-                vaults[uid]!.keys[j].revokeReason = "replaced"
+                revoke(uid, j, "replaced")
             }
             vaults[uid]!.keys[i].state = "active"
             return reply(204, [:])

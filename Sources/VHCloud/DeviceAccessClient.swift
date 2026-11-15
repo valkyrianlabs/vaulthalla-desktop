@@ -34,7 +34,8 @@ public struct CloudStorage: Codable, Hashable, Sendable {
 
     /// One installation's key for the bucket (`keyView`): the key in force (issued first, then active, then
     /// superseded) with `state` `expired` once past its expiry; `expired` without an id after the cloud revoked it for
-    /// expiring (until a newer key); else `none`. Only this Mac's own view carries `key_id`.
+    /// expiring (until a newer key); a Mac's key revoked for another reason: `none` with `revoked_reason` and
+    /// `revoked_at` (null while the provider call is pending); else `none`. Only this Mac's own view carries `key_id`.
     public struct KeyView: Codable, Hashable, Sendable {
         public var keyId: String?
         /// none, issued, active, superseded, expired.
@@ -43,14 +44,39 @@ public struct CloudStorage: Codable, Hashable, Sendable {
         public var access: String?
         public var expiresAt: Int64?
         public var renewAfter: Int64?
+        /// Why a Mac's newest key went (managed-storage.md "As built" 27): account_holder, suspended, ended, restricted,
+        /// over_quota, no_plan, hold_removed, hold_reassigned, released, moved, installation_revoked, not_acknowledged,
+        /// replaced, access_changed, not_delivered, ejection, other.
+        public var revokedReason: String?
+        public var revokedAt: Int64?
 
-        public init(keyId: String? = nil, state: String, access: String? = nil, expiresAt: Int64? = nil, renewAfter: Int64? = nil) {
+        public init(keyId: String? = nil, state: String, access: String? = nil, expiresAt: Int64? = nil, renewAfter: Int64? = nil,
+                    revokedReason: String? = nil, revokedAt: Int64? = nil) {
             self.keyId = keyId
             self.state = state
             self.access = access
             self.expiresAt = expiresAt
             self.renewAfter = renewAfter
+            self.revokedReason = revokedReason
+            self.revokedAt = revokedAt
         }
+    }
+
+    /// Why this Mac no longer holds a vault, while that is the latest fact (`accounts::lastRelease`): `reason` released
+    /// (this Mac released it), hold_removed (the account holder took it off), hold_reassigned (given to another Mac,
+    /// `to`), moved (a restore put it on a server, `to`, as `moved_to`).
+    public struct Released: Codable, Hashable, Sendable {
+        public struct To: Codable, Hashable, Sendable {
+            /// desktop or server.
+            public var kind: String
+            public var installationId: String?
+            public var deploymentId: String?
+            public var name: String?
+        }
+
+        public var reason: String
+        public var to: To?
+        public var at: Int64?
     }
 
     /// The Mac holding a Desktop-only vault, with its key's state.
@@ -87,6 +113,8 @@ public struct CloudStorage: Codable, Hashable, Sendable {
         public var credential: KeyView?
         /// A restore moved the vault off this Mac onto a server.
         public var movedTo: MovedTo?
+        /// Why this Mac no longer holds it (this Mac's own view only).
+        public var released: Released?
 
         public var id: String { vaultUid }
     }
@@ -122,9 +150,9 @@ public struct CloudIssuedCredential: Decodable, Sendable, CustomStringConvertibl
 /// Why the cloud refused a Desktop-only vault operation, in the daemon's own reasons, each with plain words.
 /// Nothing here carries a secret: the cloud's messages never do, and Desktop adds none.
 public enum DeviceAccessError: Error, Sendable, Equatable, CustomStringConvertible {
-    /// 409 `held_by_server`: a server replicates the vault (one writer).
-    case heldByServer
-    /// 409 `held_by_desktop`: another Mac holds it; the daemon's message names that Mac.
+    /// 409 `held_by_server`: a server replicates the vault (one writer); `details.name` names it.
+    case heldByServer(name: String?)
+    /// 409 `held_by_desktop`: another Mac holds it; `details.name` names it.
     case heldByAnotherMac(name: String?)
     /// 409 `unplaced`: nobody holds it; the account holder places it in the portal.
     case unplaced
@@ -142,10 +170,22 @@ public enum DeviceAccessError: Error, Sendable, Equatable, CustomStringConvertib
     case bucketDeleting
     /// 409 `ejecting`: the account's storage is moving to the customer's own provider account.
     case ejecting
+    /// 409 `ejected`: it moved there.
+    case ejected
     /// 409 `account_key_unconfirmed`: no offline copy of the account recovery key is confirmed.
     case accountKeyUnconfirmed
-    /// 402 `payment_required`: the plan gives no storage access (suspended, ended, no quota).
-    case paymentRequired
+    /// 402 `payment_required`: the plan gives no storage access; `details.cause` (suspended, ended, no_storage_plan...).
+    case paymentRequired(cause: String?)
+    /// 403 `step_up_required`: the action (`details.action`) needs the account holder's fresh step-up, in the portal.
+    case stepUpRequired(action: String?)
+    /// 403 `switch_only`: a Mac that doesn't hold the vault changes its switch only, never its retention.
+    case switchOnly
+    /// 403 `installation_only` / `portal_only`: the route is another kind of caller's.
+    case wrongCaller(reason: String)
+    /// 400 `invalid_*`, `nothing_to_change`, `desktop_has_no_origin`: a request Desktop shouldn't have sent.
+    case invalidRequest(reason: String)
+    /// 503 `provider_unavailable` / `provider_key_id_invalid`: the provider made no usable key; ask again.
+    case providerUnavailable(reason: String)
     /// 429 `rate_limited` (at most `storage.credentials_per_hour` keys per installation and hour).
     case rateLimited(retryAfter: Int?)
     /// 401, or this Mac has no link: the installation was revoked or never linked.
@@ -174,8 +214,12 @@ public enum DeviceAccessError: Error, Sendable, Equatable, CustomStringConvertib
         case .bucketOff: "bucket_off"
         case .bucketDeleting: "bucket_deleting"
         case .ejecting: "ejecting"
+        case .ejected: "ejected"
         case .accountKeyUnconfirmed: "account_key_unconfirmed"
         case .paymentRequired: "payment_required"
+        case .stepUpRequired: "step_up_required"
+        case .switchOnly: "switch_only"
+        case .wrongCaller(let r), .invalidRequest(let r), .providerUnavailable(let r): r
         case .rateLimited: "rate_limited"
         case .unlinked: "unlinked"
         case .forbidden: "forbidden"
@@ -188,8 +232,9 @@ public enum DeviceAccessError: Error, Sendable, Equatable, CustomStringConvertib
     /// The sentence a person reads.
     public var message: String {
         switch self {
-        case .heldByServer:
-            "A server holds this vault, so this Mac can't write to it. A vault has one writer."
+        case .heldByServer(let name):
+            (name.map { "The server \u{201C}\($0)\u{201D} holds this vault" } ?? "A server holds this vault")
+                + ", so this Mac can't write to it. A vault has one writer."
         case .heldByAnotherMac(let name):
             (name.map { "The Mac \u{201C}\($0)\u{201D} holds this vault." } ?? "Another Mac holds this vault.")
                 + " For now one Mac writes to a vault; the account holder can move it in the portal."
@@ -202,9 +247,21 @@ public enum DeviceAccessError: Error, Sendable, Equatable, CustomStringConvertib
         case .bucketOff: "Its storage is switched off."
         case .bucketDeleting: "Its storage is being deleted."
         case .ejecting: "Your account's storage is moving to your own storage account."
+        case .ejected: "Your account's storage is in your own storage account now."
         case .accountKeyUnconfirmed:
             "No offline copy of your recovery key is confirmed yet. Storage starts once one is (Recovery Key)."
-        case .paymentRequired: "Your plan doesn't include storage access right now."
+        case .paymentRequired(let cause):
+            switch cause {
+            case "suspended": "Storage is paused until payment is updated."
+            case "ended": "Your plan ended: it no longer includes storage."
+            case "no_storage_plan", "none": "Your plan doesn't include storage."
+            default: "Your plan doesn't include storage access right now."
+            }
+        case .stepUpRequired: "The account holder approves this in the portal."
+        case .switchOnly: "This Mac doesn't hold this vault: it can only switch its storage on or off."
+        case .wrongCaller: "Vaulthalla Cloud takes this from another kind of device."
+        case .invalidRequest: "Vaulthalla Cloud refused a request this version of Vaulthalla sent."
+        case .providerUnavailable: "The storage provider didn't make a key. This Mac tries again."
         case .rateLimited(let after):
             after.map { "Too many storage keys were asked for. Trying again in \($0) seconds." }
                 ?? "Too many storage keys were asked for in the last hour. Trying again later."
@@ -221,10 +278,10 @@ public enum DeviceAccessError: Error, Sendable, Equatable, CustomStringConvertib
         if let e = error as? DeviceAccessError { return e }
         guard let e = error as? CloudError else { return .unavailable(String(describing: type(of: error))) }
         switch e {
-        case .declined(let status, _, let reason, let message):
+        case .declined(let status, _, let reason, let message, let details):
             switch reason {
-            case "held_by_server": return .heldByServer
-            case "held_by_desktop": return .heldByAnotherMac(name: quotedName(message))
+            case "held_by_server": return .heldByServer(name: details["name"])
+            case "held_by_desktop": return .heldByAnotherMac(name: details["name"])
             case "unplaced": return .unplaced
             case "no_such_vault": return .noSuchVault
             case "no_such_key": return .noSuchKey
@@ -232,15 +289,25 @@ public enum DeviceAccessError: Error, Sendable, Equatable, CustomStringConvertib
             case "bucket_off": return .bucketOff
             case "bucket_deleting": return .bucketDeleting
             case "ejecting": return .ejecting
+            case "ejected": return .ejected
             case "account_key_unconfirmed": return .accountKeyUnconfirmed
+            case "payment_required": return .paymentRequired(cause: details["cause"])
+            case "step_up_required": return .stepUpRequired(action: details["action"])
+            case "switch_only": return .switchOnly
+            case "installation_only", "portal_only": return .wrongCaller(reason: reason)
+            case "provider_unavailable", "provider_key_id_invalid": return .providerUnavailable(reason: reason)
+            case "request_not_verified", "sign_in_required": return .unlinked
+            case "rate_limited": return .rateLimited(retryAfter: nil)
+            case let r where status == 400 && (r.hasPrefix("invalid_") || r == "nothing_to_change" || r == "desktop_has_no_origin"):
+                return .invalidRequest(reason: r)
             case let r where r.hasPrefix("key_"): return .keyNotIssued(state: String(r.dropFirst(4)))
             default: return .other(status: status, reason: reason, message: message)
             }
-        case .paymentRequired: return .paymentRequired
+        case .paymentRequired: return .paymentRequired(cause: nil)
         case .rateLimited(let after, _): return .rateLimited(retryAfter: after)
         case .unauthenticated, .notLinked: return .unlinked
         case .forbidden(let m): return .forbidden(m)
-        // A 404 without a reason is a route this cloud doesn't serve (no `storage` section), not a vault it lacks.
+        // A 404 without a reason is a route this daemon doesn't serve (As built 27), never a vault or key it lacks.
         case .notFound(let m): return .other(status: 404, reason: nil, message: m)
         case .unreachable, .unavailable, .tooLarge: return .unavailable(e.message)
         case .malformed(let m): return .malformed(m)
@@ -249,12 +316,6 @@ public enum DeviceAccessError: Error, Sendable, Equatable, CustomStringConvertib
         case .refused(let status, let code, let m): return .other(status: status, reason: code, message: m)
         default: return .other(status: 0, reason: nil, message: e.message)
         }
-    }
-
-    /// The name between the first pair of double quotes: `the Mac "iMac" holds this vault; ...` (Deployments.cpp).
-    static func quotedName(_ message: String) -> String? {
-        let parts = message.split(separator: "\"", omittingEmptySubsequences: false)
-        return parts.count >= 3 && !parts[1].isEmpty ? String(parts[1]) : nil
     }
 }
 
@@ -316,8 +377,8 @@ extension CloudClient {
         return uid
     }
 
-    /// A key id as Desktop puts it in a path: the format allows 1-128 printable ASCII characters, but VHC1 signs the
-    /// path as sent, so only URL-unreserved ones are accepted (B2 and IAM key ids are alphanumeric).
+    /// A key id as Desktop puts it in a path: 1 to 128 URL-unreserved characters, which the daemon enforces since
+    /// "As built" 27 (`storage/004_key_id_charset.sql`); checked here too, so nothing else is ever signed into a path.
     static func checkedKeyID(_ id: String) throws -> String {
         let unreserved = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
         guard (1 ... 128).contains(id.count), id.allSatisfy(unreserved.contains) else {

@@ -47,6 +47,8 @@ public struct BucketKeyStore: Sendable {
         var expiresAt: Int64
         var renewAfter: Int64
         var revoked: Bool
+        /// The cloud's `revoked_reason` for a tombstone.
+        var revokedReason: String?
     }
 
     public static func item(_ uid: String) -> String { "storage-key.\(uid)" }
@@ -67,8 +69,11 @@ public struct BucketKeyStore: Sendable {
                          renewAfter: Date(timeIntervalSince1970: TimeInterval(m.renewAfter)), secret: SecretBytes(raw))
     }
 
-    /// Whether the cloud revoked the last key and the person hasn't asked for a new one.
-    public func isRevoked(_ uid: String) throws -> Bool { try metadata(uid)?.revoked == true }
+    /// The cloud's reason when it revoked the last key and the person hasn't asked for a new one; nil otherwise.
+    public func revokedReason(_ uid: String) throws -> String? {
+        guard let m = try metadata(uid), m.revoked else { return nil }
+        return m.revokedReason ?? "account_holder"
+    }
 
     /// Keeps `key` (replacing the vault's previous key and its secret).
     public func save(_ key: BucketKey) throws {
@@ -82,13 +87,14 @@ public struct BucketKeyStore: Sendable {
         }
     }
 
-    /// Forgets the vault's key and its secret; with `revoked`, leaves a tombstone without either.
-    public func delete(_ uid: String, revoked: Bool = false) throws {
+    /// Forgets the vault's key and its secret; with `revokedReason`, leaves a tombstone without either.
+    public func delete(_ uid: String, revokedReason: String? = nil) throws {
         if let m = try? metadata(uid) {
             try items.delete(Self.secretItem(uid, m.keyID), operation: "forget a storage key")
-            if revoked {
+            if let revokedReason {
                 var t = m
                 t.revoked = true
+                t.revokedReason = revokedReason
                 try items.write(Self.item(uid), JSONEncoder().encode(t), operation: "forget a storage key")
                 return
             }
@@ -146,20 +152,28 @@ public actor DeviceAccess {
         public init() {}
     }
 
-    /// Why the loop stopped for good (until ``resume()``). Every stop forgets the key and keeps local files.
+    /// Why the loop stopped. Every stop forgets the key and keeps local files. Only ``keyRevoked(reason:)`` (the account
+    /// holder revoked the key) and ``takenOff`` (the account holder took the vault off this Mac) stay stopped until a
+    /// person acts (``resume()``, or the account holder placing the vault here again); ``unlinked`` until linked again.
+    /// The others end as soon as the cloud's view shows this Mac holding the vault again.
     public enum Stop: Sendable, Equatable {
         /// Another device holds the vault, or nobody does (``DeviceAccessError/heldByServer``, `heldByAnotherMac`,
-        /// `unplaced`).
+        /// `unplaced`), with no `released` fact about this Mac.
         case notHeld(DeviceAccessError)
-        /// A restore moved the vault to the server `name`.
+        /// A restore moved the vault to the server `name` (`moved_to`, `released.reason` `moved`).
         case moved(deploymentID: String, name: String)
-        /// The cloud revoked this Mac's key while it still holds the vault (the account holder, in the portal).
-        case keyRevoked
+        /// The account holder gave the vault to another Mac (`released.reason` `hold_reassigned`).
+        case reassigned(to: String?)
+        /// The account holder took the vault off this Mac (`released.reason` `hold_removed`).
+        case takenOff
+        /// The cloud revoked this Mac's key while it still holds the vault: `account_holder` (in the portal), or a
+        /// reason this version doesn't know (`other`).
+        case keyRevoked(reason: String)
         /// The account no longer has this vault.
         case vaultRemoved
         /// This Mac's link was revoked.
         case unlinked
-        /// This Mac released the vault.
+        /// This Mac released the vault (`released.reason` `released`).
         case released
         /// The account's storage moved to the customer's own provider account.
         case ejected
@@ -210,6 +224,8 @@ public actor DeviceAccess {
     public private(set) var phase: Phase = .starting
     private var nextRefresh: Date = .distantPast
     private var renewNow = false
+    /// After ``resume()``: the cloud's lingering `revoked_reason` `account_holder` is the one the person overrode.
+    private var resumed = false
     private var failures = 0
     private var onChange: (@Sendable (Status) -> Void)?
 
@@ -226,7 +242,7 @@ public actor DeviceAccess {
         self.settings = settings
         uidBytes = Data(uid.bytes)
         key = try? store.load(vaultUid)
-        if (try? store.isRevoked(vaultUid)) == true { phase = .stopped(.keyRevoked) }
+        if let reason = try? store.revokedReason(vaultUid) { phase = .stopped(.keyRevoked(reason: reason)) }
     }
 
     public var status: Status {
@@ -273,11 +289,26 @@ public actor DeviceAccess {
         return nextWake()
     }
 
-    /// Follows a view of `GET /v1/storage` read elsewhere (the section's refresh), without waiting for the loop.
+    /// Follows a view of `GET /v1/storage` read elsewhere (the section's refresh), without waiting for the loop. A stop
+    /// that isn't the account holder's revocation ends here once the view shows this Mac holding the vault again (the
+    /// account holder placed it back; the caller runs the loop again).
     public func apply(_ view: CloudStorage) async {
-        if case .stopped = phase { return }
+        if case .stopped(let stop) = phase {
+            guard Self.endsWhenHeldAgain(stop), let v = view.vault(vaultUid), v.movedTo == nil, v.released == nil,
+                  v.desktop?.installationId == installationID else { return }
+            phase = .starting
+            renewNow = true
+        }
         await reconcile(view, now: clock.now)
         onChange?(status)
+    }
+
+    /// Whether a stop ends by itself when the cloud shows this Mac holding the vault again.
+    static func endsWhenHeldAgain(_ stop: Stop) -> Bool {
+        switch stop {
+        case .keyRevoked, .unlinked: false
+        default: true
+        }
     }
 
     /// The provider refused the key (the sync engine's 401 or 403): read the cloud's view at the next step.
@@ -286,10 +317,11 @@ public actor DeviceAccess {
         renewNow = true
     }
 
-    /// After ``Stop/keyRevoked``, the person asks for a new key.
+    /// After ``Stop/keyRevoked(reason:)``, the person asks for a new key.
     public func resume() {
         guard case .stopped(.keyRevoked) = phase else { return }
         try? store.delete(vaultUid)
+        resumed = true
         phase = .starting
         nextRefresh = .distantPast
         renewNow = true
@@ -342,9 +374,9 @@ public actor DeviceAccess {
         }
     }
 
-    private func forget(revoked: Bool = false) {
+    private func forget(revokedReason: String? = nil) {
         key = nil
-        do { try store.delete(vaultUid, revoked: revoked) } catch {
+        do { try store.delete(vaultUid, revokedReason: revokedReason) } catch {
             Self.log.notice("device access: a stored storage key couldn't be removed: \(String(describing: error), privacy: .public)")
         }
     }
@@ -356,7 +388,7 @@ public actor DeviceAccess {
     }
 
     private func stop(_ reason: Stop) {
-        forget(revoked: reason == .keyRevoked)
+        if case .keyRevoked(let why) = reason { forget(revokedReason: why) } else { forget() }
         phase = .stopped(reason)
         renewNow = false
     }
@@ -366,10 +398,20 @@ public actor DeviceAccess {
         guard let v = view.vault(vaultUid) else { return stop(.vaultRemoved) }
         if let moved = v.movedTo { return stop(.moved(deploymentID: moved.deploymentId, name: moved.name)) }
         guard let holder = v.desktop, holder.installationId == installationID else {
+            // Why this Mac lost the vault, as the cloud records it.
+            switch v.released?.reason {
+            case "released": return stop(.released)
+            case "hold_removed": return stop(.takenOff)
+            case "hold_reassigned": return stop(.reassigned(to: v.released?.to?.name ?? v.desktop?.name))
+            case "moved":
+                let to = v.released?.to
+                return stop(.moved(deploymentID: to?.deploymentId ?? "", name: to?.name ?? "a server"))
+            default: break
+            }
             if let other = v.desktop { return stop(.notHeld(.heldByAnotherMac(name: other.name))) }
-            // A server's vault, or nobody's: the vault's own record says which.
+            // A server's vault, or nobody's (never this Mac's): the vault's own record says which.
             let replicas = (try? await client.vault(vaultUid))?.replicas ?? []
-            return stop(.notHeld(replicas.isEmpty ? .unplaced : .heldByServer))
+            return stop(.notHeld(replicas.isEmpty ? .unplaced : .heldByServer(name: nil)))
         }
         if v.state == "ejected" { return stop(.ejected) }
         if view.entitlement.storageAccess == "none" {
@@ -389,7 +431,7 @@ public actor DeviceAccess {
             return wait(.bucketDeleting, now: now)
         default:
             return wait(v.reason == "account_key_unconfirmed" ? .accountKeyUnconfirmed
-                        : v.reason == "payment_required" ? .paymentRequired : .bucketNotReady, now: now)
+                        : v.reason == "payment_required" ? .paymentRequired(cause: view.entitlement.cause) : .bucketNotReady, now: now)
         }
         let c = v.credential ?? CloudStorage.KeyView(state: "none")
         let mine = key != nil && c.keyId == key?.keyID
@@ -411,11 +453,37 @@ public actor DeviceAccess {
             forget()
             renewNow = true
         default:  // none
-            if key != nil { return stop(.keyRevoked) }
-            renewNow = true
+            switch Self.afterRevocation(c.revokedReason, hadKey: key != nil) {
+            case .stopRevoked(let why) where !(resumed && why == "account_holder"): return stop(.keyRevoked(reason: why))
+            case .unlinked: return stop(.unlinked)
+            case .ejecting:
+                forget()
+                return wait(.ejecting, now: now)
+            default:
+                forget()
+                renewNow = true
+            }
         }
         if case .retrying(_, _, let at) = phase, at > now {} else { phase = .holding }
         forgetIfExpired(now)
+    }
+
+    enum AfterRevocation: Equatable { case renew, stopRevoked(String), unlinked, ejecting }
+
+    /// What a key the cloud shows as gone (`none`) means while this Mac still holds the vault, by `revoked_reason`.
+    /// Stops only for the account holder's own revocation and reasons this version doesn't know; renews by itself after
+    /// the plan's changes (the cloud refuses a key while the plan gives none: the entitlement check above pauses
+    /// first), the key's own lifecycle, and an old hold's reasons once the vault is placed here again.
+    static func afterRevocation(_ reason: String?, hadKey: Bool) -> AfterRevocation {
+        switch reason {
+        case nil: hadKey ? .stopRevoked("account_holder") : .renew  // a daemon before "As built" 27: assume the holder
+        case "suspended", "ended", "no_plan", "restricted", "over_quota": .renew
+        case "replaced", "not_acknowledged", "not_delivered", "access_changed": .renew
+        case "hold_removed", "hold_reassigned", "released", "moved": .renew
+        case "installation_revoked": .unlinked
+        case "ejection": .ejecting
+        default: .stopRevoked(reason!)  // account_holder, other, anything newer
+        }
     }
 
     private func wait(_ reason: DeviceAccessError, now: Date) {
@@ -452,6 +520,7 @@ public actor DeviceAccess {
             key = fresh
             failures = 0
             renewNow = false
+            resumed = false
             phase = .holding
             nextRefresh = now + settings.refreshInterval
         } catch {
@@ -466,6 +535,7 @@ public actor DeviceAccess {
         case .unlinked: stop(.unlinked)
         case .heldByServer, .heldByAnotherMac, .unplaced: stop(.notHeld(e))
         case .noSuchVault: stop(.vaultRemoved)
+        case .ejected: stop(.ejected)
         case .paymentRequired:
             forget()
             phase = .paused(entitlement: nil)

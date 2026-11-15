@@ -11,8 +11,19 @@ public enum DeviceAccessWording {
         if let moved = v.movedTo {
             return Line(text: "Moved to the server \u{201C}\(moved.name)\u{201D}. This Mac keeps its local copy.", tone: .neutral)
         }
+        if let d = v.desktop, d.installationId == thisMac { return Line(text: "Held by this Mac", tone: .ok) }
+        if let r = v.released {
+            switch r.reason {
+            case "released": return Line(text: "This Mac stopped holding it. Its local copy stays.", tone: .neutral)
+            case "hold_removed":
+                return Line(text: "The account holder took it off this Mac. Its local copy stays.", tone: .neutral)
+            case "hold_reassigned":
+                let to = (r.to?.name ?? v.desktop?.name).map { "the Mac \u{201C}\($0)\u{201D}" } ?? "another Mac"
+                return Line(text: "The account holder gave it to \(to). This Mac keeps its local copy.", tone: .neutral)
+            default: break
+            }
+        }
         if let d = v.desktop {
-            if d.installationId == thisMac { return Line(text: "Held by this Mac", tone: .ok) }
             return Line(text: "Held by the Mac \u{201C}\(d.name)\u{201D}", tone: .neutral)
         }
         if let server { return Line(text: "Held by the server \u{201C}\(server)\u{201D}", tone: .neutral) }
@@ -40,7 +51,10 @@ public enum DeviceAccessWording {
     /// A key's state and renewal, from the cloud's view of it (this Mac's own, or the holding Mac's).
     public static func key(_ k: CloudStorage.KeyView?, now: Date, mine: Bool) -> Line {
         let who = mine ? "This Mac" : "The Mac holding it"
-        guard let k, k.state != "none" else { return Line(text: "\(who) has no storage key", tone: .neutral) }
+        guard let k, k.state != "none" else {
+            guard let why = k?.revokedReason.map(revoked) else { return Line(text: "\(who) has no storage key", tone: .neutral) }
+            return Line(text: "\(who) has no storage key: \(why)", tone: k?.revokedReason == "account_holder" ? .danger : .neutral)
+        }
         let access = k.access == "read_delete" ? " (read and delete only)" : ""
         switch k.state {
         case "issued": return Line(text: "\(who) is getting a storage key", tone: .info)
@@ -63,6 +77,25 @@ public enum DeviceAccessWording {
         }
     }
 
+    /// Why a Mac's key went (`revoked_reason`), as the end of a sentence.
+    public static func revoked(_ reason: String) -> String {
+        switch reason {
+        case "account_holder": "the account holder revoked it"
+        case "suspended": "storage is paused until payment is updated"
+        case "ended": "the plan ended"
+        case "no_plan": "the plan doesn't include storage"
+        case "restricted", "over_quota", "access_changed": "the plan changed what it may do; a new one replaces it"
+        case "hold_removed": "the account holder took the vault off it"
+        case "hold_reassigned": "the account holder gave the vault to another Mac"
+        case "released": "it stopped holding the vault"
+        case "moved": "the vault moved to a server"
+        case "installation_revoked": "it was unlinked"
+        case "not_acknowledged", "replaced", "not_delivered": "a newer one replaces it"
+        case "ejection": "the storage moved to your own storage account"
+        default: "Vaulthalla Cloud revoked it"
+        }
+    }
+
     /// The renewal loop's state, for a vault this Mac holds.
     public static func status(_ s: DeviceAccess.Status, now: Date) -> Line {
         switch s.phase {
@@ -73,8 +106,12 @@ public enum DeviceAccessWording {
             return Line(text: "Storage key\(access) valid until \(when(e, now: now)); renews \(within(r, now: now))", tone: .ok)
         case .waiting(let e): return Line(text: e.message, tone: e == .accountKeyUnconfirmed ? .warn : .info)
         case .paused(let state):
-            return Line(text: state == "ended" ? "Your plan ended: no storage access."
-                        : "Storage paused: your servers and this Mac can't reach it until payment is updated.", tone: .danger)
+            switch state {
+            case "ended": return Line(text: "Your plan ended: no storage access.", tone: .danger)
+            case "suspended", nil:
+                return Line(text: "Storage paused: your servers and this Mac can't reach it until payment is updated. This Mac gets a new key by itself once it is.", tone: .danger)
+            default: return Line(text: "Your plan gives no storage access right now.", tone: .danger)
+            }
         case .retrying(let e, _, let at):
             return Line(text: "\(e.message) Next try \(within(at, now: now)).", tone: .warn)
         case .stopped(let stop): return Self.stop(stop)
@@ -87,7 +124,13 @@ public enum DeviceAccessWording {
         case .moved(_, let name):
             Line(text: "Moved to the server \u{201C}\(name)\u{201D}. This Mac keeps its local copy and no longer reaches the vault through Vaulthalla Cloud.",
                  tone: .neutral)
-        case .keyRevoked: Line(text: "This Mac's storage key was revoked in your account. Get a new one to continue.", tone: .danger)
+        case .keyRevoked(let reason):
+            Line(text: reason == "account_holder" ? "The account holder revoked this Mac's storage key. Get a new one to continue."
+                     : "Vaulthalla Cloud revoked this Mac's storage key. Get a new one to continue.", tone: .danger)
+        case .takenOff: Line(text: "The account holder took this vault off this Mac. Its local copy stays.", tone: .neutral)
+        case .reassigned(let to):
+            Line(text: "The account holder gave this vault to " + (to.map { "the Mac \u{201C}\($0)\u{201D}" } ?? "another Mac")
+                     + ". This Mac keeps its local copy.", tone: .neutral)
         case .vaultRemoved: Line(text: "This vault is no longer in your Vaulthalla Cloud account.", tone: .neutral)
         case .unlinked: Line(text: "This Mac isn't linked to Vaulthalla Cloud any more.", tone: .danger)
         case .released: Line(text: "This Mac no longer holds this vault. Its local copy stays.", tone: .neutral)
