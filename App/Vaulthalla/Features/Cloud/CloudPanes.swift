@@ -691,7 +691,7 @@ private struct CloudMacVaultsPanel: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text(cloud.labels[v.vaultUid] ?? "Vault \(v.vaultUid.prefix(8))…").font(.headline)
                             Text(holder.text).font(.caption).foregroundStyle(tone(holder.tone))
-                            if v.movedTo == nil {
+                            if v.movedTo == nil, v.released == nil || v.desktop?.installationId == me {
                                 let bucket = DeviceAccessWording.bucket(v)
                                 Text(bucket.text).font(.caption).foregroundStyle(tone(bucket.tone))
                                 let key = DeviceAccessWording.key(mine ? v.credential : v.desktop?.credential, now: .now, mine: mine)

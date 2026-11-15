@@ -66,8 +66,13 @@ struct DeviceAccessTests {
         let theirs = s.fake.vault(heldBy: s.fake.otherMac)
         #expect(await refusal { _ = try await s.client.registerDesktopVault(theirs) } == .heldByAnotherMac(name: "iMac"))
         let server = s.fake.serverVault()
-        #expect(await refusal { _ = try await s.client.registerDesktopVault(server) } == .heldByServer)
-        #expect(await refusal { _ = try await s.client.requestStorageCredential(server, publicKey: Data(count: 32)) } == .heldByServer)
+        #expect(await refusal { _ = try await s.client.registerDesktopVault(server) } == .heldByServer(name: "nas"))
+        #expect(await refusal { _ = try await s.client.requestStorageCredential(server, publicKey: Data(count: 32)) }
+                == .heldByServer(name: "nas"))
+        // A Mac that doesn't hold a vault changes its switch only.
+        #expect(await refusal {
+            _ = try await s.client.signedData("PUT", "/v1/storage/vaults/\(theirs)", body: Data(#"{"content_retention_days":5}"#.utf8))
+        } == .switchOnly)
         #expect(await refusal { try await s.client.releaseDesktopVault(theirs) } == .heldByAnotherMac(name: "iMac"))
         try await s.client.releaseDesktopVault(uid)
         #expect(await refusal { _ = try await s.client.registerDesktopVault(uid) } == .unplaced)  // nobody takes it back by declaring it
@@ -283,10 +288,12 @@ struct DeviceAccessTests {
         _ = await access.step()
         #expect(s.fake.credentialRequests == requests)  // nothing asked for while paused
         // A 402 on the request itself (the plan changed between the view and the request) pauses too.
+        // The keys went at the suspension (ended found none live): the newest one's reason stays.
+        #expect(try await s.client.storage().vault(uid)?.credential?.revokedReason == "suspended")
         s.fake.entitle("active")
         s.clock.advance(1800)
         _ = await access.step()
-        #expect(await access.phase == .holding)
+        #expect(await access.phase == .holding)  // renewed by itself: the plan's revocation isn't a person's
         #expect(s.fake.credentialRequests == requests + 1)
         s.clock.set(try #require(s.fake.activeKey(uid)).renewAfter)
         await access.apply(try await s.client.storage())
@@ -303,7 +310,12 @@ struct DeviceAccessTests {
         s.fake.ownerRevokesKeys(uid)
         s.clock.advance(30 * 60)
         #expect(await access.step() == nil)
-        #expect(await access.phase == .stopped(.keyRevoked))
+        #expect(await access.phase == .stopped(.keyRevoked(reason: "account_holder")))
+        let view = try await s.client.storage().vault(uid)?.credential
+        #expect(view?.state == "none" && view?.revokedReason == "account_holder" && view?.revokedAt != nil && view?.keyId == nil)
+        // The view alone doesn't restart it.
+        await access.apply(try await s.client.storage())
+        #expect(await access.phase == .stopped(.keyRevoked(reason: "account_holder")))
         #expect(await access.withCredentials { _ in true } == nil)
         // Only the tombstone remains: no secret.
         #expect(s.memory.names.filter { $0.hasPrefix("storage-key") } == [BucketKeyStore.item(uid)])
@@ -330,7 +342,10 @@ struct DeviceAccessTests {
         #expect(!s.memory.names.contains { $0.hasPrefix("storage-key") })
         #expect(DeviceAccessWording.stop(.moved(deploymentID: "d", name: "nas")).text.contains("keeps its local copy"))
         // And the cloud refuses this Mac's request from now on.
-        #expect(await refusal { _ = try await s.client.requestStorageCredential(uid, publicKey: Data(count: 32)) } == .heldByServer)
+        #expect(await refusal { _ = try await s.client.requestStorageCredential(uid, publicKey: Data(count: 32)) }
+                == .heldByServer(name: "nas"))
+        #expect(view.vault(uid)?.released == CloudStorage.Released(reason: "moved", to: .init(kind: "server", installationId: nil,
+                                                                  deploymentId: s.fake.deployment, name: "nas"), at: Int64(Self.start.timeIntervalSince1970)))
     }
 
     @Test func anotherMacOrNobodyHoldingItStopsIt() async throws {
@@ -341,8 +356,10 @@ struct DeviceAccessTests {
         s.fake.ownerPlaces(uid, on: s.fake.otherMac)
         s.clock.advance(30 * 60)
         _ = await access.step()
-        #expect(await access.phase == .stopped(.notHeld(.heldByAnotherMac(name: "iMac"))))
+        #expect(await access.phase == .stopped(.reassigned(to: "iMac")))
         #expect(s.fake.keys(uid).first?.revokeReason == "desktop_reassigned")
+        #expect(DeviceAccessWording.holder(try #require(try await s.client.storage().vault(uid)), thisMac: s.fake.mac, server: nil).text
+                == "The account holder gave it to the Mac \u{201C}iMac\u{201D}. This Mac keeps its local copy.")
 
         let gone = s.fake.vault(heldBy: s.fake.mac)
         let second = try s.access(gone)
@@ -350,13 +367,20 @@ struct DeviceAccessTests {
         s.fake.ownerTakesOff(gone)
         s.clock.advance(30 * 60)
         _ = await second.step()
-        #expect(await second.phase == .stopped(.notHeld(.unplaced)))
+        #expect(await second.phase == .stopped(.takenOff))
+        // The account holder places it here again: the view ends the stop, and the old key's reason doesn't stop it.
+        s.fake.ownerPlacesHere(gone)
+        let back = try await s.client.storage()
+        #expect(back.vault(gone)?.released == nil && back.vault(gone)?.credential?.revokedReason == "hold_removed")
+        await second.apply(back)
+        _ = await second.step()
+        #expect(await second.phase == .holding)
 
         let server = s.fake.serverVault()
         let third = try s.access(server)
         _ = await third.step()
-        #expect(await third.phase == .stopped(.notHeld(.heldByServer)))
-        #expect(s.fake.credentialRequests == 2)
+        #expect(await third.phase == .stopped(.notHeld(.heldByServer(name: nil))))
+        #expect(s.fake.credentialRequests == 3)
     }
 
     @Test func releasingTheVaultRevokesTheKeyAndLeavesItUnplaced() async throws {
@@ -451,21 +475,45 @@ struct DeviceAccessTests {
 
     @Test func theErrorEnvelopesReasonIsKept() throws {
         let body = Data(#"{"error":{"code":"conflict","message":"the Mac \"iMac\" holds this vault; for now one Mac writes to a vault","reason":"held_by_desktop"}}"#.utf8)
-        let e = CloudError.from(status: 409, body: body, retryAfter: nil)
-        #expect(e == .declined(status: 409, code: "conflict", reason: "held_by_desktop",
-                               message: "the Mac \"iMac\" holds this vault; for now one Mac writes to a vault"))
+        // Without details the name isn't guessed from the message.
+        #expect(DeviceAccessError.from(CloudError.from(status: 409, body: body, retryAfter: nil)) == .heldByAnotherMac(name: nil))
+        let detailed = Data(#"{"error":{"code":"conflict","message":"m","reason":"held_by_desktop","details":{"holder":"desktop","installation_id":"x","name":"iMac"}}}"#.utf8)
+        let e = CloudError.from(status: 409, body: detailed, retryAfter: nil)
+        #expect(e == .declined(status: 409, code: "conflict", reason: "held_by_desktop", message: "m",
+                               details: ["holder": "desktop", "installation_id": "x", "name": "iMac"]))
         #expect(DeviceAccessError.from(e) == .heldByAnotherMac(name: "iMac"))
+        // Details that aren't all strings are dropped, never the whole answer.
+        let odd = Data(#"{"error":{"code":"conflict","message":"m","reason":"unplaced","details":{"n":3}}}"#.utf8)
+        #expect(CloudError.from(status: 409, body: odd, retryAfter: nil) == .declined(status: 409, code: "conflict", reason: "unplaced",
+                                                                                         message: "m", details: [:]))
+        // 401 and 429 keep their cases whatever their reason (429's Retry-After matters).
+        #expect(CloudError.from(status: 401, body: Data(#"{"error":{"code":"unauthenticated","message":"m","reason":"request_not_verified"}}"#.utf8),
+                                retryAfter: nil) == .unauthenticated("m"))
+        #expect(CloudError.from(status: 429, body: Data(#"{"error":{"code":"rate_limited","message":"m","reason":"rate_limited"}}"#.utf8),
+                                retryAfter: "60") == .rateLimited(retryAfter: 60, message: "m"))
         // Without a reason the status's meaning stays (and every existing caller sees what it saw before).
         #expect(CloudError.from(status: 409, body: Data(#"{"error":{"code":"conflict","message":"m"}}"#.utf8), retryAfter: nil) == .conflict("m"))
         #expect(CloudError.from(status: 402, body: Data(#"{"error":{"code":"payment_required","message":"m"}}"#.utf8), retryAfter: nil)
                 == .paymentRequired("m"))
-        for (reason, want) in [("held_by_server", DeviceAccessError.heldByServer), ("unplaced", .unplaced),
+        for (reason, want) in [("held_by_server", DeviceAccessError.heldByServer(name: nil)), ("unplaced", .unplaced),
                                ("no_such_vault", .noSuchVault), ("no_such_key", .noSuchKey), ("bucket_not_ready", .bucketNotReady),
                                ("bucket_off", .bucketOff), ("bucket_deleting", .bucketDeleting), ("ejecting", .ejecting),
                                ("account_key_unconfirmed", .accountKeyUnconfirmed), ("key_superseded", .keyNotIssued(state: "superseded")),
+                               ("ejected", .ejected), ("switch_only", .switchOnly), ("portal_only", .wrongCaller(reason: "portal_only")),
+                               ("provider_unavailable", .providerUnavailable(reason: "provider_unavailable")),
+                               ("provider_key_id_invalid", .providerUnavailable(reason: "provider_key_id_invalid")),
                                ("managed_bucket", .other(status: 409, reason: "managed_bucket", message: "m"))] {
-            #expect(DeviceAccessError.from(CloudError.declined(status: 409, code: "conflict", reason: reason, message: "m")) == want)
+            #expect(DeviceAccessError.from(CloudError.declined(status: 409, code: "conflict", reason: reason, message: "m", details: [:])) == want)
         }
+        #expect(DeviceAccessError.from(CloudError.declined(status: 402, code: "payment_required", reason: "payment_required",
+                                                           message: "m", details: ["cause": "suspended"])) == .paymentRequired(cause: "suspended"))
+        #expect(DeviceAccessError.paymentRequired(cause: "suspended").message.contains("paused"))
+        #expect(DeviceAccessError.from(CloudError.declined(status: 403, code: "forbidden", reason: "step_up_required", message: "m",
+                                                           details: ["action": "storage.eject"])) == .stepUpRequired(action: "storage.eject"))
+        #expect(DeviceAccessError.from(CloudError.declined(status: 400, code: "invalid_argument", reason: "invalid_public_key",
+                                                           message: "m", details: [:])) == .invalidRequest(reason: "invalid_public_key"))
+        // A 404 without a reason is a route the daemon doesn't serve, not a vault it lacks.
+        #expect(DeviceAccessError.from(CloudError.notFound("no route")) == .other(status: 404, reason: nil, message: "no route"))
         #expect(DeviceAccessError.from(CloudError.unauthenticated("x")) == .unlinked)
         #expect(DeviceAccessError.from(CloudError.rateLimited(retryAfter: 9, message: "x")) == .rateLimited(retryAfter: 9))
     }
@@ -482,7 +530,10 @@ struct DeviceAccessTests {
         #expect(due.text.contains("read and delete only") && due.text.hasSuffix("renewal due") && due.tone == .warn)
         #expect(DeviceAccessWording.key(K(state: "expired", expiresAt: s - 60), now: now, mine: true).text.contains("gets a new one when online"))
         #expect(DeviceAccessWording.key(K(state: "superseded"), now: now, mine: true).tone == .warn)
-        #expect(DeviceAccessWording.stop(.keyRevoked).tone == .danger)
+        #expect(DeviceAccessWording.stop(.keyRevoked(reason: "account_holder")).text.hasPrefix("The account holder revoked"))
+        #expect(DeviceAccessWording.key(K(state: "none", revokedReason: "suspended", revokedAt: s), now: now, mine: true).text
+                == "This Mac has no storage key: storage is paused until payment is updated")
+        #expect(DeviceAccessWording.key(K(state: "none", revokedReason: "account_holder"), now: now, mine: true).tone == .danger)
         #expect(DeviceAccessWording.stop(.notHeld(.unplaced)).text == DeviceAccessError.unplaced.message)
         #expect(DeviceAccessWording.status(.init(phase: .paused(entitlement: "suspended")), now: now).text.contains("Storage paused"))
         #expect(DeviceAccessWording.status(.init(phase: .paused(entitlement: "ended")), now: now).text.contains("plan ended"))
@@ -494,4 +545,26 @@ struct DeviceAccessTests {
 
 extension DeviceAccess.Status {
     init(phase: DeviceAccess.Phase) { self.init(phase: phase, access: nil, expiresAt: nil, renewAfter: nil, nextCheck: nil) }
+}
+
+/// What a key the cloud shows as gone means, by `revoked_reason` (managed-storage.md "As built" 27's list).
+struct RevocationRuleTests {
+    @Test func eachReasonsRule() {
+        typealias A = DeviceAccess.AfterRevocation
+        let table: [(String?, Bool, A)] = [
+            ("account_holder", true, .stopRevoked("account_holder")), ("account_holder", false, .stopRevoked("account_holder")),
+            ("other", true, .stopRevoked("other")), ("something_new", true, .stopRevoked("something_new")),
+            ("suspended", true, .renew), ("ended", true, .renew), ("no_plan", true, .renew), ("restricted", true, .renew),
+            ("over_quota", true, .renew), ("replaced", true, .renew), ("not_acknowledged", true, .renew),
+            ("not_delivered", true, .renew), ("access_changed", true, .renew), ("hold_removed", true, .renew),
+            ("hold_reassigned", true, .renew), ("released", true, .renew), ("moved", true, .renew),
+            ("installation_revoked", true, .unlinked), ("ejection", true, .ejecting),
+            (nil, true, .stopRevoked("account_holder")), (nil, false, .renew),
+        ]
+        for (reason, had, want) in table { #expect(DeviceAccess.afterRevocation(reason, hadKey: had) == want, "\(reason ?? "nil")") }
+        // Which stops end by themselves once this Mac holds the vault again.
+        #expect(!DeviceAccess.endsWhenHeldAgain(.keyRevoked(reason: "account_holder")) && !DeviceAccess.endsWhenHeldAgain(.unlinked))
+        #expect(DeviceAccess.endsWhenHeldAgain(.takenOff) && DeviceAccess.endsWhenHeldAgain(.reassigned(to: nil))
+                && DeviceAccess.endsWhenHeldAgain(.released))
+    }
 }

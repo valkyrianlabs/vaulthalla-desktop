@@ -293,13 +293,24 @@ public struct CloudBillingHandoff: Codable, Hashable, Sendable {
     public var expiresAt: Int64?
 }
 
-/// The daemon's error body: `{"error": {"code", "message", "reason"?}}` (`reason` on the answers a client must tell
-/// apart, src/http/Errors.cpp `errorResponse`).
+/// The daemon's error body: `{"error": {"code", "message", "reason"?, "details"?}}` (`reason` on the answers a client
+/// must tell apart, `details` a map of strings beside it; src/http/Errors.cpp `errorResponse`).
 struct CloudErrorBody: Decodable {
     struct Inner: Decodable {
         var code: String?
         var message: String?
         var reason: String?
+        var details: [String: String]?
+
+        enum CodingKeys: String, CodingKey { case code, message, reason, details }
+
+        init(from decoder: any Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            code = try? c.decodeIfPresent(String.self, forKey: .code)
+            message = try? c.decodeIfPresent(String.self, forKey: .message)
+            reason = try? c.decodeIfPresent(String.self, forKey: .reason)
+            details = try? c.decodeIfPresent([String: String].self, forKey: .details)  // strings only; anything else is dropped
+        }
     }
 
     var error: Inner?

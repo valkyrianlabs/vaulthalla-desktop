@@ -628,9 +628,10 @@ final class CloudModel {
 
     // MARK: - Desktop-only vaults (a vault a Mac holds, wave 4)
 
-    /// The vaults of the account that a Mac holds, or that a restore moved off this Mac, as `GET /v1/storage` shows them.
+    /// The vaults of the account that a Mac holds, or that this Mac lost (released, taken off, given to another Mac,
+    /// moved to a server: `released`, `moved_to`), as `GET /v1/storage` shows them.
     var macHeldVaults: [CloudStorage.Vault] {
-        (storage?.vaults ?? []).filter { $0.desktop != nil || $0.movedTo != nil }
+        (storage?.vaults ?? []).filter { $0.desktop != nil || $0.movedTo != nil || $0.released != nil }
     }
 
     /// The server holding `uid`, by name, from `GET /v1/vaults`' replicas.
