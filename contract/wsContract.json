@@ -11,6 +11,11 @@
       "since": "1.23.0"
     },
     {
+      "description": "A linked server keeps vaults in managed storage: new vaults may be attached to it automatically (cloud.storage.status, .switch, .offer.accept, .offer.decline, .rotate, .new_vaults, .billing.handoff). Whether it is available is runtime state (cloud.storage.status `available`).",
+      "name": "cloud.storage.managed_remotes",
+      "since": "1.23.0"
+    },
+    {
       "description": "ws device.endpoints answers a paired device with where the listener can be reached; device.pairing.open carries node_id, server_spki_sha256 and endpoints; device.remote.status carries diagnostics (docs/reference/transfer-protocol.md §1).",
       "name": "device.endpoints",
       "since": "1.20.0"
@@ -405,6 +410,26 @@
             "string",
             "null"
           ]
+        },
+        {
+          "description": "Who issued the key: a person (customer) or managed storage for a vault's bucket (cloud).",
+          "enum": [
+            "customer",
+            "cloud"
+          ],
+          "name": "origin",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "False for a key managed storage issued: shown, never changed by people (its update and removal are refused).",
+          "name": "editable",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
         }
       ],
       "name": "APIKey"
@@ -531,6 +556,15 @@
           "required": true,
           "types": [
             "array"
+          ]
+        },
+        {
+          "description": "The vault's uid (26 base32 symbols): an identifier, not a secret.",
+          "name": "vault_uid",
+          "required": true,
+          "types": [
+            "string",
+            "null"
           ]
         }
       ],
@@ -1759,6 +1793,606 @@
         }
       ],
       "name": "CloudLinkStatus"
+    },
+    {
+      "description": "ops::cloud_storage::toJson(EndedConfirmation).",
+      "fields": [
+        {
+          "name": "confirmed",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "minimum": 0,
+          "name": "since",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "The managed vaults it converts.",
+          "minimum": 0,
+          "name": "vaults",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "name": "CloudStorageEndedConfirmation"
+    },
+    {
+      "description": "A billing page address: ops::cloud_storage::toJson(Handoff).",
+      "fields": [
+        {
+          "enum": [
+            "checkout",
+            "portal"
+          ],
+          "name": "kind",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Open it in a browser; never stored.",
+          "name": "url",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "minimum": 0,
+          "name": "expires_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        }
+      ],
+      "name": "CloudStorageHandoff"
+    },
+    {
+      "description": "An answer to the offer: ops::cloud_storage::toJson(OfferResult).",
+      "fields": [
+        {
+          "description": "The vaults the answer changed.",
+          "items": "integer",
+          "name": "vaults",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "name": "offer_open",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        }
+      ],
+      "name": "CloudStorageOffer"
+    },
+    {
+      "description": "Managed storage on this server: ops::cloud_storage::toJson(Status). Reads the database only.",
+      "fields": [
+        {
+          "name": "linked",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "enum": [
+            "unlinked",
+            "unconfirmed",
+            "pinned",
+            "tampered"
+          ],
+          "name": "account_key",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Linked, the account recovery key confirmed and the account entitled.",
+          "name": "available",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "active | past_due | restricted | suspended | ended; null: no plan.",
+          "name": "entitlement",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "name": "plan",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "quota_bytes",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "The account's figure, as of usage_day.",
+          "minimum": 0,
+          "name": "used_bytes",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "name": "usage_day",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "enum": [
+            "full",
+            "read_delete",
+            "none"
+          ],
+          "name": "storage_access",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "name": "cause",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "This server's own figure: the managed vaults' content held here.",
+          "minimum": 0,
+          "name": "managed_local_bytes",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "name": "new_vaults",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "name": "offer_open",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "Vaults waiting for a person's decision.",
+          "items": "object",
+          "model": "CloudStorageVault",
+          "name": "offered",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "items": "object",
+          "model": "CloudStorageVault",
+          "name": "vaults",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "description": "The account's billing summary as last fetched.",
+          "name": "billing",
+          "required": true,
+          "types": [
+            "object",
+            "null"
+          ]
+        },
+        {
+          "description": "An ejection's progress, as the service reports it.",
+          "name": "ejection",
+          "required": true,
+          "types": [
+            "object",
+            "null"
+          ]
+        },
+        {
+          "description": "When the account's state was last confirmed.",
+          "minimum": 0,
+          "name": "fetched_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "name": "fetch_error",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "The plan ended and the conversion to local waits: an admin's confirmation, or the grace period.",
+          "fields": [
+            {
+              "description": "Unix seconds.",
+              "minimum": 0,
+              "name": "since",
+              "required": true,
+              "types": [
+                "integer"
+              ]
+            },
+            {
+              "description": "Without a confirmation.",
+              "minimum": 0,
+              "name": "converts_at",
+              "required": true,
+              "types": [
+                "integer"
+              ]
+            },
+            {
+              "name": "confirmed_by",
+              "required": true,
+              "types": [
+                "string",
+                "null"
+              ]
+            }
+          ],
+          "name": "ended",
+          "required": true,
+          "types": [
+            "object",
+            "null"
+          ]
+        },
+        {
+          "name": "next_step",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        }
+      ],
+      "name": "CloudStorageStatus"
+    },
+    {
+      "description": "A vault as managed storage sees it: ops::cloud_storage::toJson(VaultEntry).",
+      "fields": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "name": "vault_name",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "26 base32 symbols.",
+          "name": "vault_uid",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "managed: it has a managed-storage row; own: an S3 vault on the customer's own storage; local: a local vault managed storage hasn't considered.",
+          "enum": [
+            "managed",
+            "own",
+            "local"
+          ],
+          "name": "storage",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "enum": [
+            "on",
+            "off",
+            "offered",
+            "declined"
+          ],
+          "name": "switch",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "managed: unregistered | registered | waiting | keyed | attaching | active | detaching | off | moved | ejected | ended | failed; otherwise own or local.",
+          "name": "state",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Why it waits (e.g. empty, payment_required, over_quota, bucket_limit).",
+          "name": "reason",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "The state in words.",
+          "name": "summary",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "The vault's content held on this server.",
+          "minimum": 0,
+          "name": "local_bytes",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "An S3 vault's remote access gate.",
+          "enum": [
+            "full",
+            "read_only",
+            "none"
+          ],
+          "name": "access",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "enum": [
+            "none",
+            "issued",
+            "active",
+            "superseded"
+          ],
+          "name": "key_state",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "enum": [
+            "full",
+            "read_delete"
+          ],
+          "name": "key_access",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "The noncurrent-version retention the vault asks for.",
+          "minimum": 0,
+          "name": "retention_days",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "What the account's service holds.",
+          "minimum": 0,
+          "name": "retention_sent",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "name": "retention_pending",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "The automatic recovery enrollment.",
+          "enum": [
+            "ready",
+            "behind",
+            "none"
+          ],
+          "name": "recovery",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "While uploading or making it local again.",
+          "model": "VaultRemoteProgress",
+          "name": "progress",
+          "required": true,
+          "types": [
+            "object",
+            "null"
+          ]
+        },
+        {
+          "description": "After a conversion in place: the files that were held only in the bucket.",
+          "fields": [
+            {
+              "fields": [
+                {
+                  "minimum": 0,
+                  "name": "file_id",
+                  "required": true,
+                  "types": [
+                    "integer"
+                  ]
+                },
+                {
+                  "name": "path",
+                  "required": true,
+                  "types": [
+                    "string"
+                  ]
+                },
+                {
+                  "minimum": 0,
+                  "name": "size_bytes",
+                  "required": true,
+                  "types": [
+                    "integer"
+                  ]
+                }
+              ],
+              "items": "object",
+              "name": "files",
+              "required": true,
+              "types": [
+                "array"
+              ]
+            },
+            {
+              "minimum": 0,
+              "name": "envelopes_left_in_bucket",
+              "required": false,
+              "types": [
+                "integer"
+              ]
+            }
+          ],
+          "name": "lost",
+          "required": true,
+          "types": [
+            "object",
+            "null"
+          ]
+        },
+        {
+          "name": "last_error",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "minimum": 0,
+          "name": "active_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "minimum": 0,
+          "name": "moved_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "minimum": 0,
+          "name": "ejected_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "minimum": 0,
+          "name": "ended_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        }
+      ],
+      "name": "CloudStorageVault"
     },
     {
       "description": "services.connection_lifecycle_manager.* (Config.cpp to_json(ConnectionLifecycleManagerConfig)).",
@@ -14012,6 +14646,59 @@
           ]
         },
         {
+          "description": "Managed storage: a degraded entry makes the node at least degraded; info entries don't.",
+          "fields": [
+            {
+              "enum": [
+                "cloud_account_key_unconfirmed",
+                "cloud_recovery_behind",
+                "vault_cloud_moved",
+                "vault_cloud_failed",
+                "cloud_account_key_no_offline_copy",
+                "cloud_storage_ended_pending"
+              ],
+              "name": "code",
+              "required": true,
+              "types": [
+                "string"
+              ]
+            },
+            {
+              "enum": [
+                "degraded",
+                "info"
+              ],
+              "name": "severity",
+              "required": true,
+              "types": [
+                "string"
+              ]
+            },
+            {
+              "minimum": 0,
+              "name": "vault_id",
+              "required": true,
+              "types": [
+                "integer",
+                "null"
+              ]
+            },
+            {
+              "name": "detail",
+              "required": true,
+              "types": [
+                "string"
+              ]
+            }
+          ],
+          "items": "object",
+          "name": "cloud_storage",
+          "required": false,
+          "types": [
+            "array"
+          ]
+        },
+        {
           "fields": [
             {
               "minimum": 0,
@@ -16048,6 +16735,15 @@
           "required": true,
           "types": [
             "string"
+          ]
+        },
+        {
+          "description": "The vault's uid (26 base32 symbols), as recovery kits and managed storage name it: an identifier, not a secret.",
+          "name": "vault_uid",
+          "required": true,
+          "types": [
+            "string",
+            "null"
           ]
         },
         {
@@ -20273,6 +20969,70 @@
           ]
         },
         {
+          "description": "hydrate: every file is fetched and verified first; in_place (managed storage, the bucket out of reach): no request to the bucket, files held only there are listed in lost.",
+          "enum": [
+            "hydrate",
+            "in_place"
+          ],
+          "name": "mode",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "In place: the files held only in the bucket (moved to the trash; nothing local was deleted) and the records of revoked grants' envelopes only the bucket held.",
+          "fields": [
+            {
+              "fields": [
+                {
+                  "minimum": 0,
+                  "name": "file_id",
+                  "required": true,
+                  "types": [
+                    "integer"
+                  ]
+                },
+                {
+                  "name": "path",
+                  "required": true,
+                  "types": [
+                    "string"
+                  ]
+                },
+                {
+                  "minimum": 0,
+                  "name": "size_bytes",
+                  "required": true,
+                  "types": [
+                    "integer"
+                  ]
+                }
+              ],
+              "items": "object",
+              "name": "files",
+              "required": true,
+              "types": [
+                "array"
+              ]
+            },
+            {
+              "minimum": 0,
+              "name": "envelopes_left_in_bucket",
+              "required": false,
+              "types": [
+                "integer"
+              ]
+            }
+          ],
+          "name": "lost",
+          "required": true,
+          "types": [
+            "object",
+            "null"
+          ]
+        },
+        {
           "description": "The binding the vault had (null when the key was deleted).",
           "minimum": 0,
           "name": "api_key_id",
@@ -22432,7 +23192,7 @@
       "name": "WebsocketServerConfig"
     }
   ],
-  "models_hash": "1427024ab1e309b71608b7da8b2903394e714b88de07253553bba968dca0f839",
+  "models_hash": "2a7b8cbc9ae3209c308ea6fdd3dd8016c3c43fadbae82b5b6b3e6beac858a696",
   "protocol": {
     "min": 1,
     "version": 1
@@ -27348,6 +28108,1218 @@
         }
       ],
       "response_model": "CloudLinkStatus",
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "cloud.storage.billing.handoff",
+      "confirmations": [],
+      "description": "The address of the account's billing page (checkout: choose a plan; portal: manage it), to open in a browser; short-lived and never stored. The service polls the account's state fast for a few minutes afterwards. The admin cloud Billing permission.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "checkout or portal.",
+          "generator": {
+            "kind": "const",
+            "values": [
+              "portal"
+            ]
+          },
+          "name": "kind",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "checkout: the plan.",
+          "name": "plan",
+          "required": false,
+          "types": [
+            "string",
+            "null"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "conflict",
+        "unauthorized",
+        "cloud_unreachable",
+        "cloud_refused"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "invalid",
+        "conflict",
+        "unauthorized",
+        "cloud_unreachable",
+        "cloud_refused"
+      ],
+      "response": [
+        {
+          "enum": [
+            "checkout",
+            "portal"
+          ],
+          "name": "kind",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Open it in a browser; never stored.",
+          "name": "url",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "minimum": 0,
+          "name": "expires_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        }
+      ],
+      "response_model": "CloudStorageHandoff",
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "cloud.storage.ended.confirm",
+      "confirmations": [],
+      "description": "Confirm that the account's plan ended: managed vaults become local in place now (files held only in their buckets are listed as lost; nothing local is deleted) instead of after cloud.storage.ended_grace_hours of continuous `ended` reports. Conflict unless the service reports `ended`. The admin cloud Storage permission.",
+      "input": "none",
+      "operation": null,
+      "payload": [],
+      "refusal_codes": [
+        "denied",
+        "conflict",
+        "unauthorized"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "name": "confirmed",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "minimum": 0,
+          "name": "since",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "The managed vaults it converts.",
+          "minimum": 0,
+          "name": "vaults",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "response_model": "CloudStorageEndedConfirmation",
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "cloud.storage.new_vaults",
+      "confirmations": [],
+      "description": "Whether vaults created from now on use managed storage by default (on unless turned off). The admin cloud Storage permission.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "On or off.",
+          "generator": {
+            "kind": "bool"
+          },
+          "name": "enabled",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "unauthorized"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "invalid",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "name": "new_vaults",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        }
+      ],
+      "response_model": null,
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "cloud.storage.offer.accept",
+      "confirmations": [],
+      "description": "Accept the offer for vaults that existed when managed storage became available: the listed ones or, without vault_ids, every offered vault (their switches go on). Nothing is uploaded before this. The admin cloud Storage permission and each vault's admin Edit permission.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "The vaults to accept; absent for every offered one.",
+          "items": "integer",
+          "name": "vault_ids",
+          "required": false,
+          "types": [
+            "array",
+            "null"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "description": "The vaults the answer changed.",
+          "items": "integer",
+          "name": "vaults",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "name": "offer_open",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        }
+      ],
+      "response_model": "CloudStorageOffer",
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "cloud.storage.offer.decline",
+      "confirmations": [],
+      "description": "Decline the offer for the listed vaults (or every one still offered): they stay local; each can be switched on later. The admin cloud Storage permission.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "The vaults to decline; absent for every offered one.",
+          "items": "integer",
+          "name": "vault_ids",
+          "required": false,
+          "types": [
+            "array",
+            "null"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "description": "The vaults the answer changed.",
+          "items": "integer",
+          "name": "vaults",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "name": "offer_open",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        }
+      ],
+      "response_model": "CloudStorageOffer",
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "cloud.storage.rotate",
+      "confirmations": [],
+      "description": "Ask for a new bucket key for a vault in managed storage (the service exchanges, probes and acknowledges it; the old key is revoked then). The admin cloud Storage permission and the vault's admin Edit permission.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "name": "vault_name",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "26 base32 symbols.",
+          "name": "vault_uid",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "managed: it has a managed-storage row; own: an S3 vault on the customer's own storage; local: a local vault managed storage hasn't considered.",
+          "enum": [
+            "managed",
+            "own",
+            "local"
+          ],
+          "name": "storage",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "enum": [
+            "on",
+            "off",
+            "offered",
+            "declined"
+          ],
+          "name": "switch",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "managed: unregistered | registered | waiting | keyed | attaching | active | detaching | off | moved | ejected | ended | failed; otherwise own or local.",
+          "name": "state",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Why it waits (e.g. empty, payment_required, over_quota, bucket_limit).",
+          "name": "reason",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "The state in words.",
+          "name": "summary",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "The vault's content held on this server.",
+          "minimum": 0,
+          "name": "local_bytes",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "An S3 vault's remote access gate.",
+          "enum": [
+            "full",
+            "read_only",
+            "none"
+          ],
+          "name": "access",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "enum": [
+            "none",
+            "issued",
+            "active",
+            "superseded"
+          ],
+          "name": "key_state",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "enum": [
+            "full",
+            "read_delete"
+          ],
+          "name": "key_access",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "The noncurrent-version retention the vault asks for.",
+          "minimum": 0,
+          "name": "retention_days",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "What the account's service holds.",
+          "minimum": 0,
+          "name": "retention_sent",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "name": "retention_pending",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "The automatic recovery enrollment.",
+          "enum": [
+            "ready",
+            "behind",
+            "none"
+          ],
+          "name": "recovery",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "While uploading or making it local again.",
+          "model": "VaultRemoteProgress",
+          "name": "progress",
+          "required": true,
+          "types": [
+            "object",
+            "null"
+          ]
+        },
+        {
+          "description": "After a conversion in place: the files that were held only in the bucket.",
+          "fields": [
+            {
+              "fields": [
+                {
+                  "minimum": 0,
+                  "name": "file_id",
+                  "required": true,
+                  "types": [
+                    "integer"
+                  ]
+                },
+                {
+                  "name": "path",
+                  "required": true,
+                  "types": [
+                    "string"
+                  ]
+                },
+                {
+                  "minimum": 0,
+                  "name": "size_bytes",
+                  "required": true,
+                  "types": [
+                    "integer"
+                  ]
+                }
+              ],
+              "items": "object",
+              "name": "files",
+              "required": true,
+              "types": [
+                "array"
+              ]
+            },
+            {
+              "minimum": 0,
+              "name": "envelopes_left_in_bucket",
+              "required": false,
+              "types": [
+                "integer"
+              ]
+            }
+          ],
+          "name": "lost",
+          "required": true,
+          "types": [
+            "object",
+            "null"
+          ]
+        },
+        {
+          "name": "last_error",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "minimum": 0,
+          "name": "active_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "minimum": 0,
+          "name": "moved_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "minimum": 0,
+          "name": "ejected_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "minimum": 0,
+          "name": "ended_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        }
+      ],
+      "response_model": "CloudStorageVault",
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "cloud.storage.status",
+      "confirmations": [],
+      "description": "Managed storage on this server: whether it is available (linked, the account recovery key confirmed, the account entitled), the plan state, usage against the quota (the account's figure, with its date) beside this server's own, the offer for vaults that existed before it was available, and every vault's switch and state in words. Reads the database only. Super admins or the admin cloud View permission.",
+      "input": "none",
+      "operation": null,
+      "payload": [],
+      "refusal_codes": [
+        "denied",
+        "unauthorized"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "name": "linked",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "enum": [
+            "unlinked",
+            "unconfirmed",
+            "pinned",
+            "tampered"
+          ],
+          "name": "account_key",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Linked, the account recovery key confirmed and the account entitled.",
+          "name": "available",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "active | past_due | restricted | suspended | ended; null: no plan.",
+          "name": "entitlement",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "name": "plan",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "quota_bytes",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "The account's figure, as of usage_day.",
+          "minimum": 0,
+          "name": "used_bytes",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "name": "usage_day",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "enum": [
+            "full",
+            "read_delete",
+            "none"
+          ],
+          "name": "storage_access",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "name": "cause",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "This server's own figure: the managed vaults' content held here.",
+          "minimum": 0,
+          "name": "managed_local_bytes",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "name": "new_vaults",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "name": "offer_open",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "Vaults waiting for a person's decision.",
+          "items": "object",
+          "model": "CloudStorageVault",
+          "name": "offered",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "items": "object",
+          "model": "CloudStorageVault",
+          "name": "vaults",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "description": "The account's billing summary as last fetched.",
+          "name": "billing",
+          "required": true,
+          "types": [
+            "object",
+            "null"
+          ]
+        },
+        {
+          "description": "An ejection's progress, as the service reports it.",
+          "name": "ejection",
+          "required": true,
+          "types": [
+            "object",
+            "null"
+          ]
+        },
+        {
+          "description": "When the account's state was last confirmed.",
+          "minimum": 0,
+          "name": "fetched_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "name": "fetch_error",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "The plan ended and the conversion to local waits: an admin's confirmation, or the grace period.",
+          "fields": [
+            {
+              "description": "Unix seconds.",
+              "minimum": 0,
+              "name": "since",
+              "required": true,
+              "types": [
+                "integer"
+              ]
+            },
+            {
+              "description": "Without a confirmation.",
+              "minimum": 0,
+              "name": "converts_at",
+              "required": true,
+              "types": [
+                "integer"
+              ]
+            },
+            {
+              "name": "confirmed_by",
+              "required": true,
+              "types": [
+                "string",
+                "null"
+              ]
+            }
+          ],
+          "name": "ended",
+          "required": true,
+          "types": [
+            "object",
+            "null"
+          ]
+        },
+        {
+          "name": "next_step",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        }
+      ],
+      "response_model": "CloudStorageStatus",
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "cloud.storage.switch",
+      "confirmations": [],
+      "description": "A vault's managed-storage switch. On: the vault is uploaded to a bucket of its own once it is ready (an empty vault waits for its first file); off: before a bucket exists the request stops, with one every file is fetched and verified locally and the vault becomes local again (the bucket is left in place; `confirm` with the vault's name is required then). Records the intent: the background service carries it out, and cloud.storage.status follows it. No step-up. The admin cloud Storage permission and the vault's admin Edit permission.",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "On or off.",
+          "generator": {
+            "kind": "bool"
+          },
+          "name": "enabled",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "Off on a vault with a bucket: the vault's name.",
+          "name": "confirm",
+          "required": false,
+          "types": [
+            "string",
+            "null"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized",
+        "managed_storage_unavailable"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized",
+        "managed_storage_unavailable"
+      ],
+      "response": [
+        {
+          "description": "Vault id.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "vault",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "vault_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "name": "vault_name",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "26 base32 symbols.",
+          "name": "vault_uid",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "managed: it has a managed-storage row; own: an S3 vault on the customer's own storage; local: a local vault managed storage hasn't considered.",
+          "enum": [
+            "managed",
+            "own",
+            "local"
+          ],
+          "name": "storage",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "enum": [
+            "on",
+            "off",
+            "offered",
+            "declined"
+          ],
+          "name": "switch",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "managed: unregistered | registered | waiting | keyed | attaching | active | detaching | off | moved | ejected | ended | failed; otherwise own or local.",
+          "name": "state",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Why it waits (e.g. empty, payment_required, over_quota, bucket_limit).",
+          "name": "reason",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "The state in words.",
+          "name": "summary",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "The vault's content held on this server.",
+          "minimum": 0,
+          "name": "local_bytes",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "An S3 vault's remote access gate.",
+          "enum": [
+            "full",
+            "read_only",
+            "none"
+          ],
+          "name": "access",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "enum": [
+            "none",
+            "issued",
+            "active",
+            "superseded"
+          ],
+          "name": "key_state",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "enum": [
+            "full",
+            "read_delete"
+          ],
+          "name": "key_access",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "The noncurrent-version retention the vault asks for.",
+          "minimum": 0,
+          "name": "retention_days",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "What the account's service holds.",
+          "minimum": 0,
+          "name": "retention_sent",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "name": "retention_pending",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "The automatic recovery enrollment.",
+          "enum": [
+            "ready",
+            "behind",
+            "none"
+          ],
+          "name": "recovery",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "While uploading or making it local again.",
+          "model": "VaultRemoteProgress",
+          "name": "progress",
+          "required": true,
+          "types": [
+            "object",
+            "null"
+          ]
+        },
+        {
+          "description": "After a conversion in place: the files that were held only in the bucket.",
+          "fields": [
+            {
+              "fields": [
+                {
+                  "minimum": 0,
+                  "name": "file_id",
+                  "required": true,
+                  "types": [
+                    "integer"
+                  ]
+                },
+                {
+                  "name": "path",
+                  "required": true,
+                  "types": [
+                    "string"
+                  ]
+                },
+                {
+                  "minimum": 0,
+                  "name": "size_bytes",
+                  "required": true,
+                  "types": [
+                    "integer"
+                  ]
+                }
+              ],
+              "items": "object",
+              "name": "files",
+              "required": true,
+              "types": [
+                "array"
+              ]
+            },
+            {
+              "minimum": 0,
+              "name": "envelopes_left_in_bucket",
+              "required": false,
+              "types": [
+                "integer"
+              ]
+            }
+          ],
+          "name": "lost",
+          "required": true,
+          "types": [
+            "object",
+            "null"
+          ]
+        },
+        {
+          "name": "last_error",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "minimum": 0,
+          "name": "active_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "minimum": 0,
+          "name": "moved_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "minimum": 0,
+          "name": "ejected_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "minimum": 0,
+          "name": "ended_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        }
+      ],
+      "response_model": "CloudStorageVault",
       "untyped_refusals": [],
       "variants": []
     },
@@ -49372,6 +51344,7 @@
         "unauthorized",
         "recipient_requires_device",
         "recovery_policy_account_managed",
+        "managed_vault_account_key",
         "step_up_required",
         "recovery_cooldown"
       ],
@@ -49383,6 +51356,7 @@
         "unauthorized",
         "recipient_requires_device",
         "recovery_policy_account_managed",
+        "managed_vault_account_key",
         "step_up_required",
         "recovery_cooldown"
       ],
@@ -51702,6 +53676,7 @@
         "bucket_not_empty",
         "bucket_probe_failed",
         "bucket_capability_insufficient",
+        "bucket_holds_this_vault",
         "step_up_required",
         "recovery_cooldown"
       ],
@@ -51721,6 +53696,7 @@
         "bucket_not_empty",
         "bucket_probe_failed",
         "bucket_capability_insufficient",
+        "bucket_holds_this_vault",
         "step_up_required",
         "recovery_cooldown"
       ],
@@ -52379,5 +54355,5 @@
       "variants": []
     }
   ],
-  "ws_hash": "c12116b3d4ebaea58683952674e3c202483606a21c19da3c266b8baa7a6be120"
+  "ws_hash": "64a009cd00663c9efb771f113e6b6598bfa6e51facac18f1a9e49df1d7221032"
 }
