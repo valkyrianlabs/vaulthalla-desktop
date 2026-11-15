@@ -100,7 +100,7 @@ public enum FinderError: Error, Hashable, Sendable, CustomStringConvertible {
             // `device_unknown`: the node refused this key. The credential consumer reloads and decides; until then
             // this Mac can't act for the node.
             self = DeviceRefusal(error) == .deviceUnknown ? .notAuthenticated(text) : .cannotSynchronize(text)
-        case .unknownCommand(let text): self = .cannotSynchronize(text)
+        case .unknownCommand(let text), .stepUpRequired(_, let text): self = .cannotSynchronize(text)
         case .protocolUnsupported: self = .cannotSynchronize(error.message)
         case .timeout: self = .serverUnreachable(error.message)
         case .disconnected: self = .serverUnreachable(error.message)

@@ -17,6 +17,10 @@ public enum WsError: Error, Hashable, Sendable {
     /// command-specific code (`device_unknown`, `rate_limited`, `export_requires_device`, ...) or one a newer daemon
     /// added. `message` is the daemon's.
     case refused(code: String, message: String)
+    /// `step_up_required` (server 1.22, #359): the command needs a fresh approval for `stepUp.family` and, for `keys`,
+    /// `device.trust` and `data.destroy`, exactly `stepUp.target`. A paired device answers it with its approval key
+    /// (`device.approval.challenge`, `.submit`) or a console approval, then resends the request.
+    case stepUpRequired(WsStepUp, message: String)
     /// The daemon doesn't have the command (`data.code` "unknown_command", daemons that announce
     /// `errors.unknown_command_code`). Legacy daemons say so only in words: test with ``isUnknownCommand``.
     case unknownCommand(String)
@@ -40,7 +44,8 @@ public enum WsError: Error, Hashable, Sendable {
     public var message: String {
         switch self {
         case .unauthorized(let text), .denied(let text), .notFound(let text), .invalid(let text), .conflict(let text),
-             .error(let text), .needsConfirmation(_, let text), .refused(_, let text), .unknownCommand(let text):
+             .error(let text), .needsConfirmation(_, let text), .refused(_, let text), .unknownCommand(let text),
+             .stepUpRequired(_, let text):
             text
         case .protocolUnsupported(let mismatch): mismatch.message
         case .timeout: "The server has not answered yet. It may still be working on this."
@@ -60,6 +65,7 @@ public enum WsError: Error, Hashable, Sendable {
         case .invalid: "invalid"
         case .conflict: "conflict"
         case .needsConfirmation(let code, _), .refused(let code, _): code
+        case .stepUpRequired: "step_up_required"
         case .unknownCommand: "unknown_command"
         case .protocolUnsupported: "protocol_unsupported"
         case .error, .timeout, .disconnected, .cancelled, .contractMismatch: nil
@@ -151,12 +157,15 @@ extension WsError {
         var serverMin: Int?
         var serverMax: Int?
         var serverVersion: String?
+        var stepUp: WsStepUp?
 
-        init(code: String?, serverMin: Int? = nil, serverMax: Int? = nil, serverVersion: String? = nil) {
+        init(code: String?, serverMin: Int? = nil, serverMax: Int? = nil, serverVersion: String? = nil,
+             stepUp: WsStepUp? = nil) {
             self.code = code
             self.serverMin = serverMin
             self.serverMax = serverMax
             self.serverVersion = serverVersion
+            self.stepUp = stepUp
         }
     }
 
@@ -177,6 +186,7 @@ extension WsError {
         case "invalid": return .invalid(text)
         case "conflict": return .conflict(text)
         case "unknown_command": return .unknownCommand(text)
+        case "step_up_required" where refusal?.stepUp != nil: return .stepUpRequired(refusal!.stepUp!, message: text)
         case "protocol_unsupported":
             return .protocolUnsupported(ProtocolMismatch(serverMin: refusal?.serverMin, serverMax: refusal?.serverMax,
                                                          serverVersion: refusal?.serverVersion))
@@ -201,5 +211,27 @@ extension WsError {
 
     private static var deniedText: Regex<Substring> {
         #/(?:permission|not allowed|must be an admin|forbidden|access denied|not authori[sz]ed to)/#.ignoresCase()
+    }
+}
+
+/// What a `step_up_required` refusal's `data` names: the family, the exact target for target-bound families, and how
+/// this session can get it approved (`device_approval`, `console_approval`, or a web session's methods).
+public struct WsStepUp: Hashable, Sendable {
+    public var family: String
+    public var target: String?
+    public var methods: [String]
+    public var maxAgeSeconds: Int?
+
+    public init(family: String, target: String?, methods: [String], maxAgeSeconds: Int? = nil) {
+        self.family = family
+        self.target = target
+        self.methods = methods
+        self.maxAgeSeconds = maxAgeSeconds
+    }
+
+    /// Whether this device's approval key may answer it (server decision D6: `keys` and `device.trust` only).
+    public var approvalKeyMayAnswer: Bool {
+        (family == "keys" || family == "device.trust") && target != nil
+            && (methods.isEmpty || methods.contains("device_approval"))
     }
 }
