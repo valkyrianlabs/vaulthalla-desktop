@@ -63,7 +63,7 @@ func expectRefusal(_ error: KeykitError, _ name: Any?, prefix: String, sourceLoc
 
 struct LibraryTests {
     @Test func isThePinnedVersion() {
-        #expect(Keykit.version == "0.3.0")
+        #expect(Keykit.version == "0.4.0")
     }
 }
 

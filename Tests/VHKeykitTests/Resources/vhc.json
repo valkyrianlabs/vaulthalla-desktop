@@ -1664,6 +1664,30 @@
         "name": "another_key_id",
         "sealed_hex": "895648430d0a1a0a000100018c0d94a385baaf2d4e2ee5b0ecdb2abbaa3030c789c267e4264a995632bb104b6da582215832719ccb96349c528d5426072899cdeb88e9166d713699b7cd040797cea7205756f8635166d3b3f1e6d1",
         "server_sk_hex": "67456465b2205ff2b2f41f7928f96ef85e3c942a8719f696993bace377dd47c7"
+      },
+      {
+        "context": {
+          "installation_id": "t8strmqnma7qe89214v79ecrmc",
+          "key_id": "005f3c2a9b1d4e60000000007",
+          "vault_uid_hex": "ac0f07aba2f01b8ff94320f2cfd1b53f"
+        },
+        "description": "opened with a one-time key it wasn't sealed to",
+        "error": "auth_failed",
+        "name": "another_one_time_key",
+        "sealed_hex": "895648430d0a1a0a000100018c0d94a385baaf2d4e2ee5b0ecdb2abbaa3030c789c267e4264a995632bb104b6da582215832719ccb96349c528d5426072899cdeb88e9166d713699b7cd040797cea7205756f8635166d3b3f1e6d1",
+        "server_sk_hex": "73e136649db22ed0bb8c778850e626a13d1d16e4f11bddb86e236ac4992d1f78"
+      },
+      {
+        "context": {
+          "installation_id": "t8strmqnma7qe89214v79ecrmc",
+          "key_id": "005f3c2a9b1d4e60000000007",
+          "vault_uid_hex": "ac0f07aba2f01b8ff94320f2cfd1b53f"
+        },
+        "description": "the tag's last byte missing",
+        "error": "auth_failed",
+        "name": "truncated_tag",
+        "sealed_hex": "895648430d0a1a0a000100018c0d94a385baaf2d4e2ee5b0ecdb2abbaa3030c789c267e4264a995632bb104b6da582215832719ccb96349c528d5426072899cdeb88e9166d713699b7cd040797cea7205756f8635166d3b3f1e6",
+        "server_sk_hex": "67456465b2205ff2b2f41f7928f96ef85e3c942a8719f696993bace377dd47c7"
       }
     ],
     "positive": [
@@ -1678,6 +1702,34 @@
         "sealed_base64url": "iVZIQw0KGgoAAQABjA2Uo4W6ry1OLuWw7Nsqu6owMMeJwmfkJkqZVjK7EEttpYIhWDJxnMuWNJxSjVQmByiZzeuI6RZtcTaZt80EB5fOpyBXVvhjUWbTs_Hm0Q",
         "sealed_hex": "895648430d0a1a0a000100018c0d94a385baaf2d4e2ee5b0ecdb2abbaa3030c789c267e4264a995632bb104b6da582215832719ccb96349c528d5426072899cdeb88e9166d713699b7cd040797cea7205756f8635166d3b3f1e6d1",
         "secret": "K005b11aaf773dbd95162b1f14fa7d0",
+        "server_pk_hex": "6e6f4ef7cbdae9a6cd96eb6c6ee54b6f4bddfe3a0e9ad3b12d2ef0f69ee8e20b",
+        "server_sk_hex": "67456465b2205ff2b2f41f7928f96ef85e3c942a8719f696993bace377dd47c7"
+      },
+      {
+        "context": {
+          "installation_id": "t8strmqnma7qe89214v79ecrmc",
+          "key_id": "AKIAA54C1F036C23039D",
+          "vault_uid_hex": "ac0f07aba2f01b8ff94320f2cfd1b53f"
+        },
+        "ephemeral_sk_hex": "3fa118245c1f0e9a6933c499f014f9e521ff811de42ca562a18c75d7633d05e3",
+        "name": "s3_access_key",
+        "sealed_base64url": "iVZIQw0KGgoAAQABgm4dgUbNsBk4HeVPp8qALC8K_Fc8MDfeed1ZzMomH0BXS1knE4nKTJWjYRltjxUQJEU_v5q-dyy3GFqmtk2qXlGegNrLmdu3FxqnIkM78QqgRqHTbUA8Iw",
+        "sealed_hex": "895648430d0a1a0a00010001826e1d8146cdb019381de54fa7ca802c2f0afc573c3037de79dd59ccca261f40574b59271389ca4c95a361196d8f151024453fbf9abe772cb7185aa6b64daa5e519e80dacb99dbb7171aa722433bf10aa046a1d36d403c23",
+        "secret": "t_joxkXaIYVZSwvRRuFlHU-VSocNLI7jn2aj19yX",
+        "server_pk_hex": "6e6f4ef7cbdae9a6cd96eb6c6ee54b6f4bddfe3a0e9ad3b12d2ef0f69ee8e20b",
+        "server_sk_hex": "67456465b2205ff2b2f41f7928f96ef85e3c942a8719f696993bace377dd47c7"
+      },
+      {
+        "context": {
+          "installation_id": "t8strmqnma7qe89214v79ecrmc",
+          "key_id": "!\"#$%&'()*+,-./0123456789:;<=>?@ABCDEFGHIJKLMNOPQRSTUVWXYZ[\\]^_`abcdefghijklmnopqrstuvwxyz{|}~!\"#$%&'()*+,-./0123456789:;<=>?@AB",
+          "vault_uid_hex": "ac0f07aba2f01b8ff94320f2cfd1b53f"
+        },
+        "ephemeral_sk_hex": "5665f45927cd07dbadebabf0bf9f9ad863dac18534f0eee3a40bc07d487f2e45",
+        "name": "largest",
+        "sealed_base64url": "iVZIQw0KGgoAAQABYAdW4YEZxGylK3TwM-FR5AEe5WM3QYSkBdSUYfGIIQWWVHCzK7BPSusjVtbYUBAm2h1iskuMP_U3WrlOMtzoBlYhYpZE9VYNV-_70Tr1eHYNjS2zJzPNljHJSmeVZo2vS1LytU5MczhGxCRD3WGtKR5lvw6DDieN4ylWttosejCueKtB9AESVbwlw3AoE8SfxGLFqHZmPPgU9E7RD1nQ19QRVbpkO-tSw_VdaYRNtv_ru7IxXn6-pmx_4AtUwYWJQoFAY7iEariRQiJ5wSngK6MXsVKFqfmHMVgDeowhio424szV1fikD1nJkgoEuMIEuJDKgApc4k-utz2y-HDkTm4cpaKM_4THpNBshuMSg7fGUxl7jNPF8Ekew9F8m9SMlz-L_7LtfaIX4DfzTaMDRslyuv19zwjAeVEcVOMxcU_3MKgqrvv7elz1UlFTL3wThUKejRGI_hNLEKqhpREudkXf-Cg8Z_hZJunuQS41wizmsOOJ6INhlgUzIu0oB6RGOEQQt-swn9SBHzGf8o7SsLmYxeRY5AuwPbjzpW4zBYK_snBNPrlN96VQb6X3kPJnzMJh39kETwGCyTiOsjeGaOIpkjFZQs1SWRm_LUW2knoBs2kwFxBHouUabg1z8EEDRNdP47jqWpk8bt96Mwm08rNiSMRIoiOWTmRtI0kRiK57YNwRyspli0czvvYGaFoUO0cx9tDUdBr-psnF4YRyaVD_ms_MjL5ZkCf9tvgx1m6uDWkm6Lf3DrPM2iSA4BkoOjx4xuz3fDirmcbvzcy-zWOfEAXScWc5LIbZ_G_oRwrifhJ-gm_H11CT8RQEdITrikXE4eK9GP5Gh6SfOTpTCnVn3mSOA-oKJild5r8PSoMjQdri7b90GDWJD08d-S-hVU2wvNTUiZNDexgW-dk24C97APZP3ah6H2KBIhlkYbowY36SWthPvzxGLZKTwDagKF7Rc59-iWLU67tVp7gl-aQZZc_8C2XyhVLrwO1IkiY4YW4G3X1yGcivAPrSrtXH7JAXtdnfGEe7JUFfXEgqwxTSwUo6qLEnJ0eV_pyO-mmDFDNBv8yfrBa_UamYVahw0s9sIO3qMDCoMxD8w_gGS-LKDUCMzqIsNTyinET-EKy_g9Yn7xOhFh-jLG-rSSTDohcuyBwXULaJxepGQwamhD3WlRiuY7bGoLvDyX69MWBJ9GGUW1JolZgLPwCp4kzoyZqCWvYtzQaSmfqg5TdBAfLU4zUQVAn9QhwhDAbNxNDSRIcZmG1FwkNtg1d4i75PHQtkP4V4AsE_VbunTH6WoOVjFeW3KGYaknJUOGe0lzBohDm6UtY9I5wbY7VlJLMx-ZIYQ3KNLCQ3ibZ5jI_xtjaz8C5caDfxHzD7e2dhXTsgQPyFrjYHaDTTzMLjbNPzOJaA7gsQnChsMGMwrLFVrw",
+        "sealed_hex": "895648430d0a1a0a00010001600756e18119c46ca52b74f033e151e4011ee563374184a405d49461f1882105965470b32bb04f4aeb2356d6d8501026da1d62b24b8c3ff5375ab94e32dce8065621629644f5560d57effbd13af578760d8d2db32733cd9631c94a6795668daf4b52f2b54e4c733846c42443dd61ad291e65bf0e830e278de32956b6da2c7a30ae78ab41f4011255bc25c3702813c49fc462c5a876663cf814f44ed10f59d0d7d41155ba643beb52c3f55d69844db6ffebbbb2315e7ebea66c7fe00b54c1858942814063b8846ab891422279c129e02ba317b15285a9f9873158037a8c218a8e36e2ccd5d5f8a40f59c9920a04b8c204b890ca800a5ce24faeb73db2f870e44e6e1ca5a28cff84c7a4d06c86e31283b7c653197b8cd3c5f0491ec3d17c9bd48c973f8bffb2ed7da217e037f34da30346c972bafd7dcf08c079511c54e331714ff730a82aaefbfb7a5cf55251532f7c1385429e8d1188fe134b10aaa1a5112e7645dff8283c67f85926e9ee412e35c22ce6b0e389e8836196053322ed2807a446384410b7eb309fd4811f319ff28ed2b0b998c5e458e40bb03db8f3a56e330582bfb2704d3eb94df7a5506fa5f790f267ccc261dfd9044f0182c9388eb2378668e22992315942cd525919bf2d45b6927a01b36930171047a2e51a6e0d73f0410344d74fe3b8ea5a993c6edf7a3309b4f2b36248c448a223964e646d23491188ae7b60dc11caca658b4733bef606685a143b4731f6d0d4741afea6c9c5e184726950ff9acfcc8cbe599027fdb6f831d66eae0d6926e8b7f70eb3ccda2480e019283a3c78c6ecf77c38ab99c6efcdccbecd639f1005d27167392c86d9fc6fe8470ae27e127e826fc7d75093f114047484eb8a45c4e1e2bd18fe4687a49f393a530a7567de648e03ea0a26295de6bf0f4a832341dae2edbf741835890f4f1df92fa1554db0bcd4d48993437b1816f9d936e02f7b00f64fdda87a1f628122196461ba30637e925ad84fbf3c462d9293c036a0285ed1739f7e8962d4ebbb55a7b825f9a41965cffc0b65f28552ebc0ed48922638616e06dd7d7219c8af00fad2aed5c7ec9017b5d9df1847bb25415f5c482ac314d2c14a3aa8b127274795fe9c8efa6983143341bfcc9fac16bf51a99855a870d2cf6c20edea3030a83310fcc3f8064be2ca0d408ccea22c353ca29c44fe10acbf83d627ef13a1161fa32c6fab4924c3a2172ec81c1750b689c5ea464306a6843dd69518ae63b6c6a0bbc3c97ebd316049f461945b526895980b3f00a9e24ce8c99a825af62dcd069299faa0e5374101f2d4e335105409fd421c210c06cdc4d0d2448719986d45c2436d8357788bbe4f1d0b643f857802c13f55bba74c7e96a0e56315e5b728661a9272543867b49730688439ba52d63d239c1b63b56524b331f9921843728d2c243789b6798c8ff1b636b3f02e5c6837f11f30fb7b67615d3b2040fc85ae36076834d3ccc2e36cd3f3389680ee0b109c286c306330acb155af",
+        "secret": "4dcbb34a2bb64fb00afca731ab3654fb5e498a2d4c5685c2c6adedf452ec12949cddaec89773e86f8982fdcbfa7e1f43614b1f1b5c5b124694efbc000df76c9794907b3c36dc9f0755aa8e5ecfdf1ab70b1fd993a568dba44ee64878af20041d390fb922d198951131f7fa34bdd7859aa2f423005a9378e13792e6b6773da8662c94c95eed8ed71bb0ed840d708f3ff353b191ffdf327b6d319fa61662964d41bb8ab31dd63be6f7a59d051b4b2f03f1d07509adf593d31fddd5f4a246c4c470146304e794156aeede0c4978dbda469491c2734ce6aac33c34339c2af146fdc577df6527ff1301e93e67eba42cbd87356db2db331dabfb22e581f541fb8a2bdfeb5e492c40b1ce3ea420b9f088073c67d628b3b61f10d48a103f31a8698b55dc19aa9d8b58edc94fdf322d02165207d5ea2d0ed388912369e488cdef09447733aae3bb56b54042df3cb2d02ebe342044b12ea0c5f57f655b56a95a06576a22845e66f88f554bb124b03d3e5db8a9bfb54f109442bb0d86167a6d86f0d6dc4a563d7863774e3c799012299a01de07b79c0114fda76b583e18b158feca5d31dbdbdc19b255ac33063fe9ee0e68869373ecb26b161029faaf603e56ca9a70eafe5c8252ba2f7c18bf30e441004a704098db44df4feb5cd2885ac0c8762a138f538f73b9221cef90dc7a5a17f0600db5707cac68ab3f81a447832e10820553c51a02",
         "server_pk_hex": "6e6f4ef7cbdae9a6cd96eb6c6ee54b6f4bddfe3a0e9ad3b12d2ef0f69ee8e20b",
         "server_sk_hex": "67456465b2205ff2b2f41f7928f96ef85e3c942a8719f696993bace377dd47c7"
       }

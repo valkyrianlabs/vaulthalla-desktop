@@ -57,20 +57,41 @@ public struct CloudVault: Codable, Hashable, Sendable, Identifiable {
         }
     }
 
+    /// The Mac holding a Desktop-only vault (account-model.md, "As built" 21): `{installation_id, name, fingerprint,
+    /// last_seen, since}`, or null.
+    public struct Desktop: Codable, Hashable, Sendable {
+        public var installationId: String
+        public var name: String
+        public var fingerprint: String
+        public var lastSeen: Int64?
+        public var since: Int64?
+
+        public init(installationId: String, name: String, fingerprint: String, lastSeen: Int64? = nil, since: Int64? = nil) {
+            self.installationId = installationId
+            self.name = name
+            self.fingerprint = fingerprint
+            self.lastSeen = lastSeen
+            self.since = since
+        }
+    }
+
     public var vaultUid: String
     /// The sealed name (`vh.vault-label.v1`, 240 bytes, base64url), opened with the account key; nil before a server
     /// sealed one.
     public var label: String?
     public var registeredAt: Int64
     public var replicas: [Replica]
+    /// Wave 4: the Mac that holds the vault (no deployment), or nil. One writer: a vault has replicas or a Mac, never both.
+    public var desktop: Desktop?
 
     public var id: String { vaultUid }
 
-    public init(vaultUid: String, label: String? = nil, registeredAt: Int64 = 0, replicas: [Replica]) {
+    public init(vaultUid: String, label: String? = nil, registeredAt: Int64 = 0, replicas: [Replica], desktop: Desktop? = nil) {
         self.vaultUid = vaultUid
         self.label = label
         self.registeredAt = registeredAt
         self.replicas = replicas
+        self.desktop = desktop
     }
 }
 
@@ -272,11 +293,13 @@ public struct CloudBillingHandoff: Codable, Hashable, Sendable {
     public var expiresAt: Int64?
 }
 
-/// The daemon's error body: `{"error": {"code", "message"}}`.
+/// The daemon's error body: `{"error": {"code", "message", "reason"?}}` (`reason` on the answers a client must tell
+/// apart, src/http/Errors.cpp `errorResponse`).
 struct CloudErrorBody: Decodable {
     struct Inner: Decodable {
         var code: String?
         var message: String?
+        var reason: String?
     }
 
     var error: Inner?

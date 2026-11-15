@@ -87,6 +87,10 @@ final class CloudModel {
     private(set) var labels: [String: String] = [:]
     private(set) var coverage: [String: CloudRecoveryCoverage] = [:]
     private(set) var billing: CloudBilling?
+    /// `GET /v1/storage` (nil while the cloud serves no storage routes): for vaults a Mac holds (Desktop-only vaults),
+    /// who holds each and the holding Mac's key, read-only. This Mac requests no bucket key here: nothing would use
+    /// one until Desktop syncs these vaults (`DeviceAccess` is ready for that).
+    private(set) var storage: CloudStorage?
     private(set) var keyStatus: CloudAccount.KeyStatus?
     private(set) var unlocks: CloudKeyUnlocks?
     private(set) var holders: [CloudKeyHolder] = []
@@ -223,6 +227,8 @@ final class CloudModel {
                 return
             }
             try await client.unlink()
+            // A bucket key this Mac kept for a vault it held is worthless once unlinked (the cloud revoked it).
+            for v in storage?.vaults ?? [] { try? BucketKeyStore(items: items).delete(v.vaultUid) }
             try account.keys.deleteHeld()
             try? account.keys.deletePending()
             approvals.forgetAll()
@@ -239,6 +245,7 @@ final class CloudModel {
         labels = [:]
         coverage = [:]
         billing = nil
+        storage = nil
         keyStatus = nil
         unlocks = nil
         holders = []
@@ -261,6 +268,7 @@ final class CloudModel {
             deployments = try await d
             vaults = try await v
             billing = try? await b
+            storage = try? await client.storage()
             keyStatus = try await k
             unlocks = try? await client.unlocks()
             holders = (try? await client.holders()) ?? []
@@ -615,6 +623,35 @@ final class CloudModel {
             if !openInBrowser(url) { report("The server's address isn't the Vaulthalla Cloud portal's. It wasn't opened.", error: true) }
         } else {
             openInBrowser(environment.portal)
+        }
+    }
+
+    // MARK: - Desktop-only vaults (a vault a Mac holds, wave 4)
+
+    /// The vaults of the account that a Mac holds, or that a restore moved off this Mac, as `GET /v1/storage` shows them.
+    var macHeldVaults: [CloudStorage.Vault] {
+        (storage?.vaults ?? []).filter { $0.desktop != nil || $0.movedTo != nil }
+    }
+
+    /// The server holding `uid`, by name, from `GET /v1/vaults`' replicas.
+    func serverHolding(_ uid: String) -> String? {
+        guard let id = vaults.first(where: { $0.vaultUid == uid })?.replicas.first?.deploymentId else { return nil }
+        return deployments.first { $0.id == id }?.name ?? "a server"
+    }
+
+    /// This Mac stops holding the vault (`DELETE /v1/vaults/{uid}/replica`): the cloud revokes its key and the vault
+    /// waits, held by nobody, until the account holder places it again. Nothing on this Mac is deleted.
+    func release(_ vault: CloudStorage.Vault) async {
+        guard let client else { return }
+        await run {
+            do {
+                try await client.releaseDesktopVault(vault.vaultUid)
+            } catch {
+                throw CloudError.invalid(DeviceAccessError.from(error).message)
+            }
+            try? BucketKeyStore(items: items).delete(vault.vaultUid)
+            report("This Mac no longer holds the vault. The account holder can place it again in the portal.")
+            storage = try? await client.storage()
         }
     }
 

@@ -5,7 +5,7 @@ import VLKeykit
 /// Desktop share them. Every format and construction is the library's; this module only marshals. Secrets stay in
 /// the library's handles (``AccountKey``, ``VaultKey``) and leave one only as the recovery code, in ``SecretBytes``.
 public enum Keykit {
-    /// The linked library's version ("0.3.0").
+    /// The linked library's version ("0.4.0").
     public static var version: String { String(cString: vl_keykit_version()) }
 
     /// SHA-256 of a public key: the recipient id KEV1 and KAK1 envelopes carry.

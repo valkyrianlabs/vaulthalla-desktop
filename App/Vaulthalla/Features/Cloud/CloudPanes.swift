@@ -542,7 +542,8 @@ private struct CloudStoragePane: View {
 
     var body: some View {
         let nodes = app.nodes.filter { $0.pairing.isPaired && cloud.hasManagedStorage($0.id) }
-        if nodes.isEmpty {
+        if !cloud.macHeldVaults.isEmpty { CloudMacVaultsPanel(cloud: cloud) }
+        if nodes.isEmpty, cloud.macHeldVaults.isEmpty {
             Panel {
                 EmptyState("No server keeps vaults here yet", systemImage: "externaldrive.badge.icloud",
                            message: "A paired server with a Vaulthalla version that supports it shows its vaults here.")
@@ -669,5 +670,60 @@ private struct CloudStoragePane: View {
 
     private func date(_ seconds: Int64) -> String {
         Date(timeIntervalSince1970: TimeInterval(seconds)).formatted(date: .abbreviated, time: .shortened)
+    }
+}
+
+/// Vaults a Mac holds with no server (Desktop-only vaults), from `GET /v1/storage`: who holds each, its storage, and
+/// the holding Mac's key and its renewal in words (DeviceAccessWording), read-only. This build doesn't sync these
+/// vaults, so it never asks for a key and says so; the only action is to stop holding one, which narrows access.
+private struct CloudMacVaultsPanel: View {
+    var cloud: CloudModel
+    @State private var releasing: CloudStorage.Vault?
+
+    var body: some View {
+        let me = cloud.installation?.id ?? ""
+        Panel(title: "Vaults kept by a Mac", subtitle: "A vault with no server, held by one Mac of your account.") {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(cloud.macHeldVaults) { v in
+                    let mine = v.desktop?.installationId == me
+                    let holder = DeviceAccessWording.holder(v, thisMac: me, server: cloud.serverHolding(v.vaultUid))
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(cloud.labels[v.vaultUid] ?? "Vault \(v.vaultUid.prefix(8))…").font(.headline)
+                            Text(holder.text).font(.caption).foregroundStyle(tone(holder.tone))
+                            if v.movedTo == nil {
+                                let bucket = DeviceAccessWording.bucket(v)
+                                Text(bucket.text).font(.caption).foregroundStyle(tone(bucket.tone))
+                                let key = DeviceAccessWording.key(mine ? v.credential : v.desktop?.credential, now: .now, mine: mine)
+                                Text(key.text).font(.caption).foregroundStyle(tone(key.tone))
+                            }
+                        }
+                        Spacer()
+                        if mine {
+                            Button("Stop Holding…") { releasing = v }.controlSize(.small).disabled(cloud.busy)
+                        }
+                    }
+                }
+                Text("This version of Vaulthalla doesn't sync vaults kept by a Mac yet: nothing is uploaded or downloaded from this Mac, and it asks for no storage key.")
+                    .font(.caption).foregroundStyle(.fgSubtle)
+            }
+        }
+        .confirmationDialog("Stop holding this vault on this Mac?", isPresented: .init(get: { releasing != nil }, set: { if !$0 { releasing = nil } }),
+                            titleVisibility: .visible, presenting: releasing) { v in
+            Button("Stop Holding", role: .destructive) { Task { await cloud.release(v) } }
+            Button("Cancel", role: .cancel) {}
+        } message: { _ in
+            Text("Vaulthalla Cloud revokes this Mac's storage key, and the vault waits, held by no device, until you place it on a Mac or a server in the portal. Nothing on this Mac is deleted.")
+        }
+    }
+
+    private func tone(_ t: ManagedStorageWording.Tone) -> Color {
+        switch t {
+        case .ok: StatusTone.ok.color
+        case .info: StatusTone.info.color
+        case .warn: StatusTone.warn.color
+        case .danger: StatusTone.danger.color
+        case .neutral: .secondary
+        }
     }
 }

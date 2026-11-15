@@ -33,6 +33,9 @@ public enum CloudError: Error, Sendable, Equatable {
     case noEnvelopeOpens
     /// The cloud's key statement or chain doesn't verify, or isn't the key this Mac holds.
     case keyMismatch(String)
+    /// A refusal whose error body carries a `reason` (vaulthalla-cloud `vhc::Error`'s third argument, for answers a
+    /// client must tell apart: `held_by_desktop`, `no_such_vault`, `bucket_not_ready`...). `code` is the envelope's.
+    case declined(status: Int, code: String?, reason: String, message: String)
 
     /// The message for a person.
     public var message: String {
@@ -51,6 +54,7 @@ public enum CloudError: Error, Sendable, Equatable {
         case .codeMismatch: "The codes don't match. Nothing was sent."
         case .noEnvelopeOpens: "This key doesn't open any of this vault's keys."
         case .keyMismatch(let m): m
+        case .declined(_, _, _, let m): m
         }
     }
 
@@ -59,6 +63,9 @@ public enum CloudError: Error, Sendable, Equatable {
         let parsed = try? JSONDecoder().decode(CloudErrorBody.self, from: body)
         let code = parsed?.error?.code
         let message = parsed?.error?.message ?? HTTPURLResponse.localizedString(forStatusCode: status)
+        if let reason = parsed?.error?.reason, !reason.isEmpty, status != 401 {
+            return .declined(status: status, code: code, reason: reason, message: message)
+        }
         switch (status, code) {
         case (402, _), (_, "payment_required"): return .paymentRequired(message)
         case (429, _), (_, "rate_limited"): return .rateLimited(retryAfter: retryAfter.flatMap { Int($0) }, message: message)
