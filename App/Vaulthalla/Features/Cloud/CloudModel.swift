@@ -9,12 +9,12 @@ import VHNodes
 import VHTransport
 
 /// The panes of the top-level "Vaulthalla Cloud" section (docs/cloud-storage.md, "The Vaulthalla Cloud section").
-/// Storage and "Leave managed storage" wait for the server's managed-storage commands (`cloud.storage.*`), which don't
-/// exist yet: they are left out, not shown empty.
+/// Storage (usage, each vault's switch, the offer, leaving) shows servers with `cloud.storage.managed_remotes` only.
 enum CloudSection: String, CaseIterable, Identifiable, Hashable, Codable {
     case account
     case servers
     case vaults
+    case storage
     case recoveryKey
 
     var id: Self { self }
@@ -24,6 +24,7 @@ enum CloudSection: String, CaseIterable, Identifiable, Hashable, Codable {
         case .account: "Account"
         case .servers: "Servers"
         case .vaults: "Vaults"
+        case .storage: "Storage"
         case .recoveryKey: "Recovery Key"
         }
     }
@@ -33,6 +34,7 @@ enum CloudSection: String, CaseIterable, Identifiable, Hashable, Codable {
         case .account: "person.crop.circle"
         case .servers: "server.rack"
         case .vaults: "archivebox"
+        case .storage: "externaldrive.badge.icloud"
         case .recoveryKey: "key.horizontal"
         }
     }
@@ -56,6 +58,9 @@ final class CloudModel {
         var link: NodeMapping.NodeLink = .unknown
         var key: WsModel.CloudKeyStatus?
         var vaults: [NodeMapping.NodeVault] = []
+        /// `cloud.storage.status`, on a node with the `cloud.storage.managed_remotes` capability.
+        var storage: WsModel.CloudStorageStatus?
+        var storageError: String?
     }
 
     /// The flow the Recovery Key pane is in.
@@ -292,11 +297,15 @@ final class CloudModel {
                     facts.link = .unknown
                 }
             }
-            if let keys = try? await transport.send(Ws.Vault.Keys.Status.self, payload: .init()) {
-                var seen = Set<Int64>()
-                facts.vaults = keys.vaults.compactMap { v in
-                    guard !v.deleted, seen.insert(v.vaultID).inserted else { return nil }
-                    return NodeMapping.NodeVault(id: v.vaultID, name: v.vaultName, uid: v.vaultUid?.wrapped)
+            // Server 1.23 carries vault_uid on every vault a user can see.
+            if let list = try? await transport.send(Ws.Storage.Vault.Accessible.List.self, payload: WsNoPayload()) {
+                facts.vaults = list.vaults.map { NodeMapping.NodeVault(id: $0.id, name: $0.name, uid: $0.vaultUid) }
+            }
+            if hasManagedStorage(node.id) {
+                do {
+                    facts.storage = try await transport.send(Ws.Cloud.Storage.Status.self, payload: WsNoPayload())
+                } catch {
+                    facts.storageError = error.message
                 }
             }
             nodeFacts[node.id] = facts
@@ -554,6 +563,58 @@ final class CloudModel {
                     }
                 }
             }
+        }
+    }
+
+    // MARK: - managed storage (per server, `cloud.storage.*`)
+
+    func hasManagedStorage(_ id: NodeID) -> Bool {
+        app?.nodeProtocols[id]?.capabilities?.contains("cloud.storage.managed_remotes") == true
+    }
+
+    private func storageCall(_ node: Node, _ work: (any NodeTransport) async throws -> Void) async {
+        guard let transport = app?.cloudTransport(for: node.id) else { return report("\(node.displayName) isn't connected.", error: true) }
+        await run {
+            try await work(transport)
+            if let fresh = try? await transport.send(Ws.Cloud.Storage.Status.self, payload: WsNoPayload()) {
+                nodeFacts[node.id, default: NodeFacts()].storage = fresh
+            }
+        }
+    }
+
+    /// A vault's switch. Off with a bucket needs the vault's name as confirmation (the server fetches every file first).
+    func setStorage(_ vault: WsModel.CloudStorageVault, on: Bool, node: Node) async {
+        await storageCall(node) { t in
+            _ = try await t.send(Ws.Cloud.Storage.Switch.self,
+                                 payload: .init(vaultID: vault.vaultID, enabled: on, confirm: on ? nil : .value(vault.vaultName)))
+        }
+    }
+
+    func answerOffer(accept: Bool, node: Node) async {
+        await storageCall(node) { t in
+            if accept {
+                _ = try await t.send(Ws.Cloud.Storage.Offer.Accept.self, payload: .init())
+            } else {
+                _ = try await t.send(Ws.Cloud.Storage.Offer.Decline.self, payload: .init())
+            }
+        }
+    }
+
+    func setNewVaults(_ enabled: Bool, node: Node) async {
+        await storageCall(node) { t in _ = try await t.send(Ws.Cloud.Storage.NewVaults.self, payload: .init(enabled: enabled)) }
+    }
+
+    func confirmEnded(node: Node) async {
+        await storageCall(node) { t in _ = try await t.send(Ws.Cloud.Storage.Ended.Confirm.self, payload: WsNoPayload()) }
+    }
+
+    /// "Leave managed storage": the portal address the server returned (its ejection), else the portal itself;
+    /// either is opened only on the portal's origin.
+    func leaveManagedStorage(_ status: WsModel.CloudStorageStatus) {
+        if case .string(let text)? = status.ejection?["portal_url"], let url = URL(string: text) {
+            if !openInBrowser(url) { report("The server's address isn't the Vaulthalla Cloud portal's. It wasn't opened.", error: true) }
+        } else {
+            openInBrowser(environment.portal)
         }
     }
 
