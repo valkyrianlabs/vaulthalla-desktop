@@ -1,0 +1,10 @@
+# The vl-keykit source VLKeykit.xcframework is built from (tools/keykit/build-vlkeykit.sh). Shell syntax, sourced.
+#
+# VLKEYKIT_SOURCE is one of
+#   git+<repository URL or local path>#<full commit>       a revision, cloned and checked out
+#   <https URL of a release tarball>#sha256=<hex digest>    a release, downloaded and checked before it is unpacked
+#
+# Moving to the v0.3.0 release is this one line, e.g.
+#   VLKEYKIT_SOURCE=https://github.com/valkyrianlabs/vl-keykit/releases/download/v0.3.0/vl-keykit-0.3.0.tar.gz#sha256=<hex>
+VLKEYKIT_VERSION=0.3.0
+VLKEYKIT_SOURCE=git+https://github.com/valkyrianlabs/vl-keykit.git#ace2ad0f7bddbcb8f8d268c61cd66983e9b26d1c
