@@ -26,6 +26,7 @@ let package = Package(
         .library(name: "VHCloud", targets: ["VHCloud"]),
         .library(name: "VHMCP", targets: ["VHMCP"]),
         .library(name: "VHFinder", targets: ["VHFinder"]),
+        .library(name: "VHVault", targets: ["VHVault"]),
         .executable(name: "vaulthalla-mcp", targets: ["vaulthalla-mcp"]),
     ],
     dependencies: [
@@ -77,6 +78,17 @@ let package = Package(
             dependencies: ["VHCore", "VHContract", "VHTransport", "VHIdentity", "VHNodes"],
             swiftSettings: strict
         ),
+        // vl-vaultfmt's C API (the vault format and the Desktop-only engine; static, built from the pinned source by
+        // tools/vaultfmt/build-vlvaultfmt.sh; never committed). It holds vl-vaultfmt alone: vl-keykit and libcrypto are
+        // VLKeykit's, so every target linking it links VLKeykit too.
+        .binaryTarget(name: "VLVaultfmt", path: "build/vlvaultfmt/VLVaultfmt.xcframework"),
+        // Desktop-only vaults (docs/desktop-vaults.md): the engine's C API in Swift (the bucket over S3 with SigV4, this
+        // Mac's vault keys, the state file), the vault's lifecycle with the cloud, and the engine-backed Finder replica.
+        .target(
+            name: "VHVault",
+            dependencies: ["VHCore", "VHRecovery", "VHKeykit", "VHCloud", "VHFinder", "VLVaultfmt", "VLKeykit"],
+            swiftSettings: strict
+        ),
         .executableTarget(
             name: "vaulthalla-mcp",
             dependencies: ["VHMCP", "VHCore", "VHNodes"],
@@ -84,7 +96,8 @@ let package = Package(
         ),
         .testTarget(name: "VHCoreTests", dependencies: ["VHCore"], swiftSettings: strict),
         .testTarget(name: "VHContractTests", dependencies: ["VHContract"], swiftSettings: strict),
-        .testTarget(name: "VHCloudTests", dependencies: ["VHCloud", "VHRecovery", "VHCore", "VHKeykit"], swiftSettings: strict),
+        .testTarget(name: "VHCloudTests", dependencies: ["VHCloud", "VHRecovery", "VHCore", "VHKeykit", "VHVault"],
+                    swiftSettings: strict),
         .testTarget(
             name: "VHKeykitTests",
             dependencies: ["VHKeykit", "VHCore", "VHRecovery"],
@@ -118,6 +131,12 @@ let package = Package(
         .testTarget(
             name: "VHFinderTests",
             dependencies: ["VHFinder", "VHCore", "VHContract", "VHTransport", "VHIdentity", "VHNodes"],
+            swiftSettings: strict
+        ),
+        // VHVault's tests; VHVaultTests/Live runs only with VH_LIVE_S3 set (tools/vaultfmt/live-s3.sh).
+        .testTarget(
+            name: "VHVaultTests",
+            dependencies: ["VHVault", "VHCloud", "VHCore", "VHRecovery", "VHKeykit", "VHFinder"],
             swiftSettings: strict
         ),
         // Opt-in: runs only with VH_LIVE_NODE set, against a live daemon (docs/interop-testing.md).

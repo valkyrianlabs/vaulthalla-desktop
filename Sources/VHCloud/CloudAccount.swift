@@ -2,7 +2,7 @@ public import Foundation
 public import VHCore
 public import VHKeykit
 import OSLog
-import VHRecovery
+public import VHRecovery
 
 /// The account recovery key on this Mac (docs/cloud-storage.md, "The account recovery key on this Mac"; the cloud's
 /// key-manager.md): receiving it (a transfer from another holder, or the recovery code typed in), keeping it as KAK1
@@ -154,6 +154,33 @@ public actor CloudAccount {
         let key = try AccountKey.unwrap(held.kak1, holder: holder, statement: held.statement)
         guard key.matches(held.statement) else { throw CloudError.keyMismatch("The stored recovery key doesn't open.") }
         return try body(key, held.statement)
+    }
+
+    /// The statement of the generation this Mac holds (its X25519 key is what a new vault key is wrapped to): no unlock.
+    public func heldStatement() throws -> KeyStatement? { try keys.held()?.statement }
+
+    /// Opens a Desktop-only vault's envelopes to the held generation of the account key (one unlock for all): each key
+    /// version's 32 bytes, for this Mac's keychain (a replacement Mac adopting the vault). Envelopes to other
+    /// generations, or that don't open, are skipped.
+    public func openVaultKeys(_ envelopes: [CloudVaultEnvelope], vaultUid: Uid) throws -> [UInt32: SecretBytes] {
+        try withAccountKey { key, statement in
+            // vl-keykit keeps an opened vault key inside its handle; the engine needs the bytes, so the envelopes are
+            // opened with the seed's recipient (VHRecovery's KEV1, against the same vectors).
+            let code = try key.recoveryCode()
+            let seed = try code.withUnsafeBytes { try RecoverySeed(text: String(decoding: $0, as: UTF8.self)) }
+            guard seed.x25519PublicKey() == statement.x25519PublicKey else {
+                throw CloudError.keyMismatch("The stored recovery key doesn't open.")
+            }
+            let recipient = seed.recipient()
+            var out: [UInt32: SecretBytes] = [:]
+            for e in envelopes where e.generation == statement.generation {
+                guard let raw = Base64URL.decode(e.envelope),
+                      let opened = try? KEV1.unwrap(raw, recipient: recipient, vaultUid: vaultUid),
+                      opened.keyVersion == e.keyVersion else { continue }
+                out[opened.keyVersion] = opened.key
+            }
+            return out
+        }
     }
 
     /// The recovery code of the held key, to show, print or save: one unlock.

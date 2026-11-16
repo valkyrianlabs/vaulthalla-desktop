@@ -140,7 +140,8 @@ public struct DomainPlan: Hashable, Sendable {
             }
         }
         plan.remove = existing.map(\.identifier).filter { identifier in
-            guard let id = VaultDomainID(identifier: identifier) else { return true }
+            // A Desktop-only vault's domain is managed with that vault (VHVault), never by the server vaults' plan.
+            guard let id = VaultDomainID(identifier: identifier) else { return DesktopVaultDomainID(identifier: identifier) == nil }
             return !seen.contains(id)
         }
         return plan

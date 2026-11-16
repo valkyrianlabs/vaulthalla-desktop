@@ -96,6 +96,8 @@ import VHNodes
             DomainSnapshot(identifier: "n2.5", displayName: "Media · old name", userEnabled: true),
             DomainSnapshot(identifier: "n3.9", displayName: "Gone · old", userEnabled: true),
             DomainSnapshot(identifier: "spike-domain", displayName: "Leftover", userEnabled: false),
+            // A Desktop-only vault's domain: not the server vaults' plan's to remove.
+            DomainSnapshot(identifier: "desktop-0123456789abcdefghjkmnpqrs", displayName: "Taxes", userEnabled: true),
         ]
         let plan = DomainPlan.reconcile(wanted: [photos, docs, renamed, photos], existing: existing)
         #expect(plan.add == [photos])

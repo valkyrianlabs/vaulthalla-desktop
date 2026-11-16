@@ -1,0 +1,162 @@
+import FileProvider
+import Foundation
+import Observation
+import VHCloud
+import VHCore
+import VHFinder
+import VHVault
+
+/// Desktop-only vaults in the app (docs/desktop-vaults.md), behind ``DesktopVaultsFeature`` (off by default: nothing
+/// here has run in a signed app). It opens a session for every vault this Mac holds (each starts its ``DeviceAccess``,
+/// which the app held back until an engine existed), creates new ones, adopts one the account holder placed here, stops
+/// holding one, and shows each vault's state in words.
+@MainActor
+@Observable
+final class DesktopVaultsModel {
+    private(set) var records: [DesktopVaultRecord] = []
+    private(set) var states: [String: DesktopVaultSession.Status] = [:]
+    private(set) var readiness: DesktopVaultReadiness?
+    private(set) var creating: DesktopVaultCreationStep?
+    private(set) var adoptable: [String] = []
+    private(set) var problem: String?
+    /// Vaults shown in Finder: their engine runs in the File Provider extension, not here.
+    private(set) var inFinder: Set<String> = []
+
+    @ObservationIgnored let vaults: DesktopVaults
+    @ObservationIgnored private var observed: Set<String> = []
+    @ObservationIgnored private var started = false
+
+    init(client: CloudClient, account: CloudAccount, items: LeasedAccountItems) {
+        let container = RegistryEnvironment.current().groupContainer ?? URL.applicationSupportDirectory
+        vaults = DesktopVaults(client: client, account: account, items: items, container: container)
+    }
+
+    /// The vaults this Mac holds, open, once per launch (after the link is known).
+    func start() async {
+        guard !started else { return await refresh() }
+        started = true
+        inFinder = Set(((try? await NSFileProviderManager.domains()) ?? []).compactMap {
+            DesktopVaultDomainID(identifier: $0.identifier.rawValue)?.vaultUid
+        })
+        records = await vaults.records()
+        for r in records where r.hold == .holding && !inFinder.contains(r.uid) {
+            do throws(DesktopVaultError) { _ = try await vaults.open(r.uid) } catch { problem = error.sentence }
+        }
+        await observeSessions()
+        await refresh()
+    }
+
+    func refresh() async {
+        readiness = await vaults.readiness()
+        adoptable = (try? await vaults.adoptable()) ?? []
+        records = await vaults.records()
+    }
+
+    private func observeSessions() async {
+        for r in await vaults.records() where !observed.contains(r.uid) {
+            guard let session = await vaults.session(r.uid) else { continue }
+            observed.insert(r.uid)
+            let uid = r.uid
+            _ = await session.observe { [weak self] status in
+                Task { @MainActor in self?.states[uid] = status }
+            }
+        }
+    }
+
+    func create(name: String) async -> Bool {
+        problem = nil
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            problem = "Give the vault a name."
+            return false
+        }
+        do throws(DesktopVaultError) {
+            _ = try await vaults.create(name: trimmed) { step in Task { @MainActor [weak self] in self?.creating = step } }
+            creating = nil
+            await observeSessions()
+            await refresh()
+            return true
+        } catch {
+            creating = nil
+            problem = error.sentence
+            await refresh()
+            return false
+        }
+    }
+
+    func adopt(_ uid: String, name: String) async {
+        do throws(DesktopVaultError) {
+            _ = try await vaults.adopt(uid, name: name)
+            await observeSessions()
+            await refresh()
+        } catch {
+            problem = error.sentence
+        }
+    }
+
+    func stopHolding(_ uid: String) async -> String? {
+        do throws(DesktopVaultError) {
+            if inFinder.contains(uid) { await setShownInFinder(uid, false) }
+            try await vaults.stopHolding(uid)
+            await refresh()
+            return nil
+        } catch {
+            return error.sentence
+        }
+    }
+
+    func holds(_ uid: String) -> Bool { records.contains { $0.uid == uid && $0.hold == .holding } }
+
+    func sentence(_ uid: String) -> String? {
+        if inFinder.contains(uid) { return "Shown in Finder: Finder opens and syncs it." }
+        return states[uid]?.sentence
+    }
+
+    /// Shows the vault in Finder (a `desktop-<uid>` domain) or stops showing it. One engine per vault: while Finder
+    /// shows it, the extension runs it and this app closes its own session; stopping gives it back here.
+    func setShownInFinder(_ uid: String, _ shown: Bool) async {
+        let identifier = NSFileProviderDomainIdentifier(rawValue: DesktopVaultDomainID.prefix + uid)
+        do {
+            if shown {
+                let name = records.first { $0.uid == uid }?.name ?? "Vault"
+                await vaults.close(uid)
+                let domain = NSFileProviderDomain(identifier: identifier, displayName: DesktopVaultDomainID.displayName(vault: name))
+                domain.supportsSyncingTrash = false  // deletes go to the vault's own trash
+                try await NSFileProviderManager.add(domain)
+                inFinder.insert(uid)
+            } else {
+                if let d = try await NSFileProviderManager.domains().first(where: { $0.identifier == identifier }) {
+                    try await NSFileProviderManager.remove(d, mode: .preserveDirtyUserData)
+                }
+                inFinder.remove(uid)
+                observed.remove(uid)
+                do throws(DesktopVaultError) { _ = try await vaults.open(uid) } catch { problem = error.sentence }
+                await observeSessions()
+            }
+        } catch {
+            problem = "Finder refused (\(error.localizedDescription))."
+        }
+    }
+
+    /// The creation's step in words.
+    static func words(_ step: DesktopVaultCreationStep) -> String {
+        switch step {
+        case .makingKey: "Making the vault's key on this Mac\u{2026}"
+        case .enrolling: "Wrapping it to your recovery key\u{2026}"
+        case .registering: "Registering the vault\u{2026}"
+        case .switchingOn: "Switching its storage on\u{2026}"
+        case .waitingForStorage(let why): why.map { "Waiting: \($0.message)" } ?? "Waiting for its storage\u{2026}"
+        case .gettingKey: "Getting the storage key\u{2026}"
+        case .publishing: "Writing the vault's first state\u{2026}"
+        case .done: "Done."
+        }
+    }
+
+    /// What a Desktop-only vault can't do yet, said where it is created.
+    static let limits: [String] = [
+        "One Mac writes to it for now: this one. Another Mac gets it only when you move it there in the portal.",
+        "No share links and no search on a server: there is no server.",
+        "Recovering it without this Mac needs your account's recovery key (the offline copy you saved).",
+        "If this Mac is lost, changes it hadn't sent yet lose their names: the files' bytes stay in storage and come back under \u{201C}Recovered\u{201D}, without their names or folders.",
+    ]
+}

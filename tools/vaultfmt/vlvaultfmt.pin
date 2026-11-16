@@ -1,0 +1,17 @@
+# The vl-vaultfmt source VLVaultfmt.xcframework is built from (tools/vaultfmt/build-vlvaultfmt.sh). Shell syntax, sourced.
+#
+# VLVAULTFMT_SOURCE is one of
+#   file:<path in this repository>#sha256=<hex digest>      a source tarball committed here, checked before it is unpacked
+#   git+<repository URL or local path>#<full commit>       a revision, cloned and checked out
+#
+# The tarball is committed (as tools/keykit/vendor holds vl-keykit's), so no build, CI included, needs a token for the
+# private vl-vaultfmt repository. This one is
+# `git archive --format=tar.gz --prefix=vl-vaultfmt-0.3.0/ 7ff900c92a794ea8a6c84e4f8f1c439dd97bf5b5` of vl-vaultfmt
+# branch feat/engine (0.3.0: the database-free engine and its C API, vl_vaultfmt_engine.h; pull request 3, not yet
+# merged or tagged; the archive is reproducible from that commit); replace it with the v0.3.0 release once published.
+#
+# vl-vaultfmt is built against the vl-keykit source pinned in tools/keykit/vlkeykit.pin (not the 0.2.0 its own wrap
+# names), and VLVaultfmt.xcframework holds vl-vaultfmt alone: vl-keykit and libcrypto come from VLKeykit.xcframework,
+# so the app links exactly one copy of each.
+VLVAULTFMT_VERSION=0.3.0
+VLVAULTFMT_SOURCE=file:tools/vaultfmt/vendor/vl-vaultfmt-0.3.0-7ff900c9.tar.gz#sha256=e6a3e2e93983848c359e75c440539e6ea6e91bf9a99b180dd4f12397d29055bb
