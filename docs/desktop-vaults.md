@@ -131,8 +131,7 @@ tested by `swift test`; **nothing is proven in Finder**: a File Provider extensi
   over its node id, vault id, version and key check, recorded at enrollment). Desktop attests nothing: it enrolls the
   envelope only, so `vh vault recover --from-cloud` refuses `salvage_required`, and only `--salvage` (the server
   re-encrypts under a key of its own) takes the vault over. Making it canonical needs a Desktop attestation key (where
-  it lives, what anchors it) or a server rule for a Desktop origin: a trust decision, left to Cooper (the keychain
-  layout is changing separately).
+  it lives, what anchors it) or a server rule for a Desktop origin: a trust decision, left to Cooper.
 - The fake cloud has one installation, so the adoption test's "replacement Mac" is a fresh keychain and container on
   the same installation id.
 
