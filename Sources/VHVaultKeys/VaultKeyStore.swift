@@ -1,8 +1,8 @@
 public import Foundation
 public import VHCore
 
-/// A Desktop-only vault's keys on this Mac: the account's app-only keychain items (``AccountKeychain``), as
-/// ``BucketKeyStore`` keeps the bucket key, written only by the credential owner. `vault-key.<uid>` says which versions
+/// A Desktop-only vault's keys on this Mac: the keychain group the app shares with the File Provider extension
+/// (``VaultKeychain``), as ``BucketKeyStore`` keeps the bucket key, written only by the credential owner. `vault-key.<uid>` says which versions
 /// this Mac holds and which one new objects are sealed under (no secret); `vault-key.<uid>.<version>` holds that
 /// version's 32 bytes, never encoded as text. Never UserDefaults, a file or a log. Every version is also in the cloud,
 /// wrapped (KEV1) to the account recovery key, before anything is sealed under it.
@@ -15,9 +15,10 @@ public struct VaultKeyStore: Sendable {
     public static func item(_ uid: String) -> String { "vault-key.\(uid)" }
     static func keyItem(_ uid: String, _ version: UInt32) -> String { "vault-key.\(uid).\(version)" }
 
-    let items: LeasedAccountItems
+    let items: VaultItems
 
-    public init(items: LeasedAccountItems) { self.items = items }
+    public init(vaultItems: VaultItems) { items = vaultItems }
+    public init(items: LeasedAccountItems) { self.items = VaultItems(shared: items) }
 
     /// The versions held and the current one; nil when this Mac holds no key of the vault.
     public func versions(_ uid: String) throws -> (versions: [UInt32], current: UInt32)? {
@@ -60,48 +61,3 @@ public struct VaultKeyStore: Sendable {
     }
 }
 
-// MARK: - the routes a Desktop-only vault's keys need
-
-/// `PUT /v1/recovery/vaults/{uid}` (200): what enrolling stored (recovery `Enrollment.cpp`, `addRecoveryRoutes`).
-public struct CloudEnrollment: Decodable, Sendable {
-    public var created: Bool
-    public var envelopesAdded: Int?
-    public var versionsAdded: Int?
-}
-
-/// One envelope of `GET /v1/keys/vaults/{uid}/envelopes` (`KeyManager::envelopes`): to a generation of the account key.
-public struct CloudVaultEnvelope: Decodable, Sendable {
-    public var keyVersion: UInt32
-    public var generation: UInt32
-    public var fingerprint: String
-    /// base64url KEV1.
-    public var envelope: String
-}
-
-extension CloudClient {
-    /// Enrolls a vault this Mac holds for recovery (key-manager.md "As built" 20): its envelopes (KEV1 to the account
-    /// key, standard base64 as enrollment takes them) and key versions. Registers the vault as this Mac's if it is new
-    /// (account-model.md "As built" 18).
-    public func enrollDesktopVault(_ uid: String, envelopes: [Data], versions: [UInt32]) async throws -> CloudEnrollment {
-        struct Version: Encodable { var version: UInt32 }
-        struct Body: Encodable {
-            var envelopes: [String]
-            var keyVersions: [Version]
-        }
-        return try await signed("PUT", "/v1/recovery/vaults/\(try Self.checkedUid(uid))",
-                                body: Body(envelopes: envelopes.map { $0.base64EncodedString() },
-                                           keyVersions: versions.map(Version.init)))
-    }
-
-    /// `GET /v1/keys/vaults/{uid}/envelopes`: the vault's envelopes to every generation of the account key (a linked
-    /// Desktop may read any vault of its account). Nil when the vault isn't enrolled or the account has no key yet (404).
-    public func vaultEnvelopes(_ uid: String) async throws -> [CloudVaultEnvelope]? {
-        struct Reply: Decodable { var envelopes: [CloudVaultEnvelope] }
-        do {
-            let reply: Reply = try await signed("GET", "/v1/keys/vaults/\(try Self.checkedUid(uid))/envelopes")
-            return reply.envelopes
-        } catch CloudError.notFound {
-            return nil
-        }
-    }
-}

@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 import VHCore
 import VHFinder
 import VHNodes
-import VHVault
+import VHVaultEngine
 
 /// Vaulthalla's File Provider extension: one domain per vault the operator selects (valkyrianlabs/vaulthalla-desktop#1, #4).
 ///

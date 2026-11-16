@@ -25,10 +25,14 @@ final class DesktopVaultsModel {
     @ObservationIgnored let vaults: DesktopVaults
     @ObservationIgnored private var observed: Set<String> = []
     @ObservationIgnored private var started = false
+    @ObservationIgnored private var refusalObserver: KeyRefusalSignal.Observer?
 
     init(client: CloudClient, account: CloudAccount, items: LeasedAccountItems) {
         let container = RegistryEnvironment.current().groupContainer ?? URL.applicationSupportDirectory
-        vaults = DesktopVaults(client: client, account: account, items: items, container: container)
+        // Vault keys and the bucket key in the group shared with the File Provider extension, moved from the app-only
+        // group on first use; this app alone writes them (it holds the lease) and alone talks to the cloud.
+        vaults = DesktopVaults(client: client, account: account, items: items, container: container,
+                               vaultItems: .app(lease: items.lease))
     }
 
     /// The vaults this Mac holds, open, once per launch (after the link is known).
@@ -39,14 +43,20 @@ final class DesktopVaultsModel {
             DesktopVaultDomainID(identifier: $0.identifier.rawValue)?.vaultUid
         })
         records = await vaults.records()
-        for r in records where r.hold == .holding && !inFinder.contains(r.uid) {
-            do throws(DesktopVaultError) { _ = try await vaults.open(r.uid) } catch { problem = error.sentence }
+        // Every held vault's bucket key is renewed here; its engine runs here unless Finder shows it.
+        for r in records where r.hold == .holding {
+            do throws(DesktopVaultError) { _ = try await vaults.open(r.uid, engine: !inFinder.contains(r.uid)) } catch {
+                problem = error.sentence
+            }
         }
+        let vaults = vaults
+        refusalObserver = vaults.refusals.observe { Task { await vaults.followRefusals() } }
         await observeSessions()
         await refresh()
     }
 
     func refresh() async {
+        await vaults.followRefusals()
         readiness = await vaults.readiness()
         adoptable = (try? await vaults.adoptable()) ?? []
         records = await vaults.records()
@@ -108,7 +118,9 @@ final class DesktopVaultsModel {
     func holds(_ uid: String) -> Bool { records.contains { $0.uid == uid && $0.hold == .holding } }
 
     func sentence(_ uid: String) -> String? {
-        if inFinder.contains(uid) { return "Shown in Finder: Finder opens and syncs it." }
+        if inFinder.contains(uid) {
+            return "Shown in Finder: Finder syncs it; Vaulthalla renews its storage key while it runs. If Vaulthalla isn't running when the key expires, Finder pauses the vault until you open Vaulthalla; nothing is lost."
+        }
         return states[uid]?.sentence
     }
 
@@ -119,19 +131,20 @@ final class DesktopVaultsModel {
         do {
             if shown {
                 let name = records.first { $0.uid == uid }?.name ?? "Vault"
-                await vaults.close(uid)
+                await vaults.handOver(uid)
                 let domain = NSFileProviderDomain(identifier: identifier, displayName: DesktopVaultDomainID.displayName(vault: name))
                 domain.supportsSyncingTrash = false  // deletes go to the vault's own trash
                 try await NSFileProviderManager.add(domain)
                 inFinder.insert(uid)
+                // As for server vaults: the background agent keeps Finder fresh while a vault is shown there.
+                BackgroundAgent.update(hasDomains: true)
             } else {
                 if let d = try await NSFileProviderManager.domains().first(where: { $0.identifier == identifier }) {
                     try await NSFileProviderManager.remove(d, mode: .preserveDirtyUserData)
                 }
                 inFinder.remove(uid)
-                observed.remove(uid)
-                do throws(DesktopVaultError) { _ = try await vaults.open(uid) } catch { problem = error.sentence }
-                await observeSessions()
+                await vaults.takeBack(uid)
+                await FinderVaults.updateAgent()
             }
         } catch {
             problem = "Finder refused (\(error.localizedDescription))."

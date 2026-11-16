@@ -26,6 +26,8 @@ let package = Package(
         .library(name: "VHCloud", targets: ["VHCloud"]),
         .library(name: "VHMCP", targets: ["VHMCP"]),
         .library(name: "VHFinder", targets: ["VHFinder"]),
+        .library(name: "VHVaultKeys", targets: ["VHVaultKeys"]),
+        .library(name: "VHVaultEngine", targets: ["VHVaultEngine"]),
         .library(name: "VHVault", targets: ["VHVault"]),
         .executable(name: "vaulthalla-mcp", targets: ["vaulthalla-mcp"]),
     ],
@@ -57,7 +59,10 @@ let package = Package(
         .target(name: "VHKeykit", dependencies: ["VHCore", "VLKeykit"], swiftSettings: strict),
         // Vaulthalla Cloud (optional): this Mac as a linked installation (VHC1-Ed25519 signed requests, its key in the
         // keychain) and the delivering side of a cloud restore: re-wrapping a vault's keys from a recovery kit.
-        .target(name: "VHCloud", dependencies: ["VHCore", "VHRecovery", "VHKeykit"], swiftSettings: strict),
+        // The keychain items: the account's app-only group, and the group the app shares with the File Provider extension
+        // for Desktop-only vaults (vault keys, the bucket key). No cloud client: the extension links it.
+        .target(name: "VHVaultKeys", dependencies: ["VHCore"], swiftSettings: strict),
+        .target(name: "VHCloud", dependencies: ["VHCore", "VHRecovery", "VHKeykit", "VHVaultKeys"], swiftSettings: strict),
         // Recovery keys (docs/architecture.md §6): vault key backup to 1Password, change detection and restore.
         .target(
             name: "VHKeyBackup",
@@ -84,9 +89,16 @@ let package = Package(
         .binaryTarget(name: "VLVaultfmt", path: "build/vlvaultfmt/VLVaultfmt.xcframework"),
         // Desktop-only vaults (docs/desktop-vaults.md): the engine's C API in Swift (the bucket over S3 with SigV4, this
         // Mac's vault keys, the state file), the vault's lifecycle with the cloud, and the engine-backed Finder replica.
+        // The engine, the S3 store and the engine-backed Finder replica, with no cloud client: what the File Provider
+        // extension links (it reads keys from the shared group and never talks to the cloud).
+        .target(
+            name: "VHVaultEngine",
+            dependencies: ["VHCore", "VHRecovery", "VHFinder", "VHVaultKeys", "VLVaultfmt", "VLKeykit"],
+            swiftSettings: strict
+        ),
         .target(
             name: "VHVault",
-            dependencies: ["VHCore", "VHRecovery", "VHKeykit", "VHCloud", "VHFinder", "VLVaultfmt", "VLKeykit"],
+            dependencies: ["VHVaultEngine", "VHCore", "VHRecovery", "VHKeykit", "VHCloud", "VHFinder"],
             swiftSettings: strict
         ),
         .executableTarget(
@@ -136,7 +148,7 @@ let package = Package(
         // VHVault's tests; VHVaultTests/Live runs only with VH_LIVE_S3 set (tools/vaultfmt/live-s3.sh).
         .testTarget(
             name: "VHVaultTests",
-            dependencies: ["VHVault", "VHCloud", "VHCore", "VHRecovery", "VHKeykit", "VHFinder"],
+            dependencies: ["VHVault", "VHVaultEngine", "VHVaultKeys", "VHCloud", "VHCore", "VHRecovery", "VHKeykit", "VHFinder"],
             swiftSettings: strict
         ),
         // Opt-in: runs only with VH_LIVE_NODE set, against a live daemon (docs/interop-testing.md).

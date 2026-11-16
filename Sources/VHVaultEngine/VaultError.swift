@@ -50,7 +50,7 @@ public struct VaultError: Error, Sendable, Equatable, CustomStringConvertible {
     }
 
     /// An error Desktop raises itself (no library call failed): a name of its own.
-    init(local name: String, _ message: String) {
+    package init(local name: String, _ message: String) {
         status = -1
         self.name = name
         self.message = message
