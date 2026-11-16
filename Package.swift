@@ -96,7 +96,8 @@ let package = Package(
         ),
         .testTarget(name: "VHCoreTests", dependencies: ["VHCore"], swiftSettings: strict),
         .testTarget(name: "VHContractTests", dependencies: ["VHContract"], swiftSettings: strict),
-        .testTarget(name: "VHCloudTests", dependencies: ["VHCloud", "VHRecovery", "VHCore", "VHKeykit"], swiftSettings: strict),
+        .testTarget(name: "VHCloudTests", dependencies: ["VHCloud", "VHRecovery", "VHCore", "VHKeykit", "VHVault"],
+                    swiftSettings: strict),
         .testTarget(
             name: "VHKeykitTests",
             dependencies: ["VHKeykit", "VHCore", "VHRecovery"],

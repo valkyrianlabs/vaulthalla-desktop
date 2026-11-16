@@ -73,6 +73,8 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
     }
 
     var vaults: [String: Vault] = [:]
+    /// Recovery enrollment (recovery `Enrollment::store`): each vault's stored envelopes, in the order received.
+    var enrolled: [String: [Data]] = [:]
     var order: [String] = []
     var entitlementState: String? = "active"
     var storageAccess = "full"
@@ -87,6 +89,8 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
     /// to another installation's binding.
     var failNext: (status: Int, code: String, reason: String?, retryAfter: String?)?
     var omitExpiry = false
+    /// The bucket is ready as soon as the switch goes on (no provisioning step to wait for).
+    var provisionAtOnce = false
     var sealForAnotherInstallation = false
     private var counter = 0
 
@@ -94,7 +98,8 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
 
     func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
         let path = request.url!.path
-        let deviceRoute = path.hasPrefix("/v1/storage") || path.hasPrefix("/v1/vaults")
+        let deviceRoute = path.hasPrefix("/v1/storage") || path.hasPrefix("/v1/vaults") || path.hasPrefix("/v1/recovery/vaults/")
+            || path.hasPrefix("/v1/keys/vaults/")
         guard deviceRoute else { return try await base.send(request) }
         return lock.withLock { handle(request) }
     }
@@ -402,7 +407,7 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
                 return refuse(400, "invalid_argument", "`enabled` is true or false", reason: "invalid_enabled")
             }
             if v.bucketState == "none", enabled {
-                v.bucketState = "waiting"
+                v.bucketState = provisionAtOnce ? "ready" : "waiting"
             } else if enabled, v.bucketState == "off" {
                 v.bucketState = "ready"
             } else if !enabled, ["ready", "waiting"].contains(v.bucketState) {
@@ -474,6 +479,53 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
             }
             vaults[uid]!.keys[i].state = "active"
             return reply(204, [:])
+        // recovery Enrollment.cpp `PUT /v1/recovery/vaults/{uid}` (parseUpload, Enrollment::store): the scope is a vault
+        // this Mac holds, or one new on the account, registered here first as this Mac's (account-model.md 18).
+        case ("PUT", 4) where parts[1] == "recovery" && parts[2] == "vaults":
+            let uid = parts[3]
+            guard let wire = Uid(base32: uid) else { return refuse(400, "invalid_argument", "the vault uid isn't one") }
+            guard let list = body["envelopes"] as? [String], !list.isEmpty, list.count <= 64 else {
+                return refuse(400, "invalid_argument", "`envelopes` is an array of 1 to 64 KEV1 envelopes")
+            }
+            var envelopes: [Data] = []
+            for (i, text) in list.enumerated() {
+                guard let env = Data(base64Encoded: text) else { return refuse(400, "invalid_argument", "envelope \(i) isn't base64") }
+                guard let h = try? KEV1.inspect(env) else {
+                    return refuse(400, "invalid_argument", "envelope \(i) isn't a KEV1 envelope this service stores")
+                }
+                if h.vaultUid != wire { return refuse(400, "invalid_argument", "envelope \(i) belongs to another vault") }
+                if h.keyVersion == 0 { return refuse(400, "invalid_argument", "envelope \(i) has key version 0") }
+                envelopes.append(env)
+            }
+            if let v = vaults[uid] {
+                guard v.holder == me else { return conflict(heldElsewhere(v)) }  // requireVault(Write)
+            } else {
+                vaults[uid] = Vault(uid: uid, holds: [Hold(installation: me, active: true)])
+                order.append(uid)
+            }
+            let created = enrolled[uid] == nil
+            var stored = enrolled[uid] ?? []
+            let added = envelopes.filter { !stored.contains($0) }
+            stored += added
+            enrolled[uid] = stored
+            return reply(200, ["created": created, "envelopes_added": added.count, "versions_added": created ? 1 : 0,
+                               "coverage": ["vault_uid": uid]])
+        // keys KeyManager.cpp `KeyManager::envelopes`: a Desktop reads any vault of its account (requireVault Read); 404
+        // without an account key or an enrollment; every envelope to a generation of the account key, base64url.
+        case ("GET", 5) where parts[1] == "keys" && parts[2] == "vaults" && parts[4] == "envelopes":
+            let uid = parts[3]
+            guard Uid(base32: uid) != nil else { return refuse(404, "not_found", "no such vault") }
+            let generations = base.chain.map { try! KeyStatement($0.signed.statement) }
+            guard !generations.isEmpty else { return refuse(404, "not_found", "this account has no recovery key yet") }
+            guard let stored = enrolled[uid] else { return refuse(404, "not_found", "this vault isn't enrolled for this account") }
+            var list: [[String: Any]] = []
+            for env in stored {
+                guard let h = try? KEV1.inspect(env),
+                      let g = generations.first(where: { KEV1.recipientID($0.x25519PublicKey) == h.recipientID }) else { continue }
+                list.append(["key_version": h.keyVersion, "generation": g.generation, "fingerprint": g.fingerprint.text,
+                             "envelope": Base64URL.encode(env)])
+            }
+            return reply(200, ["vault_uid": uid, "envelopes": list])
         default:
             return refuse(404, "not_found", "no route \(method) \(path)")
         }
