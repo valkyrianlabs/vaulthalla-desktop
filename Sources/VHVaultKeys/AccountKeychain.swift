@@ -124,14 +124,14 @@ public struct LeasedAccountItems: Sendable {
 
     public var role: CredentialRole { lease?.role ?? .consumer }
 
-    func read(_ name: String) throws -> Data? { try items.read(name) }
+    public func read(_ name: String) throws -> Data? { try items.read(name) }
 
-    func write(_ name: String, _ data: Data, operation: String) throws {
+    public func write(_ name: String, _ data: Data, operation: String) throws {
         guard role == .owner else { throw CredentialOwnershipError.notOwner(operation: operation) }
         try items.write(name, data)
     }
 
-    func delete(_ name: String, operation: String) throws {
+    public func delete(_ name: String, operation: String) throws {
         guard role == .owner else { throw CredentialOwnershipError.notOwner(operation: operation) }
         try items.delete(name)
     }

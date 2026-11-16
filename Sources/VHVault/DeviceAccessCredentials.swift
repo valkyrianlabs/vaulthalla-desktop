@@ -14,3 +14,5 @@ extension DeviceAccess: S3CredentialSource {
 
     public func providerRefused() { providerRefusedKey() }
 }
+
+extension DesktopVaultSession: EngineHost {}

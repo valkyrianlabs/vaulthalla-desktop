@@ -35,7 +35,11 @@ public struct FreshnessPlan: Hashable, Sendable {
     public static func make(domains: [DomainSnapshot], checks: [NodeID: NodeCheck]) -> FreshnessPlan {
         var plan = FreshnessPlan()
         for domain in domains {
-            guard let vault = domain.vault else { continue }
+            guard let vault = domain.vault else {
+                // A Desktop-only vault's domain: nothing to ask a node; signalled so the extension refreshes from its bucket.
+                if DesktopVaultDomainID(identifier: domain.identifier) != nil { plan.signal.append(domain.identifier) }
+                continue
+            }
             let reason: String? = switch checks[vault.nodeID] {
             case nil: "Its node was removed from Vaulthalla on this Mac."
             case .closed(let why): why

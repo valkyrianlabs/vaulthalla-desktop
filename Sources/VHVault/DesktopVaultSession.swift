@@ -83,6 +83,8 @@ public actor DesktopVaultSession {
     let settings: Settings
 
     public private(set) var vault: Vault?
+    /// Finder shows the vault: the File Provider extension runs its engine; only DeviceAccess runs here.
+    public private(set) var engineHandedOver = false
     public private(set) var status = Status(state: .opening, unpublished: false, lastSynced: nil, contentConflicts: 0, recovered: 0)
     private var accessTask: Task<Void, Never>?
     private var syncTask: Task<Void, Never>?
@@ -118,10 +120,10 @@ public actor DesktopVaultSession {
                 await access.step()
             }
         }
-        if vault == nil, FileManager.default.fileExists(atPath: registry.stateURL(uid).path(percentEncoded: false)) {
+        if !engineHandedOver, vault == nil, FileManager.default.fileExists(atPath: registry.stateURL(uid).path(percentEncoded: false)) {
             await openVault()
         }
-        if settings.automatic, syncTask == nil {
+        if settings.automatic, syncTask == nil, !engineHandedOver {
             syncTask = Task { [weak self] in
                 while !Task.isCancelled {
                     guard let self else { return }
@@ -168,10 +170,31 @@ public actor DesktopVaultSession {
         set(s)
     }
 
-    /// The vault, opened; nil while there is no state and no bucket key yet.
+    /// The vault, opened; nil while there is no state and no bucket key yet, or while Finder runs it.
     public func openedVault() async -> Vault? {
+        if engineHandedOver { return nil }
         if vault == nil { await openVault() }
         return vault
+    }
+
+    /// Hands the engine to the File Provider extension (one engine per vault): what is unpublished is published if it
+    /// can be, then the handle goes (its state lock with it). DeviceAccess keeps running here.
+    public func handOverEngine() async {
+        guard !engineHandedOver else { return }
+        engineHandedOver = true
+        syncTask?.cancel()
+        syncTask = nil
+        if let vault, (try? vault.status().unpublished) == true {
+            _ = try? await vault.perform { v throws(VaultError) in try v.publish() }
+        }
+        vault = nil
+    }
+
+    /// Takes the engine back from the extension.
+    public func takeEngineBack() async {
+        guard engineHandedOver else { return }
+        engineHandedOver = false
+        await start()
     }
 
     /// One round: open if needed, refresh when due, publish when due. Returns how long until the next round is due.
@@ -182,6 +205,7 @@ public actor DesktopVaultSession {
             set(.stopped(stop))
             return settings.refreshInterval
         }
+        if engineHandedOver { return settings.refreshInterval }
         let haveKey = await access.withS3Credentials { _ in true } ?? false
         if vault == nil { await openVault() }
         guard let vault else {
@@ -274,7 +298,7 @@ public actor DesktopVaultSession {
     }
 
     private func openVault() async {
-        guard vault == nil, let wire = Uid(base32: uid) else { return }
+        guard vault == nil, !engineHandedOver, let wire = Uid(base32: uid) else { return }
         let record = try? registry.record(uid)
         let creating = record.map { !$0.published } ?? false
         do throws(VaultError) {

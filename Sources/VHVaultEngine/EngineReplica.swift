@@ -1,6 +1,5 @@
 public import Foundation
 public import VHFinder
-public import VHCloud
 import CryptoKit
 import OSLog
 
@@ -12,13 +11,15 @@ public protocol EngineHost: Sendable {
     func noteWriteConflict() async
     /// Why there is no vault to serve, in words (nil: not known, or not yet).
     func unavailableReason() async -> String?
+    /// The replica is closing (the extension was invalidated).
+    func replicaClosing() async
 }
 
 extension EngineHost {
     public func unavailableReason() async -> String? { nil }
+    public func replicaClosing() async {}
 }
 
-extension DesktopVaultSession: EngineHost {}
 
 /// The File Provider identifiers of a vault's entries: the system's item ids are `e<Int64>`, the engine's are 128-bit
 /// uids, so each uid gets the next number the first time it is seen, kept in `desktop-<uid>.ids` beside the state
@@ -77,7 +78,7 @@ public actor EngineReplica: FinderReplica {
         stateURL = numbersURL
     }
 
-    public func close() async {}
+    public func close() async { await host.replicaClosing() }
 
     // MARK: plumbing
 
@@ -94,6 +95,11 @@ public actor EngineReplica: FinderReplica {
         do {
             return try await v.perform(body)
         } catch {
+            // The bucket couldn't be reached: say why when the host knows (no key, an expired or refused one).
+            if [VaultStatus.storeFailed, VaultStatus.storeOutcomeUnknown].contains(error.status),
+               let why = await host.unavailableReason() {
+                throw .serverUnreachable(why)
+            }
             throw Self.finderError(error)
         }
     }
@@ -414,61 +420,5 @@ public actor EngineReplica: FinderReplica {
 
     public func thumbnails(for ids: [FinderItemID], size: Int, each: @Sendable (FinderItemID, Data?, FinderError?) -> Void) async {
         for id in ids { each(id, nil, nil) }  // the system makes its own from downloaded contents
-    }
-}
-
-/// The engine host of the File Provider extension for a Desktop-only domain: it opens the vault's session itself (the
-/// engine and ``DeviceAccess``, one process per vault: the state file is locked), reading this Mac's link, the bucket
-/// key and the vault key from the account's keychain items as a credential consumer (no lease: it writes nothing).
-///
-/// Those items are in the app-only group `<TEAM>.sh.vaulthalla.app.account`, which the extension isn't entitled to
-/// (docs/cloud-storage.md, "Who may touch it"), so in a signed build this host can't open the vault until that is
-/// decided (docs/desktop-vaults.md, "Finder"); it then says so in words instead of failing silently.
-public actor ExtensionEngineHost: EngineHost {
-    let uid: String
-    let container: URL
-    let transport: any CloudTransport
-    private var session: DesktopVaultSession?
-    private var vaults: DesktopVaults?
-    public private(set) var unavailable: String?
-
-    public init(uid: String, container: URL, transport: any CloudTransport = URLSessionCloudTransport()) {
-        self.uid = uid
-        self.container = container
-        self.transport = transport
-    }
-
-    public func openedVault() async -> Vault? {
-        if session == nil { await start() }
-        return await session?.openedVault()
-    }
-
-    public func noteChange() async { await session?.noteChange() }
-    public func noteWriteConflict() async { await session?.noteWriteConflict() }
-    public var status: DesktopVaultSession.Status? { get async { await session?.status } }
-    public func unavailableReason() async -> String? { unavailable }
-
-    private func start() async {
-        let items = LeasedAccountItems(items: KeychainAccountItemStore.standard(), lease: nil)
-        let links = AccountCloudLinkStore(items: items)
-        guard let link = try? links.load(), link.state == .linked else {
-            unavailable = "Finder can't read this Mac's Vaulthalla Cloud link, so it can't open this vault yet. Vaulthalla keeps syncing it."
-            return
-        }
-        do {
-            let client = try CloudClient(endpoint: link.endpoint, store: links, transport: transport)
-            let account = CloudAccount(client: client, items: items)
-            let v = DesktopVaults(client: client, account: account, items: items, container: container)
-            vaults = v
-            session = try await v.open(uid)
-            unavailable = nil
-        } catch {
-            unavailable = (error as? DesktopVaultError)?.sentence ?? "This vault can't be opened in Finder right now."
-        }
-    }
-
-    public func close() async {
-        await vaults?.closeAll()
-        session = nil
     }
 }

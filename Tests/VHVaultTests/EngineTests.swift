@@ -2,7 +2,7 @@ import Foundation
 import Testing
 import VHCore
 import VHRecovery
-@testable import VHVault
+@testable import VHVaultEngine
 
 /// A vault on the in-memory B2-like bucket: what every engine test opens.
 struct Fixture {

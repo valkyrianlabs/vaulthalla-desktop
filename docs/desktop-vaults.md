@@ -16,9 +16,10 @@ The cloud's contract is vaulthalla-cloud `docs/design/account-model.md` ("As bui
 | Where | What |
 | --- | --- |
 | `tools/vaultfmt/` | `VLVaultfmt.xcframework` from the vendored vl-vaultfmt 0.3.0 source (pin, tarball, build script), built against VLKeykit's vl-keykit source; the archive holds vl-vaultfmt alone (vl-keykit and libcrypto are VLKeykit's). `live-s3.sh`: the live test |
-| `Sources/VHVault/Vault.swift`, `Bridge.swift` | the engine's C API (`vl_vaultfmt_engine.h`) in Swift: the store, keys and state tables, every call run off the cooperative pool, the state file `flock`ed to one process |
+| Modules | `VHVaultKeys` (keychain items: the app-only group and the group shared with the extension), `VHVaultEngine` (the engine, the S3 store, the Finder replica, the extension's host; **no cloud client**), `VHVault` (the lifecycle and `DeviceAccess`; re-exports `VHVaultEngine`). The File Provider extension links `VHVaultEngine` only |
+| `Sources/VHVaultEngine/Vault.swift`, `Bridge.swift` | the engine's C API (`vl_vaultfmt_engine.h`) in Swift: the store, keys and state tables, every call run off the cooperative pool, the state file `flock`ed to one process |
 | `SigV4.swift`, `S3Store.swift` | Signature Version 4 with CryptoKit; the bucket over `URLSession` (path-style, whole and ranged reads, streamed content PUTs through a file of sealed bytes, conditional PUT headers, version listings, deletes by version id), the key lent per request by `DeviceAccess`, a 401/403 reported through `providerRefusedKey()` |
-| `Sources/VHCloud/VaultKeyStore.swift` | vault keys in the account's app-only keychain items (`vault-key.<uid>`, `vault-key.<uid>.<version>`), as `BucketKeyStore` keeps the bucket key; enrollment (`PUT /v1/recovery/vaults/{uid}`) and the envelope fetch (`GET /v1/keys/vaults/{uid}/envelopes`) |
+| `Sources/VHVaultKeys/` | `VaultKeyStore` (`vault-key.<uid>`, `vault-key.<uid>.<version>`) and `BucketKeyStore` (`storage-key.<uid>`, `storage-key.<uid>.<key id>`) in the shared group, `VaultItems` (the move from the app-only group), `KeyRefusalSignal`, `SharedKeyState`; `Sources/VHCloud/DesktopVaultRoutes.swift`: enrollment (`PUT /v1/recovery/vaults/{uid}`) and the envelope fetch (`GET /v1/keys/vaults/{uid}/envelopes`) |
 | `DesktopVaults.swift`, `DesktopVaultSession.swift` | the lifecycle and one session per open vault (its `DeviceAccess` loop and the sync) |
 | `EngineReplica.swift`, `Sources/VHFinder/FinderReplica.swift` | the File Provider side behind the seam both kinds of vault use |
 | `App/Vaulthalla/Features/Cloud/DesktopVaultsModel.swift` | the app: Vaulthalla Cloud ▸ Storage ▸ Vaults kept by a Mac |
@@ -54,19 +55,54 @@ both: this Mac's current, the other a version), rename, move, and delete into th
 delete). 128-bit uids get item numbers (`desktop-<uid>.ids`), assigned, never hashed. Everything below the extension is
 tested by `swift test`; **nothing is proven in Finder**: a File Provider extension can't run unsigned.
 
-One engine per vault: while a vault is shown in Finder the extension runs it (its session, `DeviceAccess` included) and
-the app closes its own. **In a signed build the extension can't open it yet**: the link, the bucket key and the vault
-key are in the app-only keychain group `<TEAM>.sh.vaulthalla.app.account`, which the extension isn't entitled to
-(`docs/cloud-storage.md`, "Who may touch it"); Finder then says "Finder can't read this Mac's Vaulthalla Cloud link".
-Deciding that (the group for the extension, a separate vault group, or the app serving the extension over XPC) is
-Cooper's; the entitlements and profiles weren't touched.
+### Keys: a keychain group shared with the extension (decided 2026-11-16)
+
+- **The group** `<TEAM>.sh.vaulthalla.app.vault` (`VaultKeychain`, service `sh.vaulthalla.app.vault`), in both targets'
+  `keychain-access-groups` (`App/Vaulthalla.Team.entitlements`, `FileProvider.Team.entitlements`). It holds only each
+  Desktop-only vault's key versions and its bucket key in force (metadata and secret). The link identity and the
+  account key stay in the app-only group `<TEAM>.sh.vaulthalla.app.account`.
+- **Attributes:** data protection keychain, `kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly`, not synchronizable,
+  raw bytes. After first unlock, because the extension runs in the background with no UI, while the screen is locked
+  included (`WhenUnlocked` would fail it then); this device only, because a vault key or bucket key must never be
+  restored onto another Mac or synced (the cloud's envelopes are the way to another Mac).
+- **Who writes:** the app alone (it holds the credential lease and alone talks to the cloud): it runs `DeviceAccess`
+  for every vault it holds, Finder-shown or not, and writes each renewed bucket key to the shared group. The extension
+  reads it per request and makes no cloud call: `VHVaultEngine` doesn't depend on `VHCloud`, and the extension links
+  only it (checked by `SharedKeysTests.theExtensionCannotReachTheCloudClient` against `Package.swift` and the project).
+- **The move:** items the unreleased build kept in the app-only group move on first use: written to the shared group,
+  read back and compared, then deleted from the old group, never the other order. A failed read-back keeps the old
+  item; a crash between the write and the delete leaves both (equal), and the next use deletes the old one; an old item
+  that differs from the shared one is never deleted on a guess. No other compatibility path.
+- **A refusal in the extension** (401/403): the key is dropped there and the app is told by `KeyRefusalSignal`: a
+  marker file per vault in the App Group container (`FileProvider/desktop-<uid>.refused`) and a Darwin notification
+  (`<App Group>.vault-key-refused`, no payload). The file is the record (an app that wasn't running finds it at launch
+  and on each refresh); the notification wakes an app that is running, whose `DeviceAccess` then reads the cloud's view
+  and asks for a new key. Chosen because it needs nothing beyond the App Group both already have.
+- **The app not running:** Finder keeps working on the key in the shared group until it expires (24 hours from issue,
+  renewed from 12); then reads that need the bucket pause with *"Paused: this vault's storage key expired while
+  Vaulthalla wasn't running. Open Vaulthalla to renew it. Your files and changes on this Mac are kept and are sent
+  once it is renewed."* Local changes stay journalled in the state; nothing is lost. The background agent
+  (`SMAppService.agent`, registered while any vault is in Finder, as for server vaults) now also signals Desktop-only
+  domains, but as a read-only consumer it renews no key; no login item was added.
+- **One engine per vault:** while Finder shows the vault the extension runs it (`ExtensionEngineHost`: publish two
+  seconds after a change, refresh every minute while it runs) and the app's session hands its engine over
+  (`handOverEngine`: publishes what it can, releases the state lock) but keeps `DeviceAccess`; hiding it gives it back.
+
+### Unproven without a signed build
+
+- The Developer ID profiles allow `<TEAM>.sh.vaulthalla.app.vault` for the app and the extension.
+- The extension reads both items after login without UI, and while the screen is locked.
+- The extension's Darwin notification reaches the app, and the marker file is written in the group container.
+- Finder enumerates, opens, saves, renames and deletes in a `desktop-<uid>` domain; the agent's signal refreshes it.
+- The move from the app-only group on a Mac that ran the earlier build.
 
 ## Decisions (each with its undo)
 
 1. **One vl-keykit in the app.** VLVaultfmt is compiled against VLKeykit's vl-keykit source and holds no vl-keykit or
    libcrypto. *Undo:* use the library's own `scripts/build-xcframework.sh` once both libraries pin the same vl-keykit.
-2. **Vault keys in the account's app-only keychain group** (as the bucket key). *Undo:* `VaultKeyStore` takes any
-   `AccountItemStore`.
+2. **Vault keys and the bucket key in a group shared with the extension** (decided 2026-11-16, above). *Undo:*
+   `VaultItems` over the app-only group, the entitlement lines removed, and the extension back to an XPC or app-run
+   design.
 3. **Vault key bytes from the seed.** vl-keykit keeps an opened vault key inside its handle and the engine's keys table
    needs bytes, so adoption opens the envelopes with the seed's recipient in VHRecovery's KEV1 (`CloudAccount.openVaultKeys`).
    *Undo:* a vl-keykit call that copies an opened key into a caller's buffer.
@@ -75,7 +111,13 @@ Cooper's; the entitlements and profiles weren't touched.
 6. **Uploads through a file of sealed bytes**, hashed as they arrive, one PUT up to 5 GiB; larger files are refused.
    *Undo:* multipart uploads (`vl_vaultfmt_part_size`).
 7. **Deletes go to the vault's trash**, as a server vault's delete does; Finder never purges. *Undo:* `purge` in `delete`.
-8. **The app runs the sessions unless Finder shows the vault.** *Undo:* follows the keychain decision above.
+8. **The app runs every held vault's `DeviceAccess`; the engine runs in the extension while Finder shows the vault.**
+   *Undo:* `DesktopVaults.open(_:engine:)` with `engine: true` always, and no domain.
+9. **The refusal signal is a marker file plus a Darwin notification.** *Undo:* `KeyRefusalSignal`; anything that
+   reaches `DesktopVaults.followRefusals()`.
+10. **Modules split for the extension** (`VHVaultKeys`, `VHVaultEngine`), re-exported (`@_exported`) by `VHCloud` and
+    `VHVault` so their clients didn't change. *Undo:* fold them back, at the cost of the extension linking the cloud
+    client.
 
 ## Not done, and what the contracts didn't give
 
@@ -99,6 +141,11 @@ Cooper's; the entitlements and profiles weren't touched.
 - `swift test --filter VHVaultTests`: SigV4 against AWS's SigV4 test suite cases; the engine through the C API on an
   in-memory B2-like bucket (the library's own C lifecycle, write conflicts, store failures, the state lock); the S3
   store's requests and answers; the engine-backed Finder replica.
+- `swift test --filter SharedKeysTests`: the shared-group stores (the extension reads, can't write), the item
+  attributes, the move (first use, a crash between write and delete, a failed read-back, an old item that differs),
+  the extension unable to reach the cloud client, the refusal signal, and an expired key with the app not running.
+- `swift test --filter DesktopVaultHandOverTests`: the engine handed to Finder with the key still renewed here, and a
+  signalled refusal followed.
 - **The drill** (`tools/vaultfmt/desktop-drill.sh`, opt-in): Desktop's real client code against the real Vaulthalla
   Cloud daemon, moto, the portal and a Vaulthalla server on `ssh dev`, which vaulthalla-cloud's `ci/milestone --only
   desktop` brings up there (its `tests/milestone/README.md`, "Desktop-only vaults, end to end"; checkouts at

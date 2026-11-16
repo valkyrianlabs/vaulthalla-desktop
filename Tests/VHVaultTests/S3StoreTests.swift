@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import VHVault
+@testable import VHVaultEngine
 
 /// The S3 store's request building and answer parsing, with no network (the live test sends them).
 @Suite struct S3StoreTests {

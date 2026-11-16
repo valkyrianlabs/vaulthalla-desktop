@@ -41,7 +41,7 @@
 		7A40000000000000000000A5 /* VaulthallaFileProvider.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = 7A4000000000000000000010 /* VaulthallaFileProvider.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		7A40000000000000000000A6 /* VHFinder in Frameworks */ = {isa = PBXBuildFile; productRef = 7A40000000000000000000C5 /* VHFinder */; };
 		7A80000000000000000000A1 /* VHVault in Frameworks */ = {isa = PBXBuildFile; productRef = 7A80000000000000000000C1 /* VHVault */; };
-		7A80000000000000000000A2 /* VHVault in Frameworks */ = {isa = PBXBuildFile; productRef = 7A80000000000000000000C2 /* VHVault */; };
+		7A80000000000000000000A2 /* VHVaultEngine in Frameworks */ = {isa = PBXBuildFile; productRef = 7A80000000000000000000C2 /* VHVaultEngine */; };
 		7A50000000000000000000A1 /* Sparkle in Frameworks */ = {isa = PBXBuildFile; productRef = 7A50000000000000000000C1 /* Sparkle */; };
 /* End PBXBuildFile section */
 
@@ -173,7 +173,7 @@
 				7A40000000000000000000A2 /* VHIdentity in Frameworks */,
 				7A40000000000000000000A3 /* VHNodes in Frameworks */,
 				7A40000000000000000000A4 /* VHFinder in Frameworks */,
-				7A80000000000000000000A2 /* VHVault in Frameworks */,
+				7A80000000000000000000A2 /* VHVaultEngine in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -313,7 +313,7 @@
 				7A40000000000000000000C2 /* VHIdentity */,
 				7A40000000000000000000C3 /* VHNodes */,
 				7A40000000000000000000C4 /* VHFinder */,
-				7A80000000000000000000C2 /* VHVault */,
+				7A80000000000000000000C2 /* VHVaultEngine */,
 			);
 			productName = VaulthallaFileProvider;
 			productReference = 7A4000000000000000000010 /* VaulthallaFileProvider.appex */;
@@ -799,9 +799,9 @@
 			isa = XCSwiftPackageProductDependency;
 			productName = VHVault;
 		};
-		7A80000000000000000000C2 /* VHVault */ = {
+		7A80000000000000000000C2 /* VHVaultEngine */ = {
 			isa = XCSwiftPackageProductDependency;
-			productName = VHVault;
+			productName = VHVaultEngine;
 		};
 		7A50000000000000000000C1 /* Sparkle */ = {
 			isa = XCSwiftPackageProductDependency;

@@ -2,7 +2,7 @@ import Foundation
 import Testing
 import VHCore
 import VHFinder
-@testable import VHVault
+@testable import VHVaultEngine
 
 /// A host holding an open vault, counting what the replica tells it.
 final class TestHost: EngineHost, @unchecked Sendable {

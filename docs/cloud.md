@@ -75,7 +75,7 @@ sync engine:
   (`hold_reassigned`) stops until the account holder places it here again, which the next view shows and which
   restarts it; `released` (this Mac) and `moved` (`moved_to`, a server) stop the same way; an unlinked Mac stays
   stopped. Every stop keeps local files.
-- **The secret** lives in memory (`SecretBytes`) and in the account's app-only keychain items (`BucketKeyStore`:
+- **The secret** lives in memory (`SecretBytes`) and in the keychain group shared with the File Provider extension (`BucketKeyStore`:
   `storage-key.<uid>` says what the key is, `storage-key.<uid>.<key id>` holds the secret's bytes, written only by the
   credential owner), never in UserDefaults, a file, a log or an error; it is deleted when the key is replaced,
   superseded, expires or is revoked, and on unlink. `DeviceAccess.withCredentials` lends it to a signer for one call.
@@ -93,4 +93,5 @@ sync engine:
   enclave); a signed build asks for Touch ID or the password at each use. It is unwrapped inside vl-keykit for one
   operation at a time.
 - A transfer's temporary key is the new holder key itself, so the delivered KAK1 is kept as it is.
-- A Desktop-only vault's bucket key (short-lived) lives in the same app-only items, in two items per vault (above).
+- A Desktop-only vault's bucket key (short-lived) and its vault keys live in the group the app shares with the File
+  Provider extension, `<TEAM>.sh.vaulthalla.app.vault`, which holds nothing else ([`desktop-vaults.md`](desktop-vaults.md), "Keys").

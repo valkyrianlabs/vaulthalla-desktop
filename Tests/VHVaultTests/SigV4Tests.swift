@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import VHVault
+@testable import VHVaultEngine
 
 /// AWS's Signature Version 4 test suite (`aws-sig-v4-test-suite`), as mirrored by awslabs/aws-c-auth
 /// `tests/aws-signing-test-suite/v4/<case>/` (`request.txt`, `header-canonical-request.txt`,
