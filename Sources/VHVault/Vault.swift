@@ -414,10 +414,11 @@ public final class Vault: @unchecked Sendable {
         _ = try? file.seek(toOffset: 0)
         let w = try beginWrite(parent: parent, name: name, uid: uid, expectedGeneration: expectedGeneration, size: size)
         while true {
-            guard let chunk = try? file.read(upToCount: 1 << 20) else {
+            let chunk: Data?
+            do { chunk = try file.read(upToCount: 1 << 20) } catch {
                 throw VaultError(local: "read_failed", "The file to send couldn't be read.")
             }
-            if chunk.isEmpty { break }
+            guard let chunk, !chunk.isEmpty else { break }  // nil or empty: the end
             try w.write(chunk)
         }
         return try w.finish()

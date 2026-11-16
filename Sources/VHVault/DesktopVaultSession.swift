@@ -43,6 +43,8 @@ public actor DesktopVaultSession {
         public var contentConflicts: UInt64
         /// Objects placed under /Recovered when this Mac re-anchored (written, never named in a published root).
         public var recovered: UInt64
+        /// The engine's change-log revision after the last round: when it moves, Finder is told to enumerate changes.
+        public var revision: UInt64 = 0
 
         /// What the person reads about the vault.
         public var sentence: String {
@@ -159,6 +161,13 @@ public actor DesktopVaultSession {
         set(s)
     }
 
+    /// A write met another edit of the same file: the engine kept both (this one current, the other a version).
+    public func noteWriteConflict() {
+        var s = status
+        s.contentConflicts += 1
+        set(s)
+    }
+
     /// The vault, opened; nil while there is no state and no bucket key yet.
     public func openedVault() async -> Vault? {
         if vault == nil { await openVault() }
@@ -216,6 +225,7 @@ public actor DesktopVaultSession {
             publishAt = nil
             var s = status
             s.unpublished = engine.unpublished
+            s.revision = engine.revision
             s.contentConflicts += r?.contentConflicts ?? 0
             s.lastSynced = Date()
             s.state = engine.updateNeeded ? .needsUpdate : engine.refusedReason.map(State.refusedRoot) ?? .upToDate
