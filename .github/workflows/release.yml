@@ -114,6 +114,10 @@ jobs:
         run: |
           brew install --quiet meson ninja pkg-config openssl@3 nlohmann-json
           tools/keykit/build-vlkeykit.sh
+      # VLVaultfmt.xcframework (the vault format and the Desktop-only engine) from the pinned vl-vaultfmt source
+      # (tools/vaultfmt/vlvaultfmt.pin), built against VLKeykit's vl-keykit source; committed, so no token is needed.
+      - name: VLVaultfmt
+        run: tools/vaultfmt/build-vlvaultfmt.sh
       - name: Build, sign and notarize
         run: tools/release/build.sh --out "$RUNNER_TEMP/release"
 
