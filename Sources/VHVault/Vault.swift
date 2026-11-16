@@ -203,7 +203,8 @@ public final class Vault: @unchecked Sendable {
         guard status == VaultStatus.ok, let out else {
             vl_vaultfmt_file_state_free(fileState)
             close(fd)
-            throw VaultError(status: status, message: fixedText(&info.message))
+            let detail = storeBox.takeLastFailure()
+            throw VaultError(status: status, message: detail ?? fixedText(&info.message))
         }
         let vault = Vault(uid: uid, handle: out, fileState: fileState, storeBox: storeBox, keysBox: keysBox,
                           clockBox: clockBox, lockFD: fd, stateURL: stateURL)
