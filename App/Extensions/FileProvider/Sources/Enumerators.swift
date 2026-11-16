@@ -17,11 +17,11 @@ func progress(for task: Task<Void, Never>, total: Int64 = 1) -> Progress {
 
 /// One folder's children (`fs.dir.list` through the replica, a page at a time) and, for changes, the replica's.
 final class ContainerEnumerator: NSObject, NSFileProviderEnumerator, @unchecked Sendable {
-    private let replica: VaultReplica
+    private let replica: any FinderReplica
     private let container: FinderItemID
     private let tasks = TaskBag()
 
-    init(replica: VaultReplica, container: FinderItemID) {
+    init(replica: any FinderReplica, container: FinderItemID) {
         self.replica = replica
         self.container = container
     }
@@ -60,10 +60,10 @@ final class ContainerEnumerator: NSObject, NSFileProviderEnumerator, @unchecked 
 /// The working set: every entry of every folder the system enumerated, from the replica. Its changes are how
 /// the system learns about the server's: the replica lists those folders again and reports the difference.
 final class WorkingSetEnumerator: NSObject, NSFileProviderEnumerator, @unchecked Sendable {
-    private let replica: VaultReplica
+    private let replica: any FinderReplica
     private let tasks = TaskBag()
 
-    init(replica: VaultReplica) {
+    init(replica: any FinderReplica) {
         self.replica = replica
     }
 
@@ -120,7 +120,7 @@ final class EmptyEnumerator: NSObject, NSFileProviderEnumerator {
 enum ChangeReporter {
     /// Reports the replica's changes after `anchor` to `observer`: updated items, deleted identifiers, the anchor to
     /// resume from, and whether more follow (the system asks again from there).
-    static func report(replica: VaultReplica, to observer: NSFileProviderChangeObserver,
+    static func report(replica: any FinderReplica, to observer: NSFileProviderChangeObserver,
                        from anchor: NSFileProviderSyncAnchor, tasks: TaskBag) {
         let observer = Reply(observer)
         let limit = observer.call.suggestedBatchSize ?? 200

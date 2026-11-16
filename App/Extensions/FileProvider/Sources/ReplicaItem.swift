@@ -63,14 +63,14 @@ final class ReplicaItem: NSObject, NSFileProviderItem, @unchecked Sendable {
     }
 }
 
-extension VaultReplica {
+extension FinderReplica {
     /// `item` as the system sees it, kept downloaded or not.
-    func present(_ item: FinderItem) -> ReplicaItem {
-        ReplicaItem(item, root: rootEntryID, pinned: pinnedEntries.contains(item.entryID))
+    func present(_ item: FinderItem) async -> ReplicaItem {
+        ReplicaItem(item, root: await rootEntryID, pinned: await pinnedEntries.contains(item.entryID))
     }
 
-    func present(_ items: [FinderItem]) -> [ReplicaItem] {
-        let (root, pins) = (rootEntryID, pinnedEntries)
+    func present(_ items: [FinderItem]) async -> [ReplicaItem] {
+        let (root, pins) = (await rootEntryID, await pinnedEntries)
         return items.map { ReplicaItem($0, root: root, pinned: pins.contains($0.entryID)) }
     }
 }

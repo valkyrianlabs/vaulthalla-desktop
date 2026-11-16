@@ -379,6 +379,11 @@ public actor DesktopVaults {
         }
     }
 
+    /// Closes one vault's session (the File Provider extension takes the vault over: one engine per vault).
+    public func close(_ uid: String) async {
+        await sessions.removeValue(forKey: uid)?.close()
+    }
+
     public func closeAll() async {
         for s in sessions.values { await s.close() }
         sessions = [:]

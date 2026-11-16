@@ -7,6 +7,7 @@ import VHCore
 import VHKeykit
 import VHNodes
 import VHTransport
+import VHVault
 
 /// The panes of the top-level "Vaulthalla Cloud" section (docs/cloud-storage.md, "The Vaulthalla Cloud section").
 /// Storage (usage, each vault's switch, the offer, leaving) shows servers with `cloud.storage.managed_remotes` only.
@@ -97,6 +98,8 @@ final class CloudModel {
     private(set) var transfers: [CloudAccount.DeliverableTransfer] = []
     private(set) var restores: [CloudClient.Restore] = []
     private(set) var nodeFacts: [NodeID: NodeFacts] = [:]
+    /// Desktop-only vaults this Mac syncs; nil unless ``DesktopVaultsFeature`` is on (off by default).
+    private(set) var desktopVaults: DesktopVaultsModel?
     private(set) var keyFlow: KeyFlow = .idle
     /// A request (offline copy) the person was sent to the portal for.
     private(set) var openRequestID: String?
@@ -123,6 +126,9 @@ final class CloudModel {
         account = client.map {
             CloudAccount(client: $0, items: items,
                          holderKeys: HolderKeys(userPresence: AccountKeychain.accessGroup() != nil))
+        }
+        if DesktopVaultsFeature.isEnabled(), let client, let account {
+            desktopVaults = DesktopVaultsModel(client: client, account: account, items: items)
         }
         if let link = try? client?.link() {
             macName = link.name
@@ -280,6 +286,7 @@ final class CloudModel {
             if keyStatus?.pending != nil { await checkPendingKey() }
             if keyStatus?.transfer != nil { await checkTransfer() }
         }
+        await desktopVaults?.start()
     }
 
     /// Asks each paired, connected node about its link, its pin and its vaults' uids.
@@ -644,6 +651,13 @@ final class CloudModel {
     /// waits, held by nobody, until the account holder places it again. Nothing on this Mac is deleted.
     func release(_ vault: CloudStorage.Vault) async {
         guard let client else { return }
+        if let desktop = desktopVaults, desktop.holds(vault.vaultUid) {
+            // A vault this Mac syncs: its session closes with the release (local files, state and keys stay).
+            if let problem = await desktop.stopHolding(vault.vaultUid) { return report(problem, error: true) }
+            report("This Mac no longer holds the vault. The account holder can place it again in the portal.")
+            storage = try? await client.storage()
+            return
+        }
         await run {
             do {
                 try await client.releaseDesktopVault(vault.vaultUid)

@@ -4,6 +4,7 @@ import VHContract
 import VHCore
 import VHKeykit
 import VHNodes
+import VHVault
 
 /// One pane of the Vaulthalla Cloud section, routed by `DetailView`.
 struct CloudView: View {
@@ -542,8 +543,8 @@ private struct CloudStoragePane: View {
 
     var body: some View {
         let nodes = app.nodes.filter { $0.pairing.isPaired && cloud.hasManagedStorage($0.id) }
-        if !cloud.macHeldVaults.isEmpty { CloudMacVaultsPanel(cloud: cloud) }
-        if nodes.isEmpty, cloud.macHeldVaults.isEmpty {
+        if !cloud.macHeldVaults.isEmpty || cloud.desktopVaults != nil { CloudMacVaultsPanel(cloud: cloud) }
+        if nodes.isEmpty, cloud.macHeldVaults.isEmpty, cloud.desktopVaults == nil {
             Panel {
                 EmptyState("No server keeps vaults here yet", systemImage: "externaldrive.badge.icloud",
                            message: "A paired server with a Vaulthalla version that supports it shows its vaults here.")
@@ -679,6 +680,7 @@ private struct CloudStoragePane: View {
 private struct CloudMacVaultsPanel: View {
     var cloud: CloudModel
     @State private var releasing: CloudStorage.Vault?
+    @State private var creating = false
 
     var body: some View {
         let me = cloud.installation?.id ?? ""
@@ -699,14 +701,36 @@ private struct CloudMacVaultsPanel: View {
                             }
                         }
                         Spacer()
+                        if mine, let desktop = cloud.desktopVaults, desktop.holds(v.vaultUid) {
+                            Toggle("Show in Finder", isOn: .init(get: { desktop.inFinder.contains(v.vaultUid) },
+                                                                 set: { on in Task { await desktop.setShownInFinder(v.vaultUid, on) } }))
+                                .toggleStyle(.switch).controlSize(.small)
+                        }
+                        if mine, let desktop = cloud.desktopVaults, desktop.adoptable.contains(v.vaultUid) {
+                            Button("Sync on This Mac") {
+                                Task { await desktop.adopt(v.vaultUid, name: cloud.labels[v.vaultUid] ?? "Vault \(v.vaultUid.prefix(8))") }
+                            }.controlSize(.small)
+                        }
                         if mine {
                             Button("Stop Holding…") { releasing = v }.controlSize(.small).disabled(cloud.busy)
                         }
                     }
+                    if mine, let line = cloud.desktopVaults?.sentence(v.vaultUid) {
+                        Text(line).font(.caption).foregroundStyle(.fgMuted)
+                    }
                 }
-                Text("This version of Vaulthalla doesn't sync vaults kept by a Mac yet: nothing is uploaded or downloaded from this Mac, and it asks for no storage key.")
-                    .font(.caption).foregroundStyle(.fgSubtle)
+                if let desktop = cloud.desktopVaults {
+                    if let problem = desktop.problem { Text(problem).font(.caption).foregroundStyle(StatusTone.danger.color) }
+                    Button("New Vault in Managed Storage\u{2026}") { creating = true }
+                        .disabled(desktop.creating != nil)
+                } else {
+                    Text("This version of Vaulthalla doesn't sync vaults kept by a Mac yet: nothing is uploaded or downloaded from this Mac, and it asks for no storage key.")
+                        .font(.caption).foregroundStyle(.fgSubtle)
+                }
             }
+        }
+        .sheet(isPresented: $creating) {
+            if let desktop = cloud.desktopVaults { NewDesktopVaultSheet(desktop: desktop) }
         }
         .confirmationDialog("Stop holding this vault on this Mac?", isPresented: .init(get: { releasing != nil }, set: { if !$0 { releasing = nil } }),
                             titleVisibility: .visible, presenting: releasing) { v in
@@ -725,5 +749,58 @@ private struct CloudMacVaultsPanel: View {
         case .danger: StatusTone.danger.color
         case .neutral: .secondary
         }
+    }
+}
+
+/// "New Vault in Managed Storage": a vault this Mac keeps in Vaulthalla Cloud's managed storage with no server. Gated
+/// on the account (linked, the recovery key held, its offline copy confirmed, a plan with storage); the limits are said
+/// here, before anything is made.
+private struct NewDesktopVaultSheet: View {
+    @Environment(AppModel.self) private var app
+    @Environment(\.dismiss) private var dismiss
+    var desktop: DesktopVaultsModel
+    @State private var name = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("New Vault in Managed Storage").font(.title2.bold())
+            Text("A vault with no server: this Mac encrypts every file and keeps it in your Vaulthalla Cloud storage. Its key is made on this Mac and wrapped to your account's recovery key before anything is stored.")
+                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("For now").font(.headline)
+                ForEach(DesktopVaultsModel.limits, id: \.self) { line in
+                    Label(line, systemImage: "info.circle").font(.callout).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            switch desktop.readiness {
+            case .ready?:
+                TextField("Vault name", text: $name).textFieldStyle(.roundedBorder)
+            case .offlineCopyNeeded?, .noAccountKey?:
+                Text(desktop.readiness!.sentence).foregroundStyle(StatusTone.warn.color).fixedSize(horizontal: false, vertical: true)
+                Button("Go to Recovery Key") {
+                    app.cloudSection = .recoveryKey
+                    dismiss()
+                }
+            case let r?:
+                Text(r.sentence).foregroundStyle(StatusTone.warn.color).fixedSize(horizontal: false, vertical: true)
+            case nil:
+                ProgressView().controlSize(.small)
+            }
+            if let step = desktop.creating { Text(DesktopVaultsModel.words(step)).font(.callout).foregroundStyle(.fgMuted) }
+            if let problem = desktop.problem { Text(problem).foregroundStyle(StatusTone.danger.color) }
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                Button("Create Vault") {
+                    Task { if await desktop.create(name: name) { dismiss() } }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(desktop.readiness != .ready || desktop.creating != nil
+                          || name.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 480)
+        .task { await desktop.refresh() }
     }
 }

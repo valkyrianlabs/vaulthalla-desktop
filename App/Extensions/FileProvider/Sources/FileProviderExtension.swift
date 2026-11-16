@@ -5,10 +5,13 @@ import UniformTypeIdentifiers
 import VHCore
 import VHFinder
 import VHNodes
+import VHVault
 
 /// Vaulthalla's File Provider extension: one domain per vault the operator selects (valkyrianlabs/vaulthalla-desktop#1, #4).
 ///
-/// A thin adapter (docs/architecture.md §7): every call goes to the domain's ``VaultReplica`` (VHFinder, tested by
+/// A thin adapter (docs/architecture.md §7): every call goes to the domain's ``FinderReplica``: a ``VaultReplica``
+/// (VHFinder) for a vault on a server, or VHVault's ``EngineReplica`` for a Desktop-only vault (`desktop-<uid>`,
+/// docs/desktop-vaults.md). A server vault's replica (VHFinder, tested by
 /// `swift test`), which reaches the node through a ``NodeLink`` as a read-only credential consumer (the registry in the
 /// App Group container and the device key in the shared keychain group; it never takes the credential lease). The
 /// server decides what the account may do; this maps its answers to File Provider items and errors.
@@ -26,7 +29,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
     let domain: NSFileProviderDomain
     private let context: ExtensionContext
     /// nil when the domain isn't a vault domain this build can serve (no App Group, a foreign identifier).
-    private let replica: VaultReplica?
+    private let replica: (any FinderReplica)?
     private let unavailable: FinderError?
 
     required init(domain: NSFileProviderDomain) {
@@ -44,6 +47,13 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
                 replica = nil
                 unavailable = error
             }
+        } else if let desktop = DesktopVaultDomainID(identifier: identifier) {
+            // A Desktop-only vault: the engine, opened here (one process per vault; the state file is locked).
+            let container = context.environment.groupContainer ?? URL.applicationSupportDirectory
+            let host = ExtensionEngineHost(uid: desktop.vaultUid, container: container)
+            replica = EngineReplica(host: host, numbersURL: DesktopVaultRegistry(container: container)
+                .directory.appending(path: "desktop-\(desktop.vaultUid).ids", directoryHint: .notDirectory))
+            unavailable = nil
         } else {
             replica = nil
             unavailable = .notAuthenticated(context.registry == nil
@@ -71,7 +81,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
 
     // MARK: - Plumbing
 
-    private func serving() throws(FinderError) -> VaultReplica {
+    private func serving() throws(FinderError) -> any FinderReplica {
         guard let replica else { throw unavailable ?? .notAuthenticated("The domain can't be served.") }
         return replica
     }
@@ -125,7 +135,7 @@ final class FileProviderExtension: NSObject, NSFileProviderReplicatedExtension, 
     func enumerator(for containerItemIdentifier: NSFileProviderItemIdentifier, request: NSFileProviderRequest)
         throws -> NSFileProviderEnumerator
     {
-        let replica: VaultReplica
+        let replica: any FinderReplica
         do {
             replica = try serving()
         } catch {
