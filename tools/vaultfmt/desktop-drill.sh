@@ -64,6 +64,9 @@ for _ in $(seq 30); do
     sleep 1
 done
 curl -fsS -o /dev/null "http://127.0.0.1:$cloud_port/readyz" || { echo "the tunnel to the cloud on dev isn't up" >&2; exit 1; }
+for p in "$s3_port" "$control_port"; do  # any HTTP answer: moto refuses an unsigned request, the control endpoint a GET
+    curl -s -o /dev/null "http://127.0.0.1:$p/" || { echo "the tunnel to port $p on dev isn't up" >&2; exit 1; }
+done
 
 cd "$root"
 status=0

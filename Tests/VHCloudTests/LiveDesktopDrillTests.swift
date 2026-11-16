@@ -154,7 +154,20 @@ struct LiveDesktopDrillTests {
         #expect(await vaults.readiness() == .ready)
         let name = "Drill Taxes \(tag)"
         let steps = StepLog()
-        let session = try await vaults.create(name: name) { steps.add($0) }
+        let session: DesktopVaultSession
+        do {
+            session = try await vaults.create(name: name) { steps.add($0) }
+        } catch {
+            // What the creation got to, for the report: the steps, the key loop's phase, and moto's answer to the key.
+            var phase: DeviceAccess.Phase?
+            var key: KeyCopy?
+            if let uid = await vaults.records().first?.uid, let held = await vaults.session(uid) {
+                phase = await held.accessPhase
+                key = await Self.copyKey(held.access)
+            }
+            Issue.record("create: \(error); steps \(steps.all); phase \(String(describing: phase)); moto: \(key?.refusal() ?? "reads")")
+            throw error
+        }
         let uid = session.uid
         let phase = await session.accessPhase
         let sentence = await session.status.sentence
