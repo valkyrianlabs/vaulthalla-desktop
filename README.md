@@ -24,7 +24,7 @@ vault's row into Finder).
 
 | Path | What |
 |---|---|
-| `Package.swift`, `Sources/`, `Tests/` | VaulthallaKit: `VHCore` (models, secret handling), `VHContract` (generated daemon contract), `VHTransport` (ws client, mTLS), `VHIdentity` (device keys and certificates), `VHOnePassword` (1Password helper client, backup status), `VHRecovery` (KEV1 envelopes, the recovery seed, uids and the recovery kit, against the shared golden vectors), `VHKeykit` (vl-keykit's account key formats through its C API: statements, chains, KAK1, holder proofs, labels, policies, comparison codes, sealed storage credentials; tested against the library's vectors), `VHCloud` (optional Vaulthalla Cloud link: VHC1-signed requests, linking, delivering a cloud restore from a recovery kit, a Desktop-only vault's short-lived bucket key), `VHMCP` (the MCP bridge), `VHFinder` (File Provider domains and the replica: items, versions, errors, conflicts, the per-domain database) |
+| `Package.swift`, `Sources/`, `Tests/` | VaulthallaKit: `VHCore` (models, secret handling), `VHContract` (generated daemon contract), `VHTransport` (ws client, mTLS), `VHIdentity` (device keys and certificates), `VHOnePassword` (1Password helper client, backup status), `VHRecovery` (KEV1 envelopes, the recovery seed, uids and the recovery kit, against the shared golden vectors), `VHKeykit` (vl-keykit's account key formats through its C API: statements, chains, KAK1, holder proofs, labels, policies, comparison codes, sealed storage credentials; tested against the library's vectors), `VHCloud` (optional Vaulthalla Cloud link: VHC1-signed requests, linking, delivering a cloud restore from a recovery kit, a Desktop-only vault's short-lived bucket key), `VHMCP` (the MCP bridge), `VHFinder` (File Provider domains and the replica: items, versions, errors, conflicts, the per-domain database), `VHVault` (Desktop-only vaults through vl-vaultfmt's engine: SigV4 and the S3 store, the lifecycle, the engine-backed Finder replica; off by default, [`docs/desktop-vaults.md`](docs/desktop-vaults.md)) |
 | `Sources/vaulthalla-mcp/` | the stdio MCP bridge the app embeds at `Contents/Helpers/vaulthalla-mcp` (see "AI agents" below) |
 | `Helpers/vaulthalla-1password/` | the Go helper that backs vault keys up to 1Password (desktop-app authorization); `./build.sh`, see its README |
 | `App/` | the Xcode project: SwiftUI app, design system, features. Source folders are synchronized: add files on disk, no project edits |
@@ -40,10 +40,13 @@ Needs Xcode 27 and Go (`brew install go`): the app embeds the Go 1Password helpe
 account recovery key's formats come from vl-keykit's C API as `VLKeykit.xcframework`, built from the source pinned in
 `tools/keykit/vlkeykit.pin` into `build/vlkeykit/` (never committed) before the package resolves; it needs
 `brew install meson ninja pkg-config openssl@3 nlohmann-json`. The source tarball is committed under
-`tools/keykit/vendor/`, so no access to the private `valkyrianlabs/vl-keykit` repository is needed.
+`tools/keykit/vendor/`, so no access to the private `valkyrianlabs/vl-keykit` repository is needed. The vault format and
+the Desktop-only engine come the same way from vl-vaultfmt as `VLVaultfmt.xcframework` (`tools/vaultfmt/`, built into
+`build/vlvaultfmt/` against VLKeykit's vl-keykit source; its tarball is under `tools/vaultfmt/vendor/`).
 
 ```sh
 tools/keykit/build-vlkeykit.sh                              # once, and after the pin changes
+tools/vaultfmt/build-vlvaultfmt.sh                          # VLVaultfmt.xcframework (after VLKeykit); same tools
 swift test                                                  # VaulthallaKit
 VH_LIVE_NODE=<host>:36982 swift test --filter Live         # against a live daemon (docs/interop-testing.md)
 open App/Vaulthalla.xcodeproj                               # or:

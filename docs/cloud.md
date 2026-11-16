@@ -77,8 +77,10 @@ sync engine:
   `storage-key.<uid>` says what the key is, `storage-key.<uid>.<key id>` holds the secret's bytes, written only by the
   credential owner), never in UserDefaults, a file, a log or an error; it is deleted when the key is replaced,
   superseded, expires or is revoked, and on unlink. `DeviceAccess.withCredentials` lends it to a signer for one call.
-- **Not wired into the app**: the app reads the cloud's view only and never starts `DeviceAccess`, since nothing
-  would use a key before the sync engine exists; there is no flow that creates a Desktop-only vault.
+- **The sync engine** (2026-11-15, [`desktop-vaults.md`](desktop-vaults.md)): behind `cloud.desktopVaults.enabled`
+  (off by default), the app starts one `DeviceAccess` per vault this Mac holds through its `DesktopVaultSession`, signs
+  S3 requests with `withCredentials` (SigV4 in Swift), reports a 401/403 through `providerRefusedKey()`, and offers
+  "New Vault in Managed Storage". With the switch off, nothing changed: the app reads the cloud's view only.
 
 ## Keys
 
