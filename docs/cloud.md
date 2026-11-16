@@ -62,8 +62,10 @@ sync engine:
 - **Renewal**: at `renew_after` (12 hours before the 24-hour `expires_at`, the cloud's defaults); the cloud's view is
   read every 30 minutes; `state` `expired` or `superseded` (a restricted plan, over quota) drops the key and renews at
   once; failures back off from 30 seconds, doubling to 30 minutes (longer when a 429 says so), never past the key's
-  expiry, where the key is forgotten even offline. `storage_access` `none` (suspended, ended) pauses with no key; the
-  waiting reasons (bucket, offline copy, ejection) are checked every 15 minutes. A key gone while this Mac still holds
+  expiry, where the key is forgotten even offline. A 401 or 403 from the provider wakes the loop: the cloud's view is
+  read and a new key asked for at once (not at `renew_after`). `storage_access` `none` (suspended, ended) pauses with no
+  key; a bucket still being provisioned is checked again after 10 seconds, doubling up to 15 minutes; the other waiting
+  reasons (offline copy, ejection) are checked every 15 minutes. A key gone while this Mac still holds
   the vault follows its `revoked_reason`: `account_holder` (and `other`, or a reason this version doesn't know) stops
   the loop, kept stopped across launches by a tombstone, until the person asks for a new key; the plan's reasons
   (`suspended`, `ended`, `no_plan`, `restricted`, `over_quota`) renew by themselves once `storage_access` allows a key
