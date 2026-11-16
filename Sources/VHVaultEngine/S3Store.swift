@@ -379,9 +379,9 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate, Sendable {
 
 /// Runs `op` to completion on a task and waits for it. Only for threads outside Swift's cooperative pool (the engine's
 /// queue): the store's callbacks are synchronous, the network isn't.
-final class BlockingBox<T>: @unchecked Sendable { var value: T? }
+package final class BlockingBox<T>: @unchecked Sendable { package var value: T?; package init() {} }
 
-func blocking<T: Sendable>(_ op: @escaping @Sendable () async -> T) -> T {
+package func blocking<T: Sendable>(_ op: @escaping @Sendable () async -> T) -> T {
     let box = BlockingBox<T>()
     let done = DispatchSemaphore(value: 0)
     Task.detached {

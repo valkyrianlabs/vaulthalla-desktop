@@ -10,6 +10,7 @@
 	<array>
 		<string>$(AppIdentifierPrefix)sh.vaulthalla.app</string>
 		<string>$(AppIdentifierPrefix)sh.vaulthalla.app.account</string>
+		<string>$(AppIdentifierPrefix)sh.vaulthalla.app.vault</string>
 	</array>
 </dict>
 </plist>

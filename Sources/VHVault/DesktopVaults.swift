@@ -15,85 +15,6 @@ public enum DesktopVaultsFeature {
     public static func isEnabled(_ defaults: UserDefaults = .standard) -> Bool { defaults.bool(forKey: defaultsKey) }
 }
 
-// MARK: - what this Mac knows about its vaults
-
-/// A Desktop-only vault this Mac holds or held: its uid, its name, and how far its creation got. Names and uids only
-/// (the state file beside it holds the tree in plaintext too, under the system's data protection); no key.
-public struct DesktopVaultRecord: Codable, Sendable, Hashable, Identifiable {
-    public enum Hold: String, Codable, Sendable { case holding, released }
-
-    public var uid: String
-    public var name: String
-    public var createdAt: Date
-    /// The first root is in the bucket. Until then an open may still create the vault (the bucket was not ready yet).
-    public var published: Bool
-    /// Placed on this Mac from another (the keys came from the account key's envelopes).
-    public var adopted: Bool
-    public var hold: Hold
-
-    public var id: String { uid }
-}
-
-/// `<container>/FileProvider/desktop-vaults.json`: the records, written atomically. The container is the App Group's
-/// (the File Provider extension's), else Application Support in a build without the group.
-public struct DesktopVaultRegistry: Sendable {
-    public let container: URL
-
-    public init(container: URL) { self.container = container }
-
-    public var directory: URL { container.appending(path: "FileProvider", directoryHint: .isDirectory) }
-    var url: URL { directory.appending(path: "desktop-vaults.json", directoryHint: .notDirectory) }
-
-    /// The engine's state file for `uid` (`FileStateBlob`), beside the server vaults' replica databases.
-    public func stateURL(_ uid: String) -> URL { directory.appending(path: "desktop-\(uid).vlvfstate", directoryHint: .notDirectory) }
-    /// Where streamed uploads gather their sealed bytes.
-    public func scratchURL(_ uid: String) -> URL { directory.appending(path: "desktop-\(uid).uploads", directoryHint: .isDirectory) }
-
-    public func load() throws -> [DesktopVaultRecord] {
-        guard let data = try? Data(contentsOf: url) else { return [] }
-        let d = JSONDecoder()
-        d.dateDecodingStrategy = .secondsSince1970
-        return try d.decode([DesktopVaultRecord].self, from: data)
-    }
-
-    public func record(_ uid: String) throws -> DesktopVaultRecord? { try load().first { $0.uid == uid } }
-
-    public func save(_ record: DesktopVaultRecord) throws {
-        var all = try load().filter { $0.uid != record.uid }
-        all.append(record)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
-                                                attributes: [.posixPermissions: 0o700])
-        let e = JSONEncoder()
-        e.dateEncodingStrategy = .secondsSince1970
-        e.outputFormatting = [.sortedKeys]
-        try e.encode(all.sorted { $0.createdAt < $1.createdAt }).write(to: url, options: [.atomic])
-    }
-}
-
-/// The engine's keys from the keychain (``VaultKeyStore``): copied into the library's buffer for each lookup.
-public struct KeychainVaultKeys: VaultKeySource {
-    let store: VaultKeyStore
-    let uid: String
-
-    public init(store: VaultKeyStore, uid: String) {
-        self.store = store
-        self.uid = uid
-    }
-
-    public func currentVersion() throws -> UInt32 {
-        guard let held = try store.versions(uid) else { throw VaultError(local: "no_vault_key", "This Mac holds no key of this vault.") }
-        return held.current
-    }
-
-    public func copyKey(version: UInt32, into buffer: UnsafeMutableRawBufferPointer) throws -> Bool {
-        try store.withKey(uid, version: version) { raw in
-            guard buffer.count >= raw.count else { return false }
-            buffer.copyMemory(from: raw)
-            return true
-        } ?? false
-    }
-}
-
 // MARK: - readiness and errors
 
 /// Whether this Mac may create a Desktop-only vault now, and if not, where the person goes.
@@ -194,16 +115,22 @@ public actor DesktopVaults {
     /// How long a creation waits for the bucket and its key before it returns (the vault then finishes on its own).
     let bucketWait: TimeInterval
     private(set) var sessions: [String: DesktopVaultSession] = [:]
+    /// The File Provider extension's word that the provider refused a vault's bucket key.
+    public nonisolated let refusals: KeyRefusalSignal
     private static let log = Logger(subsystem: "sh.vaulthalla.app", category: "vault.desktop")
 
     public init(client: CloudClient, account: CloudAccount, items: LeasedAccountItems, container: URL,
                 makeStore: StoreFactory? = nil, clock: any DeviceAccessClock = SystemDeviceAccessClock(),
                 accessSettings: DeviceAccess.Settings = .init(), syncSettings: DesktopVaultSession.Settings = .init(),
-                bucketWait: TimeInterval = 120) {
+                bucketWait: TimeInterval = 120, vaultItems: VaultItems? = nil) {
         self.client = client
         self.account = account
-        vaultKeys = VaultKeyStore(items: items)
-        bucketKeys = BucketKeyStore(items: items)
+        // Vault keys and the bucket key: the group shared with the File Provider extension (`vaultItems`; the app passes
+        // ``VaultItems/app(lease:)``), else `items` alone.
+        let keyItems = vaultItems ?? VaultItems(shared: items)
+        vaultKeys = VaultKeyStore(vaultItems: keyItems)
+        bucketKeys = BucketKeyStore(vaultItems: keyItems)
+        refusals = KeyRefusalSignal(container: container)
         registry = DesktopVaultRegistry(container: container)
         self.makeStore = makeStore ?? { access, scratch in S3Store(credentials: access, scratch: scratch) }
         self.clock = clock
@@ -262,7 +189,7 @@ public actor DesktopVaults {
             let envelope = try KEV1.wrap(vaultKey: key, suite: .x25519, keyVersion: 1, vaultUid: uid,
                                          recipientPublicKey: statement.x25519PublicKey)
             try registry.save(DesktopVaultRecord(uid: text, name: name, createdAt: Date(), published: false, adopted: false,
-                                                 hold: .holding))
+                                                 hold: .holding, nodeID: me))
             // Recoverable before anything is stored: the envelope to the account key, enrolled (which registers it).
             progress(.enrolling)
             _ = try await client.enrollDesktopVault(text, envelopes: [envelope], versions: [1])
@@ -297,15 +224,41 @@ public actor DesktopVaults {
     // MARK: opening
 
     /// Opens a vault this Mac holds (its keys in the keychain): the state file, else a re-anchor from the bucket.
-    public func open(_ uid: String) async throws(DesktopVaultError) -> DesktopVaultSession {
-        if let s = sessions[uid] { return s }
+    /// `engine` false: only its bucket key's renewal runs here (Finder shows the vault, so the extension runs the
+    /// engine with the key this Mac keeps renewing in the shared group).
+    public func open(_ uid: String, engine: Bool = true) async throws(DesktopVaultError) -> DesktopVaultSession {
+        if let s = sessions[uid] {
+            if engine { await s.takeEngineBack() } else { await s.handOverEngine() }
+            return s
+        }
         let me = try installationID()
-        guard let record = try? registry.record(uid), record.hold == .holding else { throw .unknownVault }
+        guard var record = try? registry.record(uid), record.hold == .holding else { throw .unknownVault }
         guard (try? vaultKeys.versions(uid)) != nil else { throw .noKeyForVault }
+        if record.nodeID == nil {  // the extension opens it as this Mac's writer too
+            record.nodeID = me
+            try? registry.save(record)
+        }
         let session = try makeSession(uid, name: record.name, installationID: me, envelopes: [:])
         sessions[uid] = session
+        if !engine { await session.handOverEngine() }
         await session.start()
         return session
+    }
+
+    /// Finder shows `uid`: the extension runs its engine; this Mac keeps renewing its bucket key.
+    public func handOver(_ uid: String) async { await sessions[uid]?.handOverEngine() }
+
+    /// Finder no longer shows `uid`: the engine runs here again.
+    public func takeBack(_ uid: String) async { await sessions[uid]?.takeEngineBack() }
+
+    /// Follows the extension's refusals (the provider refused a vault's bucket key, 401/403): DeviceAccess reads the
+    /// cloud's view and asks for a new key at once. Called at launch, on every signal, and on the app's refreshes.
+    public func followRefusals() async {
+        for r in refusals.take() {
+            guard let s = sessions[r.vaultUid] else { continue }
+            await s.access.providerRefusedKey()
+            await s.access.step()
+        }
     }
 
     /// Opens every vault this Mac holds (the app's launch).
@@ -347,7 +300,7 @@ public actor DesktopVaults {
                 try vaultKeys.save(uid, version: version, key: key, makeCurrent: version == current)
             }
             try registry.save(DesktopVaultRecord(uid: uid, name: name, createdAt: Date(), published: true, adopted: true,
-                                                 hold: .holding))
+                                                 hold: .holding, nodeID: me))
             let raw = Dictionary(envelopes.compactMap { e in Base64URL.decode(e.envelope).map { (e.keyVersion, $0) } }) { a, _ in a }
             let session = try makeSession(uid, name: name, installationID: me, envelopes: raw, joining: true)
             sessions[uid] = session

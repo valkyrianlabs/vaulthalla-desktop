@@ -2,7 +2,7 @@ import Foundation
 import Testing
 import VHCore
 import VHRecovery
-@testable import VHVault
+@testable import VHVaultEngine
 
 /// A whole Desktop-only vault lifecycle through VHVault against a real S3-compatible endpoint that checks every
 /// credential and signature (moto server in a throwaway container: `tools/vaultfmt/live-s3.sh`, which creates a
