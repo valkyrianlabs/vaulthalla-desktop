@@ -620,9 +620,11 @@ public actor DeviceAccess {
             phase = .needsOwnKey(.cloudKeyEnded)
         }
         if ejection?.reported != true, now >= reportAt { await reportConversion(now) }
-        // The view first: when it says renewal is over (the bucket `ejected`, or the cloud's credential destroyed), no
-        // key is asked for.
-        if phase != .ownStorage, now >= nextRefresh {
+        // The view first, and always before a renewal (not only when the round's refresh is due): when it says renewal
+        // is over (the bucket `ejected`, or the cloud's credential destroyed), no key is asked for. A view up to
+        // `waitingInterval` old would let a renewal after the destroy step probe the cloud with a request it refuses.
+        let renewalDue = leavingRenewal.map { now >= $0 } ?? false
+        if phase != .ownStorage, now >= nextRefresh || renewalDue {
             nextRefresh = now + settings.waitingInterval
             if let view = try? await client.storage() { observeEjection(view) }
         }

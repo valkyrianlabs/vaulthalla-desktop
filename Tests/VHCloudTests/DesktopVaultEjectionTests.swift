@@ -401,6 +401,30 @@ import VHRecovery
         #expect(await s.access.phase == .ownStorage)
     }
 
+    /// The view is read before every renewal while leaving, not only at the round's own refresh (every
+    /// `waitingInterval`): a renewal due minutes after the last view, once the cloud destroyed its credential, asks for
+    /// nothing (found by the drill against the daemon: the stale view let the Mac probe with a request answered 409).
+    @Test func aRenewalDueBetweenViewReadsReadsTheViewFirst() async throws {
+        let (mac, uid, _) = try await setUp()
+        let s = try await session(mac, uid)
+        mac.fake.issueWhileEjecting = true
+        mac.fake.sendRenewable = true
+        let renewAt = try #require(await s.access.status.renewAfter)
+        mac.clock.set(renewAt - 5 * 60)  // the ejection seen 5 minutes before renew_after
+        mac.fake.ownerEjects()
+        try await stepWithView(mac, uid)
+        guard case .leaving = await s.access.phase else { Issue.record("not leaving"); return }
+        #expect(await s.access.status.ejection?.renewalOver == false)
+
+        mac.fake.issueWhileEjecting = false  // the destroy step: the view says renewal is over
+        let asked = keyRequests(mac)
+        mac.clock.set(renewAt + 1)  // renewal due; the round's own refresh (15 minutes after the last) isn't
+        _ = await s.access.step()
+        #expect(await s.access.status.ejection?.renewalOver == true)
+        #expect(keyRequests(mac) == asked, "no key asked once the view says renewal is over")
+        guard case .leaving = await s.access.phase else { Issue.record("the key in hand stays in use"); return }
+    }
+
     /// Once the ejection is complete the bucket is `ejected`: the view ends renewal for good and no key is asked for (the
     /// daemon would answer `bucket_not_ready`, an ejected bucket having no live row).
     @Test func anEjectedBucketEndsRenewalWithoutARequest() async throws {
