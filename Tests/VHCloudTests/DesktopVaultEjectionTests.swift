@@ -338,6 +338,7 @@ import VHRecovery
         // A transient failure backs off and retries; the vault keeps leaving.
         mac.clock.set(try #require(await s.access.status.renewAfter) + 1)
         mac.fake.failNext = (503, "unavailable", "provider_unavailable", nil)
+        mac.fake.failNextMatching = "/credentials"  // the view is read first; the key request is what fails
         _ = await s.access.step()
         #expect(await s.access.phase == .leaving(keyUntil: second))
         mac.clock.advance(31)
@@ -398,6 +399,23 @@ import VHRecovery
         }
         #expect(keyRequests(mac) == asked)
         #expect(await s.access.phase == .ownStorage)
+    }
+
+    /// Once the ejection is complete the bucket is `ejected`: the view ends renewal for good and no key is asked for (the
+    /// daemon would answer `bucket_not_ready`, an ejected bucket having no live row).
+    @Test func anEjectedBucketEndsRenewalWithoutARequest() async throws {
+        let (mac, uid, _) = try await setUp()
+        let s = try await session(mac, uid)
+        mac.fake.issueWhileEjecting = true
+        mac.fake.ownerEjects()
+        try await stepWithView(mac, uid)
+        #expect(await s.access.status.ejection?.renewalOver == false)
+        #expect(mac.fake.runEjectionJob())
+        let asked = keyRequests(mac)
+        mac.clock.advance(13 * 3600)  // past renew_after: the view is read first
+        _ = await s.access.step()
+        #expect(await s.access.status.ejection?.renewalOver == true)
+        #expect(keyRequests(mac) == asked)
     }
 
     @Test func aMacOfflineThroughTheEjectionReportsLateAndSwitches() async throws {

@@ -100,7 +100,7 @@ What this Mac does (`DeviceAccess`, phases `leaving`, `needsOwnKey`, `ownStorage
 2. **Renews while the cloud can still issue** (decision 17): while the bucket is `ejecting`, before the cloud destroys its
    own credential, the key in hand is renewed at `renew_after` exactly as a held vault's (the same request; never a
    first key, never once the person's key is in use). The first 409 `ejecting` or `ejected`, the caller's key view
-   saying renewal is over (`renewable` false; optional, its name not final), or the bucket `ejected`, ends renewal for
+   saying renewal is over (`renewable_during_ejection` false), or the bucket `ejected`, ends renewal for
    good, recorded beside the record of leaving (`renewalOver`) so a relaunch asks nothing; any other failure (the
    network, a 5xx, a rate limit) backs off while the key is valid and never stops the vault.
 3. **Reports at once** (`POST .../ejected`; `GET /v1/storage/eject` is read first so a relaunch reports nothing twice;
@@ -253,9 +253,10 @@ tested by `swift test`; **nothing is proven in Finder**: a File Provider extensi
     `DesktopVaults.open` opens such a vault without a link (as the writer its record names), so the person's bucket
     and this Mac's vault keys can always be joined. *Undo:* `markLeftManaged`, `hasLeftManagedStorage` and the field;
     the phases then follow the cloud's view alone.
-17. **The cloud's key is renewed while leaving** (2026-11-17, against vaulthalla-cloud branch
-    feat/desktop-renew-while-ejecting, not yet merged; built against the fake): in `leaving`, at `renew_after`, the same
-    exchange as a held vault's, until the first 409 `ejecting` / `ejected`, a key view with `renewable` false, or the
+17. **The cloud's key is renewed while leaving** (2026-11-17; the cloud's side is vaulthalla-cloud managed-storage.md
+    "As built" 32; tested against the fake, not the daemon): in `leaving`, at `renew_after`, the same
+    exchange as a held vault's, until the first 409 `ejecting` / `ejected`, a key view with
+    `renewable_during_ejection` false, or the
     bucket `ejected`; that end is recorded (`renewalOver` in the bucket key's metadata) so no relaunch asks again. Other
     failures back off (from 30 s, doubling to 30 minutes, longer when a 429 says so) while the key is valid. A vault on the
     person's own key, or without a cloud key, asks for none. *Undo:* `renewWhileLeaving` and `renewalOver`; the key in
@@ -292,8 +293,9 @@ over its C API; no Swift copy of the formats):
   over beyond the bucket's `ejected` state, and an ejection `refused` (an address Backblaze refuses) leaves the vault
   paused until the account holder starts it again.
 - Opening a file or adding one while paused for the person's key: their bytes are in the bucket (no Keep Downloaded).
-- Renewal while leaving follows a cloud change not merged yet (decision 17): the key view's `renewable` field may be
-  renamed, and which 409 reasons the daemon answers after its destroy step is checked only against the fake.
+- Renewal while leaving (decision 17) is checked only against the fake, written from the daemon's "As built" 32: after
+  its destroy step the daemon answers 409 `ejecting`, and `bucket_not_ready` once the bucket is `ejected` (this Mac
+  then reads the view, whose `ejected` state ends renewal).
 - The engine's C API: no paging of `vault_changes`, no list of a root's writers (the UI can't name who wrote), and
   after an adoption the old Mac stays a named writer, so purges never delete (vl-vaultfmt `docs/engine.md`, "Limits").
 - vl-keykit: no export of an opened vault key (decision 3).
@@ -334,7 +336,7 @@ over its C API; no Swift copy of the formats):
   answering unlinked or no longer knowing the vault (still waiting for the person's key, with the bucket's location, and
   taking it, through `DeviceAccess` and through `DesktopVaults.useOwnKey`), a key item from before the record
   decoding as managed, renewal while `ejecting` (a later end, a transient failure retried, the first 409 ending it for
-  good across a relaunch), the key view's `renewable` false ending it without a request, and no key asked once the
+  good across a relaunch), the key view's `renewable_during_ejection` false and the bucket `ejected` each ending it without a request, and no key asked once the
   person's own key is in use.
 - `tools/vaultfmt/live-s3.sh <vaulthalla-cloud checkout>`: opt-in, against moto on `ssh dev` (vaulthalla-cloud's
   `tests/live/s3dev-moto.sh`, credentials and signatures checked): a versioned bucket and a key scoped to it, a whole

@@ -36,7 +36,7 @@ public struct SystemDeviceAccessClock: DeviceAccessClock {
 /// `ejected`), this Mac records it locally, reports the conversion (`POST .../ejected`, which the ejection waits for),
 /// and keeps syncing on the cloud's key (``Phase/leaving(keyUntil:)``). While the cloud can still issue (the bucket
 /// `ejecting`, before the cloud destroys its own credential) that key is renewed at `renew_after` as a held vault's is;
-/// the first 409 `ejecting` / `ejected` (or the key view's `renewable` false, or the account's ejection past that step)
+/// the first 409 `ejecting` / `ejected` (or the key view's `renewable_during_ejection` false, or the bucket `ejected`)
 /// ends renewal for good, recorded so a relaunch doesn't ask again, and the key in hand is the last. It never asks for a
 /// first key, and asks nothing once the person's own key is in use. When the last key ends it waits for a key the person
 /// makes in their own account (``Phase/needsOwnKey(_:)``), which ``useOwnKey(_:)`` takes once it was checked against the
@@ -551,7 +551,7 @@ public actor DeviceAccess {
             forget()
             phase = .needsOwnKey(.cloudKeyEnded)
         }
-        if v.credential?.renewable == false || v.state == "ejected" { endRenewal() }
+        if v.credential?.renewableDuringEjection == false || v.state == "ejected" { endRenewal() }
     }
 
     /// When the cloud's key is due for renewal while leaving; nil when renewal is over (or there is no cloud key).
@@ -582,6 +582,9 @@ public actor DeviceAccess {
             let e = DeviceAccessError.from(error)
             Self.log.notice("device access: renewing while leaving: \(e.name, privacy: .public)")
             if e == .ejecting || e == .ejected { return endRenewal() }
+            // An ejected bucket has no live row in the cloud, which answers `bucket_not_ready` for it: the view says so
+            // (its state `ejected` ends renewal), so it is read at the next round rather than guessed from this.
+            if e == .bucketNotReady { nextRefresh = now }
             leavingRenewFailures += 1
             var delay = min(settings.backoffBase * pow(2, Double(min(leavingRenewFailures - 1, 16))), settings.backoffCap)
             if case .rateLimited(let after?) = e { delay = max(delay, TimeInterval(after)) }
@@ -592,7 +595,7 @@ public actor DeviceAccess {
     private func observeEjection(_ view: CloudStorage) {
         if let v = view.vault(vaultUid) {
             observeEjection(v)
-            if v.credential?.renewable == false || v.state == "ejected" { endRenewal() }
+            if v.credential?.renewableDuringEjection == false || v.state == "ejected" { endRenewal() }
         }
         ejection?.provider = view.provider
     }
@@ -617,11 +620,13 @@ public actor DeviceAccess {
             phase = .needsOwnKey(.cloudKeyEnded)
         }
         if ejection?.reported != true, now >= reportAt { await reportConversion(now) }
-        if let due = leavingRenewal, now >= due { await renewWhileLeaving(now) }
+        // The view first: when it says renewal is over (the bucket `ejected`, or the cloud's credential destroyed), no
+        // key is asked for.
         if phase != .ownStorage, now >= nextRefresh {
             nextRefresh = now + settings.waitingInterval
             if let view = try? await client.storage() { observeEjection(view) }
         }
+        if let due = leavingRenewal, now >= due { await renewWhileLeaving(now) }
         return nextWake()
     }
 

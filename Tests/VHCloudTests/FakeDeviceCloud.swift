@@ -115,6 +115,8 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
     /// Test switches: answer the next signed storage request with this failure; leave out a Mac key's expiry; seal
     /// to another installation's binding.
     var failNext: (status: Int, code: String, reason: String?, retryAfter: String?)?
+    /// When set, `failNext` waits for a request whose path contains this (a key request, say), letting others through.
+    var failNextMatching: String?
     var omitExpiry = false
     /// The bucket is ready as soon as the switch goes on (no provisioning step to wait for).
     var provisionAtOnce = false
@@ -124,10 +126,11 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
     var endpoint = "https://s3.us-west-004.backblazeb2.test"
     var region = "us-west-004"
     var issueAs: (keyID: String, secret: Data)?
-    /// Renewal while leaving: the daemon's side is in vaulthalla-cloud branch feat/desktop-renew-while-ejecting (not yet
-    /// merged). While the vault's bucket is `ejecting` and the cloud can still issue (before the ejection destroys its own
-    /// credential, which `runEjectionJob` stands for), the holding Mac gets keys as before; afterwards 409 `ejecting`,
-    /// and `ejected` for an ejected bucket. `sendRenewable` adds the caller's key view's field (its name not final).
+    /// Renewal while leaving (vaulthalla-cloud managed-storage.md "As built" 32, ManagedStorage `issueCredential` and
+    /// `ejectionRenewal`). While the vault's bucket is `ejecting` and the cloud can still issue (before the ejection
+    /// destroys its own credential, which `runEjectionJob` stands for), the holding Mac gets keys as before; afterwards
+    /// 409 `ejecting`, and `bucket_not_ready` for an ejected bucket (it has no live row). `sendRenewable` adds the
+    /// caller's key view's `renewable_during_ejection`.
     var issueWhileEjecting = false
     var sendRenewable = false
     private var counter = 0
@@ -385,7 +388,7 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
         }
         out["credential"] = keyView(v, installation)
         if sendRenewable, v.bucketState == "ejecting" || v.bucketState == "ejected", var own = out["credential"] as? [String: Any] {
-            own["renewable"] = v.bucketState == "ejecting" && issueWhileEjecting
+            own["renewable_during_ejection"] = v.bucketState == "ejecting" && issueWhileEjecting
             out["credential"] = own
         }
         // movedFromDesktop: this Mac's hold removed as `moved`, a replica active, and no hold of its own again.
@@ -461,8 +464,9 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
         guard !installationRevoked, base.verifies(request) else {
             return refuse(401, "unauthenticated", "request signature rejected", reason: "request_not_verified")
         }
-        if let f = failNext {
+        if let f = failNext, failNextMatching.map({ path.contains($0) }) ?? true {
             failNext = nil
+            failNextMatching = nil
             return refuse(f.status, f.code, "refused for the test", reason: f.reason, headers: f.retryAfter.map { ["Retry-After": $0] })
         }
         let parts = path.split(separator: "/").map(String.init)
@@ -587,9 +591,6 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
             if v.bucketState != "ready", !renewingWhileEjecting {
                 if v.bucketState == "off" { return refuse(409, "conflict", "this vault's storage is switched off", reason: "bucket_off") }
                 if v.bucketState == "ejecting" { return refuse(409, "conflict", "this account's storage is being ejected", reason: "ejecting") }
-                if v.bucketState == "ejected" {
-                    return refuse(409, "conflict", "this bucket was ejected: read it with keys of your own at the provider", reason: "ejected")
-                }
                 return refuse(409, "conflict", "this vault's bucket isn't ready", reason: "bucket_not_ready")
             }
             if let e = ejection, e != "refused", !renewingWhileEjecting {
