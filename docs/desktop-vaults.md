@@ -90,7 +90,12 @@ key to give, and no key of its own for the bucket.
 What this Mac does (`DeviceAccess`, phases `leaving`, `needsOwnKey`, `ownStorage`):
 
 1. **Notices** the bucket `ejecting` (or `ejected`) in `GET /v1/storage` and **converts the vault in place**: it never
-   asks the cloud for a key for this vault again, and keeps syncing on the key in hand until that key's end.
+   asks the cloud for a key for this vault again, and keeps syncing on the key in hand until that key's end. It
+   **records locally** that the vault left managed storage, with the bucket's location, in the bucket key's metadata
+   item in the shared keychain group (`leftManaged`; the extension reads it too). The record outlives the cloud's key
+   (forgotten, expired or refused: only the secret goes) and a relaunch: from it alone the vault starts in `leaving` or
+   `needsOwnKey`, asking the cloud nothing, and no answer of the cloud (unreachable, unlinked, the vault or account gone,
+   not held) takes it out of those phases (decision 16).
 2. **Reports at once** (`POST .../ejected`; `GET /v1/storage/eject` is read first so a relaunch reports nothing twice;
    409 `not_ejecting` means there is nothing to report). The ejection then finishes within the job's next round, not at
    its deadline (decision 11).
@@ -104,8 +109,9 @@ What this Mac does (`DeviceAccess`, phases `leaving`, `needsOwnKey`, `ownStorage
 5. **Takes the person's key** (key ID and application key; the secret goes straight into `SecretBytes`) and **checks it
    with reads only** (`VaultBucketCheck`): one GET of `.vaulthalla/root` signed with that key must return a root that
    `vl_vaultfmt_root_open` authenticates with this vault's keys under its uid, and that follows the head this Mac knows
-   (no rollback, no fork). A refusal (403: wrong key or secret, a key for another bucket; no root; another vault's root;
-   an older root) switches nothing and writes nothing.
+   (no rollback, no fork). A refusal (the provider's 401 or 403, which `S3Store` reports through the credential
+   source's `providerRefused()`: wrong key or secret, a key for another bucket; no root; another vault's root; an older
+   root) switches nothing and writes nothing.
 6. **Switches**: the key is kept where the bucket key lives (`BucketKeyStore`, the keychain group shared with the Finder
    extension, `origin` `customer`, no expiry), lent per request as the cloud's was (the extension reads it too), and the
    session sends what waited. The report is sent here if it was still due (a Mac that was away for the whole ejection).
@@ -229,6 +235,13 @@ tested by `swift test`; **nothing is proven in Finder**: a File Provider extensi
     `heldStatement()`; throw from `DesktopVaults.sendLabel`.
 15. **A rename changes the record, Finder's name and the label, not the manifest** (the engine's C API has no vault
     rename). *Undo:* none needed until the engine has one.
+16. **Leaving managed storage is recorded on this Mac** (found in review, 2026-11-17): the first time the ejection is
+    seen, `leftManaged` and the bucket's location go into the bucket key's metadata item, which is never deleted after
+    that (`BucketKeyStore.delete` keeps it without the secret; an item written before the field decodes as managed).
+    `DeviceAccess` starts from it in `leaving` or `needsOwnKey` and ignores the cloud's stops there, and
+    `DesktopVaults.open` opens such a vault without a link (as the writer its record names), so the person's bucket
+    and this Mac's vault keys can always be joined. *Undo:* `markLeftManaged`, `hasLeftManagedStorage` and the field;
+    the phases then follow the cloud's view alone.
 
 ## Key provenance: this Mac attests the versions it creates (2026-11-17)
 
@@ -261,6 +274,8 @@ over its C API; no Swift copy of the formats):
   over beyond the bucket's `ejected` state, and an ejection `refused` (an address Backblaze refuses) leaves the vault
   paused until the account holder starts it again.
 - Opening a file or adding one while paused for the person's key: their bytes are in the bucket (no Keep Downloaded).
+- The app shows the Vaulthalla Cloud section (and so "Use Your Own Key…") only while this Mac is linked: an unlinked
+  Mac's left vault opens and takes a key through `DesktopVaults`, but no screen offers it yet.
 - The engine's C API: no paging of `vault_changes`, no list of a root's writers (the UI can't name who wrote), and
   after an adoption the old Mac stays a named writer, so purges never delete (vl-vaultfmt `docs/engine.md`, "Limits").
 - vl-keykit: no export of an opened vault key (decision 3).
@@ -297,7 +312,10 @@ over its C API; no Swift copy of the formats):
   checks keys: converted in place and reported at once (the ejection finishes before its deadline), syncing until the
   cloud's key ends, paused with nothing deleted, the person's key refused (malformed, refused, another vault's bucket, an
   empty one) with nothing written, the switch after one read, no cloud key ever asked for again across a relaunch, a Mac
-  away for the whole ejection reporting late, and a refused own key pausing again.
+  away for the whole ejection reporting late, a refused own key pausing again, a relaunch with the cloud unreachable,
+  answering unlinked or no longer knowing the vault (still waiting for the person's key, with the bucket's location, and
+  taking it, through `DeviceAccess` and through `DesktopVaults.useOwnKey`), and a key item from before the record
+  decoding as managed.
 - `tools/vaultfmt/live-s3.sh <vaulthalla-cloud checkout>`: opt-in, against moto on `ssh dev` (vaulthalla-cloud's
   `tests/live/s3dev-moto.sh`, credentials and signatures checked): a versioned bucket and a key scoped to it, a whole
   vault lifecycle through VHVault, a wrong secret refused; and `LiveS3EjectionTests`: a second bucket with two scoped

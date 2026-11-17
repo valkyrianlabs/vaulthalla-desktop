@@ -22,8 +22,8 @@ final class ProviderPolicy: @unchecked Sendable {
     var stores: [KeyedBucket] { lock.withLock { made } }
 }
 
-/// The bucket as a provider that checks keys: every request needs a key (refused 403 otherwise, as moto refuses an
-/// unknown key), over the B2-like in-memory bucket (or the one ``ProviderPolicy`` routes the key to). Counts the
+/// The bucket as a provider that checks keys: every request needs a key (a refusal otherwise, reported through the
+/// credential source's `providerRefused()` as S3Store reports moto's 403), over the B2-like in-memory bucket (or the one ``ProviderPolicy`` routes the key to). Counts the
 /// vault bucket's writes and the key ids requests were signed with, so a test sees nothing was written before a switch.
 final class KeyedBucket: VaultStore, @unchecked Sendable {
     let inner: MemoryBucket
@@ -48,8 +48,9 @@ final class KeyedBucket: VaultStore, @unchecked Sendable {
         guard let id = blocking({ await credentials.withS3Credentials { $0.accessKeyID } ?? nil }) else { throw .failed("no key: 403") }
         lock.withLock { presented.append(id) }
         guard policy.accepts(id) else {
+            // As S3Store does on a 401 or 403: the credential source is told, and the error says only that it failed.
             blocking { await credentials.providerRefused() }
-            throw .failed("HTTP 403 InvalidAccessKeyId")
+            throw .failed("the storage request was refused")
         }
         let target = policy.bucket(for: id) ?? inner
         if write, target === inner { lock.withLock { writeCount += 1 } }
@@ -113,11 +114,15 @@ final class KeyedBucket: VaultStore, @unchecked Sendable {
             vaults = makeVaults()
         }
 
-        func makeVaults() -> DesktopVaults {
+        /// The vaults over this Mac's keychain and container; `client` another view of the cloud (one that can't be reached).
+        func makeVaults(client other: CloudClient? = nil) -> DesktopVaults {
             var sync = DesktopVaultSession.Settings()
             sync.automatic = false
             let bucket = bucket
             let policy = policy
+            let client = other ?? client
+            let account = other.map { CloudAccount(client: $0, items: items, holderKeys: HolderKeys(preferEnclave: false, userPresence: false)) }
+                ?? account
             return DesktopVaults(client: client, account: account, items: items, container: container,
                                  makeStore: { credentials, _ in
                                      let store = KeyedBucket(bucket, credentials: credentials, policy: policy)

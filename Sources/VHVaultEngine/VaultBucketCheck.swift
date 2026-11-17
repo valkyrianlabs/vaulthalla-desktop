@@ -10,6 +10,7 @@ import VLVaultfmt
 public enum VaultBucketCheck {
     public enum Refusal: Error, Sendable, Equatable, CustomStringConvertible {
         /// The provider refused the key (401/403): wrong key id or secret, a key without read access, another bucket's.
+        /// Decided by the caller from the store's typed signal (``S3CredentialSource/providerRefused()``), never here.
         case keyRefused
         /// The bucket couldn't be reached (the network, the endpoint).
         case unreachable(String)
@@ -53,9 +54,10 @@ public enum VaultBucketCheck {
         do {
             root = try store.get(".vaulthalla/root", versionID: nil).bytes
         } catch {
+            // A refusal (401/403) reaches the caller through the credential source's `providerRefused()`, which the
+            // store calls; here every failed GET is "unreachable".
             switch error {
             case .notFound: throw .noVault
-            case .failed(let why) where why.contains("401") || why.contains("403"): throw .keyRefused
             case .failed(let why), .outcomeUnknown(let why): throw .unreachable(why)
             default: throw .unreachable(String(describing: error))
             }

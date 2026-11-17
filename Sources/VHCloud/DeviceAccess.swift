@@ -181,11 +181,25 @@ public actor DeviceAccess {
         self.settings = settings
         uidBytes = Data(uid.bytes)
         key = try? store.load(vaultUid)
-        if (try? store.isOwnStorage(vaultUid)) == true {
-            // The person's own key (or their refused one): this vault left managed storage, and the cloud is never asked
-            // for a key again. Whether the cloud recorded the conversion is read once per launch.
-            phase = key != nil ? .ownStorage : .needsOwnKey(.refused)
-            ejection = Ejection(location: try? store.location(vaultUid), reported: false, complete: true)
+        if (try? store.hasLeftManagedStorage(vaultUid)) == true {
+            // This vault left managed storage (recorded the first time the ejection was seen): it never needs the cloud
+            // to say so again, and never asks it for a key. Whether the cloud recorded the conversion is read once per
+            // launch, when it can be reached.
+            if let key, key.origin == .customer {
+                phase = .ownStorage
+            } else if (try? store.ownKeyWasRefused(vaultUid)) == true {
+                phase = .needsOwnKey(.refused)
+            } else if let key, clock.now < key.expiresAt {
+                phase = .leaving(keyUntil: key.expiresAt)
+            } else {
+                key = nil
+                try? store.delete(vaultUid)  // the cloud's ended key; the record of leaving stays
+                phase = .needsOwnKey(.cloudKeyEnded)
+            }
+            let location = (try? store.location(vaultUid)) ?? nil
+            ejection = Ejection(location: location?.bucket.isEmpty == false ? location : nil, reported: false,
+                                complete: phase == .ownStorage)
+            nextRefresh = clock.now
         } else if let reason = try? store.revokedReason(vaultUid) {
             phase = .stopped(.keyRevoked(reason: reason))
         }
@@ -511,6 +525,13 @@ public actor DeviceAccess {
     /// key in hand stays in use until it ends; none is asked for again.
     private func beginLeaving(_ v: CloudStorage.Vault, now: Date) {
         observeEjection(v)
+        // Recorded where the bucket key lives (the extension reads it too), so it survives the cloud's key, a relaunch
+        // and a cloud that can no longer be reached or no longer knows this Mac.
+        if let location = ejection?.location {
+            do { try store.markLeftManaged(vaultUid, location: location) } catch {
+                Self.log.notice("device access: leaving managed storage isn't recorded yet: \(String(describing: error), privacy: .public)")
+            }
+        }
         renewNow = false
         nextRefresh = now + settings.waitingInterval
         if let key, key.origin == .cloud, now < key.expiresAt {

@@ -53,7 +53,8 @@ public struct BucketKey: Sendable, CustomStringConvertible {
         BucketKeyStore.Metadata(keyID: keyID, access: access, bucket: bucket, bucketID: bucketID, s3Endpoint: s3Endpoint,
                                 region: region, expiresAt: Int64(expiresAt.timeIntervalSince1970),
                                 renewAfter: Int64(renewAfter.timeIntervalSince1970), revoked: revoked,
-                                origin: origin == .customer ? Origin.customer.rawValue : nil)
+                                origin: origin == .customer ? Origin.customer.rawValue : nil,
+                                leftManaged: origin == .customer ? true : nil)
     }
 }
 
@@ -93,9 +94,13 @@ public struct BucketKeyStore: Sendable {
         var revokedReason: String?
         /// `customer` for the person's own key after an ejection; nil (the cloud's) otherwise.
         var origin: String?
+        /// The vault left managed storage (an ejection was seen): kept, with the bucket's location, whatever happens
+        /// to the key, so the vault never needs the cloud to say so again. nil in items written before it existed.
+        var leftManaged: Bool?
 
         init(keyID: String, access: String, bucket: String, bucketID: String, s3Endpoint: String, region: String,
-             expiresAt: Int64, renewAfter: Int64, revoked: Bool, revokedReason: String? = nil, origin: String? = nil) {
+             expiresAt: Int64, renewAfter: Int64, revoked: Bool, revokedReason: String? = nil, origin: String? = nil,
+             leftManaged: Bool? = nil) {
             self.keyID = keyID
             self.access = access
             self.bucket = bucket
@@ -107,6 +112,7 @@ public struct BucketKeyStore: Sendable {
             self.revoked = revoked
             self.revokedReason = revokedReason
             self.origin = origin
+            self.leftManaged = leftManaged
         }
     }
 
@@ -136,15 +142,40 @@ public struct BucketKeyStore: Sendable {
                          origin: m.origin == BucketKey.Origin.customer.rawValue ? .customer : .cloud)
     }
 
-    /// Whether the vault's key, kept or refused, is the person's own (its storage was ejected to them): such a vault never
-    /// asks the cloud for a key again.
-    public func isOwnStorage(_ uid: String) throws -> Bool {
-        try metadata(uid)?.origin == BucketKey.Origin.customer.rawValue
+    /// Whether the vault left managed storage (its storage was ejected to the person): recorded the first time this Mac
+    /// saw the ejection, and by the person's own key. Such a vault never asks the cloud for a key again, and needs the
+    /// cloud for nothing to take the person's key. The File Provider extension reads it too.
+    public func hasLeftManagedStorage(_ uid: String) throws -> Bool {
+        guard let m = try metadata(uid) else { return false }
+        return m.leftManaged == true || m.origin == BucketKey.Origin.customer.rawValue
     }
 
-    /// The cloud's reason when it revoked the last key and the person hasn't asked for a new one; nil otherwise.
+    /// Whether the person's own key was refused by the provider (the vault waits for another of theirs).
+    public func ownKeyWasRefused(_ uid: String) throws -> Bool {
+        guard let m = try metadata(uid) else { return false }
+        return m.revoked && m.revokedReason == Self.ownKeyRefused
+    }
+
+    /// Records that the vault left managed storage, with its bucket's `location`: on the key kept for it (which stays in
+    /// use until it ends), else as a record without a key. Nothing is removed.
+    public func markLeftManaged(_ uid: String, location: BucketLocation) throws {
+        var m = try metadata(uid) ?? Metadata(keyID: "", access: "full", bucket: location.bucket, bucketID: location.bucketID,
+                                              s3Endpoint: location.s3Endpoint, region: location.region, expiresAt: 0,
+                                              renewAfter: 0, revoked: true)
+        guard m.leftManaged != true else { return }
+        m.leftManaged = true
+        if m.bucket.isEmpty {
+            (m.bucket, m.bucketID, m.s3Endpoint, m.region) = (location.bucket, location.bucketID, location.s3Endpoint, location.region)
+        }
+        try items.write(Self.item(uid), JSONEncoder().encode(m), operation: "record that a vault left managed storage")
+    }
+
+    /// The cloud's reason when it revoked the last key and the person hasn't asked for a new one; nil otherwise (and for
+    /// a vault that left managed storage, which has no cloud to revoke its keys).
     public func revokedReason(_ uid: String) throws -> String? {
-        guard let m = try metadata(uid), m.revoked else { return nil }
+        guard let m = try metadata(uid), m.revoked, m.leftManaged != true, m.origin != BucketKey.Origin.customer.rawValue else {
+            return nil
+        }
         return m.revokedReason ?? "account_holder"
     }
 
@@ -159,16 +190,27 @@ public struct BucketKeyStore: Sendable {
         var raw = key.secret.withUnsafeBytes { Data($0) }
         defer { raw.resetBytes(in: 0 ..< raw.count) }
         try items.write(Self.secretItem(key.vaultUid, key.keyID), raw, operation: "store a storage key")
-        try items.write(Self.item(key.vaultUid), JSONEncoder().encode(key.metadata()), operation: "store a storage key")
-        if let previous, previous.keyID != key.keyID {
+        var m = key.metadata()
+        if previous?.leftManaged == true { m.leftManaged = true }  // a vault that left managed storage stays left
+        try items.write(Self.item(key.vaultUid), JSONEncoder().encode(m), operation: "store a storage key")
+        if let previous, !previous.keyID.isEmpty, previous.keyID != key.keyID {
             try? items.delete(Self.secretItem(key.vaultUid, previous.keyID), operation: "forget a storage key")
         }
     }
 
-    /// Forgets the vault's key and its secret; with `revokedReason`, leaves a tombstone without either.
+    /// Forgets the vault's key and its secret; with `revokedReason`, leaves a tombstone without either. A vault that left
+    /// managed storage keeps its record (and the bucket's location), without the key: it is never forgotten.
     public func delete(_ uid: String, revokedReason: String? = nil) throws {
         if let m = try? metadata(uid) {
-            try items.delete(Self.secretItem(uid, m.keyID), operation: "forget a storage key")
+            if !m.keyID.isEmpty { try items.delete(Self.secretItem(uid, m.keyID), operation: "forget a storage key") }
+            if m.leftManaged == true || m.origin == BucketKey.Origin.customer.rawValue {
+                var t = m
+                t.revoked = true
+                t.leftManaged = true
+                t.revokedReason = revokedReason
+                try items.write(Self.item(uid), JSONEncoder().encode(t), operation: "forget a storage key")
+                return
+            }
             if let revokedReason {
                 var t = m
                 t.revoked = true

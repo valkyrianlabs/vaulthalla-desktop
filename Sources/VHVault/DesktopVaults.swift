@@ -277,8 +277,16 @@ public actor DesktopVaults {
             if engine { await s.takeEngineBack() } else { await s.handOverEngine() }
             return s
         }
-        let me = try installationID()
         guard var record = try? registry.record(uid), record.hold == .holding else { throw .unknownVault }
+        // A vault that left managed storage needs no link to Vaulthalla Cloud: it opens as the writer it was.
+        let me: String
+        if let id = try? installationID() {
+            me = id
+        } else if (try? bucketKeys.hasLeftManagedStorage(uid)) == true, let node = record.nodeID {
+            me = node
+        } else {
+            throw .notReady(.unlinked)
+        }
         guard (try? vaultKeys.versions(uid)) != nil else { throw .noKeyForVault }
         if record.nodeID == nil {  // the extension opens it as this Mac's writer too
             record.nodeID = me
@@ -411,7 +419,7 @@ public actor DesktopVaults {
         let own = BucketKey(vaultUid: uid, keyID: id, access: "full", bucket: location.bucket, bucketID: location.bucketID,
                             s3Endpoint: location.s3Endpoint, region: location.region, expiresAt: BucketKey.noExpiry,
                             renewAfter: BucketKey.noExpiry, secret: secret, origin: .customer)
-        let credentials = OwnKeyCredentials(own)
+        let credentials = OwnKeyCredentials(own)  // records the provider's refusal, as S3Store reports a 401 or 403
         let probe = makeStore(credentials, registry.scratchURL(uid))
         let keys = KeychainVaultKeys(store: vaultKeys, uid: uid)
         let known = await session.knownHead()
@@ -426,7 +434,7 @@ public actor DesktopVaults {
                 }
             }
         }
-        if let checked { throw .ownKey(checked) }
+        if let checked { throw .ownKey(credentials.wasRefused ? .keyRefused : checked) }
         do {
             try await session.access.useOwnKey(own)
         } catch DeviceAccessError.forbidden {

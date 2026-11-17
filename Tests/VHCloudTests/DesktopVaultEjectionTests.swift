@@ -189,6 +189,125 @@ import VHRecovery
         await again.closeAll()
     }
 
+    /// The cloud can't be reached at all.
+    struct UnreachableCloud: CloudTransport {
+        func send(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) { throw URLError(.notConnectedToInternet) }
+    }
+
+    /// The vault saw the ejection; the cloud's key then ended. Returns the bucket's location as the cloud gave it.
+    func leftWithTheCloudsKeyEnded(_ mac: Mac, _ uid: String) async throws -> BucketLocation {
+        let s = try await session(mac, uid)
+        mac.fake.ownerEjects()
+        try await stepWithView(mac, uid)
+        mac.fake.runEjectionJob()
+        mac.clock.advance(FakeDeviceCloud.keyMinutes * 60 + 1)
+        _ = await s.access.step()
+        #expect(await s.access.phase == .needsOwnKey(.cloudKeyEnded))
+        await mac.vaults.closeAll()
+        return try #require(await s.access.ownKeyLocation)
+    }
+
+    /// Found in review: a vault that left managed storage must not need the cloud to say so. After a relaunch, with
+    /// the cloud unreachable, this Mac unlinked by the cloud, or the vault gone from the account, it still waits for the
+    /// person's key (with the bucket's location, from the record kept beside the bucket key) and takes it.
+    @Test func aVaultThatLeftManagedStorageNeedsNoCloudAfterARelaunch() async throws {
+        let (mac, uid, file) = try await setUp()
+        let location = try await leftWithTheCloudsKeyEnded(mac, uid)
+        let me = try #require(try mac.client.link()?.installationID)
+        let store = BucketKeyStore(items: mac.items)
+        #expect(try store.hasLeftManagedStorage(uid) && (try store.load(uid)) == nil)  // the record without the key
+        let requests = mac.fake.credentialRequests
+
+        let unreachable = try CloudClient(endpoint: "https://api.vaulthalla.test", store: AccountCloudLinkStore(items: mac.items),
+                                          transport: UnreachableCloud())
+        let clouds: [(String, CloudClient, () -> Void)] = [
+            ("unreachable", unreachable, {}),
+            ("unlinked", mac.client, { mac.fake.installationRevoked = true }),
+            ("no such vault", mac.client, {
+                mac.fake.installationRevoked = false
+                mac.fake.lock.withLock { mac.fake.vaults[uid] = nil; mac.fake.order.removeAll { $0 == uid } }
+            }),
+        ]
+        var last: DeviceAccess?
+        for (why, client, prepare) in clouds {
+            prepare()
+            let access = try DeviceAccess(client: client, vaultUid: uid, installationID: me, store: store, clock: mac.clock)
+            #expect(await access.phase == .needsOwnKey(.cloudKeyEnded), "\(why)")
+            #expect(await access.ownKeyLocation == location, "\(why)")
+            for _ in 0 ..< 3 {
+                _ = await access.step()
+                mac.clock.advance(3600)
+            }
+            // A view without the vault (when the cloud answers at all) changes nothing either.
+            if let view = try? await mac.client.storage() { await access.apply(view) }
+            #expect(await access.phase == .needsOwnKey(.cloudKeyEnded), "\(why)")
+            last = access
+        }
+        #expect(mac.fake.credentialRequests == requests)
+
+        // The person's key, checked against the bucket, switches the vault; it syncs with it.
+        let access = try #require(last)
+        let own = BucketKey(vaultUid: uid, keyID: Self.ownID, access: "full", bucket: location.bucket, bucketID: location.bucketID,
+                            s3Endpoint: location.s3Endpoint, region: location.region, expiresAt: BucketKey.noExpiry,
+                            renewAfter: BucketKey.noExpiry, secret: SecretBytes(Data(Self.ownSecret.utf8)), origin: .customer)
+        let keys = KeychainVaultKeys(store: VaultKeyStore(items: mac.items), uid: uid)
+        let probe = KeyedBucket(mac.bucket, credentials: OwnKeyCredentials(own), policy: mac.policy)
+        _ = try VaultBucketCheck.verify(probe, uid: Uid(base32: uid)!, keys: keys, known: nil)
+        try await access.useOwnKey(own)
+        #expect(await access.phase == .ownStorage)
+        let bucket = KeyedBucket(mac.bucket, credentials: access, policy: mac.policy)
+        let (vault, _) = try await Vault.open(uid: Uid(base32: uid)!, store: bucket, keys: keys,
+                                              stateURL: mac.vaults.registry.stateURL(uid), nodeID: me)
+        try await vault.perform { v throws(VaultError) in
+            #expect(try v.readData(file) == Data("2025 return".utf8))
+            _ = try v.write(Data("offline".utf8), parent: try v.rootUID(), name: "offline.txt")
+            #expect(try v.publish().published)
+        }
+        #expect(bucket.keyIDs.allSatisfy { $0 == Self.ownID } && bucket.writes > 0)
+        #expect(mac.fake.credentialRequests == requests)
+    }
+
+    /// A bucket key kept before `origin` and `leftManaged` existed still loads, as the cloud's, in managed storage.
+    @Test func anOlderStoredKeyStillDecodes() throws {
+        let memory = MemoryAccountItemStore()
+        let container = FileManager.default.temporaryDirectory.appending(path: "vh-old-key-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: container) }
+        try FileManager.default.createDirectory(at: container, withIntermediateDirectories: true)
+        let lease = CredentialLease(forRegistry: container.appending(path: "nodes.json"), holder: "test")
+        try lease.acquire()
+        let items = VaultItems(shared: LeasedAccountItems(items: memory, lease: lease))
+        let uid = Uid.random().base32
+        let old = #"{"keyID":"key-1","access":"full","bucket":"vhc-b","bucketID":"b-b","s3Endpoint":"https://s3.test","region":"r","expiresAt":1900000000,"renewAfter":1890000000,"revoked":false}"#
+        try items.write(BucketKeyStore.item(uid), Data(old.utf8), operation: "test")
+        try items.write("storage-key.\(uid).key-1", Data("secret".utf8), operation: "test")
+        let store = BucketKeyStore(vaultItems: items)
+        let key = try #require(try store.load(uid))
+        let left = try store.hasLeftManagedStorage(uid)
+        #expect(key.origin == .cloud && key.keyID == "key-1" && !left)
+        #expect(try store.revokedReason(uid) == nil)
+    }
+
+    /// The same through ``DesktopVaults/useOwnKey(_:keyID:secret:)``, with the cloud unreachable.
+    @Test func theOwnKeyIsTakenWithTheCloudUnreachable() async throws {
+        let (mac, uid, file) = try await setUp()
+        _ = try await leftWithTheCloudsKeyEnded(mac, uid)
+        let unreachable = try CloudClient(endpoint: "https://api.vaulthalla.test", store: AccountCloudLinkStore(items: mac.items),
+                                          transport: UnreachableCloud())
+        let offline = mac.makeVaults(client: unreachable)
+        let s = try await offline.open(uid)
+        #expect(await s.access.phase == .needsOwnKey(.cloudKeyEnded))
+        await s.syncNow(force: true)
+        #expect(await s.status.state == .needsOwnKey(.cloudKeyEnded))
+        try await offline.useOwnKey(uid, keyID: Self.ownID, secret: SecretBytes(Data(Self.ownSecret.utf8)))
+        #expect(await s.access.phase == .ownStorage)
+        try await write(s, "offline.txt")
+        await s.syncNow(force: true)
+        let synced = await s.status
+        #expect(synced.state == .upToDate && !synced.unpublished)
+        #expect(try await s.openedVault()?.perform { v throws(VaultError) in try v.readData(file) } == Data("2025 return".utf8))
+        await offline.closeAll()
+    }
+
     @Test func aMacOfflineThroughTheEjectionReportsLateAndSwitches() async throws {
         let (mac, uid, _) = try await setUp()
         let s = try await session(mac, uid)

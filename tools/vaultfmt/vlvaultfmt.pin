@@ -6,11 +6,10 @@
 #
 # The tarball is committed (as tools/keykit/vendor holds vl-keykit's), so no build, CI included, needs a token for the
 # private vl-vaultfmt repository. This one is
-# `git archive --format=tar.gz --prefix=vl-vaultfmt-0.4.1/ 679d6a31e199c5f5f0b12db9448dc57c53dc5042` of vl-vaultfmt
-# branch fix/unknown-outcome-status (0.4.1: a manifest root PUT of unknown outcome that no listing shows is reported as
+# `git archive --format=tar.gz --prefix=vl-vaultfmt-0.4.1/ 679d6a31e199c5f5f0b12db9448dc57c53dc5042`: commit 679d6a31
+# of vl-vaultfmt, version 0.4.1, untagged (a manifest root PUT of unknown outcome that no listing shows is reported as
 # status 603, store_outcome_unknown, not 4, internal; on top of 0.4.0's one writer safe under Backblaze's start-ordered
-# versions; not yet merged or tagged; the archive is reproducible from that commit); replace it with the v0.4.1 release
-# once published.
+# versions). The archive is reproducible from that commit; replace it with the v0.4.1 release once one is published.
 #
 # vl-vaultfmt is built against the vl-keykit source pinned in tools/keykit/vlkeykit.pin (not the 0.2.0 its own wrap
 # names), and VLVaultfmt.xcframework holds vl-vaultfmt alone: vl-keykit and libcrypto come from VLKeykit.xcframework,

@@ -21,8 +21,13 @@ extension DesktopVaultSession: EngineHost {}
 /// before anything switches to it (``DesktopVaults/useOwnKey(_:keyID:secret:)``).
 final class OwnKeyCredentials: S3CredentialSource, @unchecked Sendable {
     let key: BucketKey
+    private let lock = NSLock()
+    private var refused = false
 
     init(_ key: BucketKey) { self.key = key }
+
+    /// The provider refused this key (the store said so through ``providerRefused()``: a 401 or 403).
+    var wasRefused: Bool { lock.withLock { refused } }
 
     func withS3Credentials<R: Sendable>(_ body: @Sendable (S3Credentials) throws -> R) async rethrows -> R? {
         try key.secret.withUnsafeBytes { secret in
@@ -31,5 +36,5 @@ final class OwnKeyCredentials: S3CredentialSource, @unchecked Sendable {
         }
     }
 
-    func providerRefused() async {}  // the check reports the refusal itself
+    func providerRefused() async { lock.withLock { refused = true } }
 }
