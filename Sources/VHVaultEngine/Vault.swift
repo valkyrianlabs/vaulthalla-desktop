@@ -208,6 +208,8 @@ public final class Vault: @unchecked Sendable {
         }
         let vault = Vault(uid: uid, handle: out, fileState: fileState, storeBox: storeBox, keysBox: keysBox,
                           clockBox: clockBox, lockFD: fd, stateURL: stateURL)
+        // The state is this process's now, so no upload of this installation for this vault is still being sent.
+        store.cleanUpAbandonedUploads()
         return (vault, OpenInfo(info))
     }
 

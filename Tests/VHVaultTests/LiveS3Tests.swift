@@ -8,14 +8,15 @@ import VHRecovery
 /// credential and signature (moto server in a throwaway container: `tools/vaultfmt/live-s3.sh`, which creates a
 /// versioned bucket and a key scoped to it, and passes them in the environment). Opt-in: runs only with VH_LIVE_S3.
 ///
-///   VH_LIVE_S3_ENDPOINT, VH_LIVE_S3_BUCKET, VH_LIVE_S3_REGION, VH_LIVE_S3_ACCESS_KEY, VH_LIVE_S3_SECRET_KEY
+///   VH_LIVE_S3_ENDPOINT, VH_LIVE_S3_BUCKET, VH_LIVE_S3_MULTIPART_BUCKET (a second vault's, the same key),
+///   VH_LIVE_S3_REGION, VH_LIVE_S3_ACCESS_KEY, VH_LIVE_S3_SECRET_KEY
 @Suite(.enabled(if: ProcessInfo.processInfo.environment["VH_LIVE_S3"] != nil), .serialized)
 struct LiveS3Tests {
     let env = ProcessInfo.processInfo.environment
 
-    func credentials(secret: String? = nil) -> StaticS3Credentials {
+    func credentials(secret: String? = nil, bucket: String? = nil) -> StaticS3Credentials {
         StaticS3Credentials(accessKeyID: env["VH_LIVE_S3_ACCESS_KEY"]!, secret: Data((secret ?? env["VH_LIVE_S3_SECRET_KEY"]!).utf8),
-                            bucket: env["VH_LIVE_S3_BUCKET"]!, endpoint: env["VH_LIVE_S3_ENDPOINT"]!,
+                            bucket: bucket ?? env["VH_LIVE_S3_BUCKET"]!, endpoint: env["VH_LIVE_S3_ENDPOINT"]!,
                             region: env["VH_LIVE_S3_REGION"] ?? "us-east-1")
     }
 
@@ -128,5 +129,45 @@ struct LiveS3Tests {
         }
         let left = try bucket.versions("o/", stopAt: nil, underPrefix: true).filter { $0.key.hasSuffix(note.uid) }
         #expect(left.isEmpty)
+    }
+
+    /// One multipart upload against moto, which enforces S3's 5 MiB minimum part: the threshold lowered to 8 MiB, the
+    /// library's part size (5 MiB), a file of 26 MiB in six parts, read back through the engine from the version the
+    /// completion named and again after a re-anchor, and no upload left open.
+    @Test func aMultipartUploadThroughTheEngine() async throws {
+        defer { try? FileManager.default.removeItem(at: directory) }
+        var multipart = S3Store.Multipart()
+        multipart.threshold = 8 << 20
+        let bucket = S3Store(credentials: credentials(bucket: env["VH_LIVE_S3_MULTIPART_BUCKET"]!),
+                             scratch: directory.appending(path: "scratch-mp"), multipart: multipart)
+        let uid = Uid.random()
+        let key = newVaultKey()
+        let keys = MemoryVaultKeys([1: key], current: 1)
+        let envelope = try KEV1.wrap(vaultKey: key, suite: .x25519, keyVersion: 1, vaultUid: uid,
+                                     recipientPublicKey: RecoverySeed.generate().x25519PublicKey())
+        let state = directory.appending(path: "mp/state")
+        let big = content(26 << 20, seed: 29)
+        var vault: Vault? = try await Vault.open(uid: uid, store: bucket, keys: keys, stateURL: state, nodeID: "live-mac-mp",
+                                                 createName: "Live multipart").vault
+        let entry = try await vault!.perform { v throws(VaultError) in
+            try v.addKey(version: 1, key: key, envelopes: [envelope])
+            let entry = try v.write(big, parent: try v.rootUID(), name: "big.bin").entry
+            #expect(try v.publish().published)
+            return entry
+        }
+        let objectKey = "o/" + entry.uid
+        let head = try bucket.head(objectKey)
+        #expect(head.versionID == entry.versionID)
+        #expect(head.etag?.hasSuffix("-6\"") == true)  // S3's multipart ETag: six parts
+        #expect(try await vault!.perform { v throws(VaultError) in try v.readData(entry.uid) } == big)
+        #expect(try bucket.listUploads(prefix: "o/").isEmpty)
+
+        vault = nil
+        try FileManager.default.removeItem(at: state)
+        let reanchored = try await Vault.open(uid: uid, store: bucket, keys: keys, stateURL: state, nodeID: "live-mac-mp").vault
+        try await reanchored.perform { v throws(VaultError) in
+            #expect(try v.readData(entry.uid) == big)
+            #expect(try v.readData(entry.uid, offset: 10 << 20, length: 1000) == big[(10 << 20) ..< (10 << 20) + 1000])
+        }
     }
 }

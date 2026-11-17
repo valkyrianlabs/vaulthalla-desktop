@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
 # The opt-in live tests of VHVault (Tests/VHVaultTests/LiveS3Tests.swift) and of leaving managed storage
-# (Tests/VHCloudTests/LiveS3EjectionTests.swift) against a real S3-compatible endpoint that checks every credential: moto
+# (Tests/VHCloudTests/LiveS3EjectionTests.swift), a multipart upload among them (LiveS3Tests: the threshold lowered, moto
+# enforcing S3's 5 MiB minimum part), against a real S3-compatible endpoint that checks every credential: moto
 # server in a throwaway container on the Linux box `dev`, started by vaulthalla-cloud's own tests/live/s3dev-moto.sh
 # (moto pinned by digest, an administrator key that exists only in that container).
 #
 #   tools/vaultfmt/live-s3.sh /path/to/vaulthalla-cloud [swift test arguments]
 #
-# On dev, inside s3dev-moto.sh's environment, a bootstrap creates two versioned buckets: one with an IAM user whose
-# policy allows S3 on it only (LiveS3Tests), and one for the ejection with two such users (one stands in for the cloud's
+# VH_LIVE_FILTER replaces the suites run (for one suite alone, as the large-upload rehearsal:
+# VH_LIVE_FILTER=LiveLargeUploadTests VH_LIVE_S3_LARGE_GIB=1, which uses the first bucket by itself).
+#
+# On dev, inside s3dev-moto.sh's environment, a bootstrap creates three versioned buckets: two (a vault each:
+# LiveS3Tests' lifecycle and its multipart upload) with an IAM user whose policy allows S3 on them only, and one for the
+# ejection with two such users (one stands in for the cloud's
 # key, the other for the key a customer makes in their own account after an ejection; the first bucket's key is the
 # key for the wrong bucket). It hands this script those users' keys (never the administrator's). The Mac reaches moto through
 # an SSH tunnel to dev's loopback for the test's duration only (nothing listens on the LAN); closing the session ends
@@ -34,7 +39,7 @@ trap cleanup EXIT
 chmod 700 "$work"
 scp -q -o ClearAllForwardings=yes "$cloud/tests/live/s3dev-moto.sh" "$cloud/tests/live/moto-patches.py" "dev:$remote/"
 cat > "$work/bootstrap.py" << 'PY'
-# Runs inside s3dev-moto.sh: two versioned buckets and keys scoped to each, printed once as JSON; then waits for stdin
+# Runs inside s3dev-moto.sh: three versioned buckets and keys scoped to them, printed once as JSON; then waits for stdin
 # to close (the test is over). The administrator key stays in this process's environment.
 import json, os, sys, uuid
 import boto3
@@ -48,18 +53,22 @@ s3.put_bucket_versioning(Bucket=bucket, VersioningConfiguration={"Status": "Enab
 eject = bucket + "-eject"
 s3.create_bucket(Bucket=eject)
 s3.put_bucket_versioning(Bucket=eject, VersioningConfiguration={"Status": "Enabled"})
+multipart = bucket + "-mp"
+s3.create_bucket(Bucket=multipart)
+s3.put_bucket_versioning(Bucket=multipart, VersioningConfiguration={"Status": "Enabled"})
 iam = boto3.client("iam", **admin)
-def scoped(user, name):
+def scoped(user, *names):
     iam.create_user(UserName=user)
     iam.put_user_policy(UserName=user, PolicyName="bucket", PolicyDocument=json.dumps({
         "Version": "2012-10-17",
         "Statement": [{"Effect": "Allow", "Action": "s3:*",
-                       "Resource": [f"arn:aws:s3:::{name}", f"arn:aws:s3:::{name}/*"]}]}))
+                       "Resource": [r for n in names for r in (f"arn:aws:s3:::{n}", f"arn:aws:s3:::{n}/*")]}]}))
     return iam.create_access_key(UserName=user)["AccessKey"]
-key = scoped("vh-live-mac", bucket)
+key = scoped("vh-live-mac", bucket, multipart)
 cloud = scoped("vh-live-cloud", eject)
 own = scoped("vh-live-own", eject)
-print(json.dumps({"port": int(ep.rsplit(":", 1)[1]), "bucket": bucket, "access": key["AccessKeyId"],
+print(json.dumps({"port": int(ep.rsplit(":", 1)[1]), "bucket": bucket, "multipart_bucket": multipart,
+                  "access": key["AccessKeyId"],
                   "secret": key["SecretAccessKey"], "eject_bucket": eject, "cloud_access": cloud["AccessKeyId"],
                   "cloud_secret": cloud["SecretAccessKey"], "own_access": own["AccessKeyId"],
                   "own_secret": own["SecretAccessKey"]}), flush=True)
@@ -95,10 +104,11 @@ curl -fsS -o /dev/null "http://127.0.0.1:$local_port/moto-api/" || { echo "the t
 cd "$root"
 status=0
 VH_LIVE_S3=1 VH_LIVE_S3_ENDPOINT="http://127.0.0.1:$local_port" VH_LIVE_S3_BUCKET="$(field bucket)" \
+    VH_LIVE_S3_MULTIPART_BUCKET="$(field multipart_bucket)" \
     VH_LIVE_S3_REGION=us-east-1 VH_LIVE_S3_ACCESS_KEY="$(field access)" VH_LIVE_S3_SECRET_KEY="$(field secret)" \
     VH_LIVE_S3_EJECT_BUCKET="$(field eject_bucket)" VH_LIVE_S3_CLOUD_ACCESS_KEY="$(field cloud_access)" \
     VH_LIVE_S3_CLOUD_SECRET_KEY="$(field cloud_secret)" VH_LIVE_S3_OWN_ACCESS_KEY="$(field own_access)" \
     VH_LIVE_S3_OWN_SECRET_KEY="$(field own_secret)" \
-    swift test --filter 'LiveS3Tests|LiveS3EjectionTests' "$@" || status=$?
+    swift test --filter "${VH_LIVE_FILTER:-LiveS3Tests|LiveS3EjectionTests}" "$@" || status=$?
 exec 3>&-
 exit $status
