@@ -71,8 +71,9 @@ final class SecretBytesBox: @unchecked Sendable {
 
 /// A Desktop-only vault's bucket over S3 (path-style, Signature Version 4 in Swift, ``SigV4``), with the key taken per
 /// request from an ``S3CredentialSource``. Whole objects and ranged reads in memory, content objects streamed through a
-/// file of sealed bytes (never plaintext) hashed as they arrive, version listings and deletes by version id, and the
-/// conditional PUT headers. A 401 or 403 tells the credential source (``DeviceAccess/providerRefusedKey()``); a write
+/// file of sealed bytes (never plaintext) hashed as they arrive and sent in one PUT, or above ``Multipart/threshold`` as
+/// a multipart upload (`S3Multipart.swift`), version listings and deletes by version id, and the conditional PUT
+/// headers. A 401 or 403 tells the credential source (``DeviceAccess/providerRefusedKey()``); a write
 /// whose answer was lost, or that the provider failed with 5xx, is "outcome unknown". Nothing here logs a key, a
 /// signature or a body.
 public final class S3Store: VaultStore, @unchecked Sendable {
@@ -80,8 +81,11 @@ public final class S3Store: VaultStore, @unchecked Sendable {
     let credentials: any S3CredentialSource
     let session: URLSession
     let scratch: URL
-    /// The largest single PUT S3 takes; larger content objects are refused before any byte is sent.
+    /// The largest single PUT S3, R2 and Backblaze B2 take; a content object above ``Multipart/threshold`` (always
+    /// below this) goes up in parts.
     public static let maxSinglePut: UInt64 = 5 << 30
+    /// The largest object S3 and R2 take (B2 takes 10 TB): larger content objects are refused before any byte is sent.
+    public static let maxObject: UInt64 = 5 << 40
     private static let log = Logger(subsystem: "sh.vaulthalla.app", category: "vault.s3")
 
     /// How long a request may take (vl-vaultfmt 0.4.0: the store bounds every request and reports a write past a
@@ -103,17 +107,27 @@ public final class S3Store: VaultStore, @unchecked Sendable {
     }
 
     let bounds: Bounds
+    let multipart: Multipart
+    /// The clock the record of open multipart uploads is kept by (tests move it).
+    let now: @Sendable () -> Date
+    /// What the multipart path did, for tests (the largest buffer it held, parts sent).
+    let stats = MultipartStats()
 
-    /// `scratch`: where streamed uploads gather their sealed bytes (beside the vault's state).
-    public convenience init(credentials: any S3CredentialSource, scratch: URL, bounds: Bounds = Bounds()) {
-        self.init(credentials: credentials, scratch: scratch, bounds: bounds, protocolClasses: nil)
+    /// `scratch`: where streamed uploads gather their sealed bytes (beside the vault's state), and where the record of
+    /// this installation's open multipart uploads is kept.
+    public convenience init(credentials: any S3CredentialSource, scratch: URL, bounds: Bounds = Bounds(),
+                            multipart: Multipart = Multipart()) {
+        self.init(credentials: credentials, scratch: scratch, bounds: bounds, multipart: multipart, protocolClasses: nil)
     }
 
     /// `protocolClasses`: tests answer through a local `URLProtocol`.
-    init(credentials: any S3CredentialSource, scratch: URL, bounds: Bounds, protocolClasses: [AnyClass]?) {
+    init(credentials: any S3CredentialSource, scratch: URL, bounds: Bounds, multipart: Multipart = Multipart(),
+         protocolClasses: [AnyClass]?, now: @escaping @Sendable () -> Date = { Date() }) {
         self.credentials = credentials
         self.scratch = scratch
         self.bounds = bounds
+        self.multipart = multipart
+        self.now = now
         let c = URLSessionConfiguration.ephemeral
         if let protocolClasses { c.protocolClasses = protocolClasses }
         c.httpCookieStorage = nil
@@ -151,16 +165,26 @@ public final class S3Store: VaultStore, @unchecked Sendable {
     /// and bounds; statuses are the caller's to read. Any failure of a write is "outcome unknown": the request may have
     /// reached the provider (a timeout after the body was sent above all), and only the engine can tell.
     func send(_ call: Call, body: Body = .none) throws(StoreError) -> (Data, HTTPURLResponse) {
+        let (data, response, _) = try exchange(call, body: body)
+        return (data, response)
+    }
+
+    /// ``send(_:body:)`` that also says which key signed the request (its access key id), so a multipart upload can
+    /// tell a renewed key from the one the provider refused.
+    func exchange(_ call: Call, body: Body = .none) throws(StoreError) -> (Data, HTTPURLResponse, String) {
         let date = Date()
         let credentials = credentials
-        let signed: Result<URLRequest?, StoreError> = blocking {
+        let signed: Result<Signed?, StoreError> = blocking {
             do {
-                return .success(try await credentials.withS3Credentials { c in try Self.request(call, credentials: c, date: date) })
+                return .success(try await credentials.withS3Credentials { c in
+                    Signed(request: try Self.request(call, credentials: c, date: date), keyID: c.accessKeyID)
+                })
             } catch {
                 return .failure(error as? StoreError ?? .failed("the request couldn't be made"))
             }
         }
-        guard var request = try signed.get() else { throw .failed("no storage key is in force on this Mac") }
+        guard let signedRequest = try signed.get() else { throw .failed("no storage key is in force on this Mac") }
+        var request = signedRequest.request
         let total = call.key == Self.rootKey && call.method == "PUT" ? bounds.rootTotal : (call.content ? nil : bounds.smallTotal)
         let done = DispatchSemaphore(value: 0)
         let watch = Watch()
@@ -188,7 +212,7 @@ public final class S3Store: VaultStore, @unchecked Sendable {
         let (data, response, error, bound) = watch.result()
         if let http = response as? HTTPURLResponse, error == nil {
             if http.statusCode == 401 || http.statusCode == 403 { blocking { await credentials.providerRefused() } }
-            return (data ?? Data(), http)
+            return (data ?? Data(), http, signedRequest.keyID)
         }
         let why: String = if let bound {
             "the storage request passed its \(bound) bound"
@@ -200,6 +224,17 @@ public final class S3Store: VaultStore, @unchecked Sendable {
     }
 
     static let rootKey = ".vaulthalla/root"
+
+    struct Signed: Sendable {
+        var request: URLRequest
+        var keyID: String
+    }
+
+    /// The access key id of the key in force (nil: none), never its secret.
+    func currentKeyID() -> String? {
+        let credentials = credentials
+        return blocking { await credentials.withS3Credentials { $0.accessKeyID } }
+    }
 
     /// One task's progress and outcome: whether any body byte went out, and which bound cut it (if one did).
     final class Watch: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
@@ -395,7 +430,7 @@ public final class S3Store: VaultStore, @unchecked Sendable {
     }
 
     public func beginContent(_ key: String, size: UInt64?) throws(StoreError) -> any ContentUpload {
-        if let size, size > Self.maxSinglePut { throw .failed("a file over 5 GiB can't be sent yet") }
+        if let size, size > Self.maxObject { throw .failed("a file over 5 TiB can't be sent") }
         do {
             try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true,
                                                     attributes: [.posixPermissions: 0o700])
@@ -430,7 +465,7 @@ public final class S3Store: VaultStore, @unchecked Sendable {
 
         func write(_ bytes: UnsafeRawBufferPointer) throws(StoreError) {
             size += UInt64(bytes.count)
-            guard size <= S3Store.maxSinglePut else { throw .failed("a file over 5 GiB can't be sent yet") }
+            guard size <= S3Store.maxObject else { throw .failed("a file over 5 TiB can't be sent") }
             hash.update(bufferPointer: bytes)
             do { try handle.write(contentsOf: Data(bytes)) } catch { throw .failed("the upload's scratch file can't be written") }
         }
@@ -438,6 +473,8 @@ public final class S3Store: VaultStore, @unchecked Sendable {
         func finish() throws(StoreError) -> StoredObject {
             do { try handle.close() } catch { throw .failed("the upload's scratch file can't be written") }
             defer { try? FileManager.default.removeItem(at: url) }
+            // Above the threshold, in parts; at or below it, the one PUT as before.
+            if size > store.multipart.threshold { return try store.multipartUpload(key: key, file: url, size: size) }
             let digest = SigV4.hex(hash.finalize())
             let (data, r) = try store.send(Call(method: "PUT", key: key, payloadHash: digest, write: true, content: true),
                                            body: .file(url))

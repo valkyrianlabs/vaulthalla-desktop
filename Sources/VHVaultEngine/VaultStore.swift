@@ -112,4 +112,12 @@ public protocol VaultStore: Sendable {
     func remove(_ key: String, versionID: String?) throws(StoreError)
     /// A streamed plain PUT of a content object; `size` is the sealed size when known.
     func beginContent(_ key: String, size: UInt64?) throws(StoreError) -> any ContentUpload
+    /// Called once the vault is open (its state locked to this process): aborts the multipart uploads this
+    /// installation started for the vault and left behind (a crash, an abort the provider didn't take), once they are
+    /// old enough. Best effort; never fails the open, never touches a completed object.
+    func cleanUpAbandonedUploads()
+}
+
+extension VaultStore {
+    public func cleanUpAbandonedUploads() {}
 }
