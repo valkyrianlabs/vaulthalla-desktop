@@ -99,7 +99,8 @@ What this Mac does (`DeviceAccess`, phases `leaving`, `needsOwnKey`, `ownStorage
    not held) takes it out of those phases (decision 16).
 2. **Renews while the cloud can still issue** (decision 17): while the bucket is `ejecting`, before the cloud destroys its
    own credential, the key in hand is renewed at `renew_after` exactly as a held vault's (the same request; never a
-   first key, never once the person's key is in use). The first 409 `ejecting` or `ejected`, the caller's key view
+   first key, never once the person's key is in use), with the cloud's view read first, before every renewal (not
+   only at the round's 15-minute refresh). The first 409 `ejecting` or `ejected`, the caller's key view
    saying renewal is over (`renewable_during_ejection` false), or the bucket `ejected`, ends renewal for
    good, recorded beside the record of leaving (`renewalOver`) so a relaunch asks nothing; any other failure (the
    network, a 5xx, a rate limit) backs off while the key is valid and never stops the vault.
@@ -254,7 +255,8 @@ tested by `swift test`; **nothing is proven in Finder**: a File Provider extensi
     and this Mac's vault keys can always be joined. *Undo:* `markLeftManaged`, `hasLeftManagedStorage` and the field;
     the phases then follow the cloud's view alone.
 17. **The cloud's key is renewed while leaving** (2026-11-17; the cloud's side is vaulthalla-cloud managed-storage.md
-    "As built" 32; tested against the fake, not the daemon): in `leaving`, at `renew_after`, the same
+    "As built" 32; tested against the fake and, by the drill's stage 5, the daemon): in `leaving`, at `renew_after`, the
+    cloud's view read first (whatever its own refresh), then the same
     exchange as a held vault's, until the first 409 `ejecting` / `ejected`, a key view with
     `renewable_during_ejection` false, or the
     bucket `ejected`; that end is recorded (`renewalOver` in the bucket key's metadata) so no relaunch asks again. Other
@@ -293,9 +295,12 @@ over its C API; no Swift copy of the formats):
   over beyond the bucket's `ejected` state, and an ejection `refused` (an address Backblaze refuses) leaves the vault
   paused until the account holder starts it again.
 - Opening a file or adding one while paused for the person's key: their bytes are in the bucket (no Keep Downloaded).
-- Renewal while leaving (decision 17) is checked only against the fake, written from the daemon's "As built" 32: after
-  its destroy step the daemon answers 409 `ejecting`, and `bucket_not_ready` once the bucket is `ejected` (this Mac
-  then reads the view, whose `ejected` state ends renewal).
+- Renewal while leaving (decision 17) is checked against the daemon by the drill's stage 5 (2026-11-17): renewed during
+  the ejection, full access, no key asked after the destroy step. Two things it found, both fixed: the cloud lowered a
+  renewal during an ejection to read and delete only, because billing leaves the subscription the ejection cancels
+  `restricted` (vaulthalla-cloud managed-storage.md "As built" 32, "The ejection's own cancellation lowers nothing");
+  and this Mac renewed on a view up to 15 minutes old, so a renewal due after the destroy step asked the cloud (answered
+  409) where the view would have said `renewable_during_ejection` false (now read before every renewal, decision 17).
 - The engine's C API: no paging of `vault_changes`, no list of a root's writers (the UI can't name who wrote), and
   after an adoption the old Mac stays a named writer, so purges never delete (vl-vaultfmt `docs/engine.md`, "Limits").
 - vl-keykit: no export of an opened vault key (decision 3).
@@ -318,9 +323,13 @@ over its C API; no Swift copy of the formats):
   `/srv/wave4-{cloud,server,portal}` on dev by default, synced from this Mac first). `LiveDesktopDrillTests` links this
   Mac, creates the account key and has it approved, creates a vault with `DesktopVaults.create`, writes, renames,
   trashes and publishes, lives through a renewal and an expired key refused by moto, has the bucket inspected and the
-  portal read it back, then delivers a server's restore and sees the vault moved. Everything stays in a
+  portal read it back, then delivers a server's restore and sees the vault moved. Stage 5 takes a second vault through
+  the account's ejection: recorded and reported at once, renewed during it, synced on the last key until it ends, a
+  wrong secret and another bucket's key refused, the person's own key (an IAM key at moto scoped to the bucket) checked
+  and switched to, a fresh reader with that key, and a relaunch with the daemon stopped (vaulthalla-cloud
+  `tests/milestone/README.md`, stage 5). Everything stays in a
   `MemoryAccountItemStore` and a temporary container (no keychain item, no app data); the Mac reaches dev's loopback
-  only, through tunnels on the same port numbers. About 15 minutes after dev's builds.
+  only, through tunnels on the same port numbers. About 30 minutes after dev's builds.
 - `swift test --filter DesktopVaultLifecycleTests`: the lifecycle against `FakeDeviceCloud` (extended from the daemon's
   `Enrollment.cpp` and `KeyManager.cpp`) with a bucket that checks the bucket key.
 - `swift test --filter DesktopVaultLabelTests`: the label sealed on creation and a rename and opened with the real
