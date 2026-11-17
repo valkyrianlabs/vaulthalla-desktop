@@ -65,6 +65,7 @@ extension S3Store {
             abortUpload(key: key, uploadID: uploadID, journal: journal)
             throw .failed("the upload's record can't be written on this Mac")
         }
+        let began = Date()
         let etags: [String]
         do throws(StoreError) {
             etags = try uploadParts(key: key, uploadID: uploadID, file: file, size: size, part: part, count: Int(count))
@@ -73,6 +74,7 @@ extension S3Store {
             abortUpload(key: key, uploadID: uploadID, journal: journal)
             throw .failed(Self.message(error))
         }
+        let partsDone = Date()
         let completed: StoredObject
         do throws(StoreError) {
             completed = try complete(key: key, uploadID: uploadID, etags: etags)
@@ -83,7 +85,14 @@ extension S3Store {
             throw error
         }
         journal.remove(record)
-        return try verify(key: key, completed: completed, size: size)
+        let completionDone = Date()
+        let checked = try verify(key: key, completed: completed, size: size)
+        let (sending, completing, checking) = (partsDone.timeIntervalSince(began), completionDone.timeIntervalSince(partsDone),
+                                               Date().timeIntervalSince(completionDone))
+        stats.finished(parts: sending, completion: completing, check: checking, completionNamedVersion: completed.versionID != nil)
+        // How long the provider takes to assemble the parts matters: past `Bounds.noProgress` it is an unknown outcome.
+        Self.multipartLog.info("an upload of \(count, privacy: .public) parts: sent in \(Int(sending), privacy: .public) s, completed in \(completing, format: .fixed(precision: 1), privacy: .public) s")
+        return checked
     }
 
     private func createUpload(key: String) throws(StoreError) -> String {
@@ -397,10 +406,19 @@ final class MultipartStats: @unchecked Sendable {
     private let lock = NSLock()
     private var largest = 0
     private var parts = 0
+    private var last: (parts: TimeInterval, completion: TimeInterval, check: TimeInterval, completionNamedVersion: Bool)?
     var largestBuffer: Int { lock.withLock { largest } }
     var partsSent: Int { lock.withLock { parts } }
+    /// What the last finished upload took: sending its parts, the provider's completion (its answer awaited), and the
+    /// check of the completed object; and whether the completion's answer named the object's version.
+    var lastUpload: (parts: TimeInterval, completion: TimeInterval, check: TimeInterval, completionNamedVersion: Bool)? {
+        lock.withLock { last }
+    }
     func held(_ n: Int) { lock.withLock { largest = max(largest, n) } }
     func partSent() { lock.withLock { parts += 1 } }
+    func finished(parts: TimeInterval, completion: TimeInterval, check: TimeInterval, completionNamedVersion: Bool) {
+        lock.withLock { last = (parts, completion, check, completionNamedVersion) }
+    }
 }
 
 /// This installation's open multipart uploads for one vault: a file per upload in the vault's scratch folder

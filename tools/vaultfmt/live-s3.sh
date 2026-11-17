@@ -7,6 +7,9 @@
 #
 #   tools/vaultfmt/live-s3.sh /path/to/vaulthalla-cloud [swift test arguments]
 #
+# VH_LIVE_FILTER replaces the suites run (for one suite alone, as the large-upload rehearsal:
+# VH_LIVE_FILTER=LiveLargeUploadTests VH_LIVE_S3_LARGE_GIB=1, which uses the first bucket by itself).
+#
 # On dev, inside s3dev-moto.sh's environment, a bootstrap creates three versioned buckets: two (a vault each:
 # LiveS3Tests' lifecycle and its multipart upload) with an IAM user whose policy allows S3 on them only, and one for the
 # ejection with two such users (one stands in for the cloud's
@@ -106,6 +109,6 @@ VH_LIVE_S3=1 VH_LIVE_S3_ENDPOINT="http://127.0.0.1:$local_port" VH_LIVE_S3_BUCKE
     VH_LIVE_S3_EJECT_BUCKET="$(field eject_bucket)" VH_LIVE_S3_CLOUD_ACCESS_KEY="$(field cloud_access)" \
     VH_LIVE_S3_CLOUD_SECRET_KEY="$(field cloud_secret)" VH_LIVE_S3_OWN_ACCESS_KEY="$(field own_access)" \
     VH_LIVE_S3_OWN_SECRET_KEY="$(field own_secret)" \
-    swift test --filter 'LiveS3Tests|LiveS3EjectionTests' "$@" || status=$?
+    swift test --filter "${VH_LIVE_FILTER:-LiveS3Tests|LiveS3EjectionTests}" "$@" || status=$?
 exec 3>&-
 exit $status

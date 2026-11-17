@@ -352,9 +352,11 @@ over its C API; no Swift copy of the formats):
 ## Not done, and what the contracts didn't give
 
 - Keep Downloaded and thumbnails.
-- Multipart uploads are checked against the in-memory model and moto only: not against Backblaze B2 or R2 (their part
-  ETags, whether a completion answers `x-amz-version-id`; without one the HEAD's version is taken when its ETag is the
-  completion's). A lost completion that landed leaves an unreferenced content version (as a lost single PUT does): the
+- Multipart uploads are checked against the in-memory model, moto, and once against Backblaze B2 (2026-11-17, one
+  6 GiB file with the app's settings: 1,230 parts of 5 MiB sent in 178 s; the completion answered in 0.41 s, far inside
+  the 60 s no-progress bound, with an S3-style ETag ending `-1230` and `x-amz-version-id`; read back at its ends and
+  middle, and by a fresh reader; nothing left open). Not against R2, and not at 10,000 parts (48.8 GiB and above); a
+  completion that answers no version id takes the HEAD's when its ETag is the completion's. A lost completion that landed leaves an unreferenced content version (as a lost single PUT does): the
   engine's GC collects superseded segments and roots, not content objects. An upload's parts start only once the
   whole file is sealed into the scratch file (a sealed copy of the file on disk while it is sent, plus four part files).
 - The cloud's contract on ejection: `managed-storage.md` "As built" 25 says a Mac "converts by using a key the customer
@@ -420,6 +422,11 @@ over its C API; no Swift copy of the formats):
   decoding as managed, renewal while `ejecting` (a later end, a transient failure retried, the first 409 ending it for
   good across a relaunch), the key view's `renewable_during_ejection` false and the bucket `ejected` each ending it without a request, and no key asked once the
   person's own key is in use.
+- `LiveLargeUploadTests` (opt-in, `VH_LIVE_S3_LARGE_GIB`; never in CI, and against a real provider only on the
+  maintainer's go for that run): one file of that many GiB through the engine and the store's multipart path with the
+  app's settings; it prints the provider's completion time, its ETag and whether the completion named the version, and
+  reads back the file's ends and middle. Rehearsed against moto with
+  `VH_LIVE_FILTER=LiveLargeUploadTests VH_LIVE_S3_LARGE_GIB=1 tools/vaultfmt/live-s3.sh <vaulthalla-cloud checkout>`.
 - `tools/vaultfmt/live-s3.sh <vaulthalla-cloud checkout>`: opt-in, against moto on `ssh dev` (vaulthalla-cloud's
   `tests/live/s3dev-moto.sh`, credentials and signatures checked): a versioned bucket and a key scoped to it, a whole
   vault lifecycle through VHVault, a wrong secret refused; a multipart upload through the engine in a second bucket (the
