@@ -503,14 +503,27 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate, Sendable {
                     newRequest request: URLRequest) async -> URLRequest? { nil }
 }
 
-/// Runs `op` to completion on a task and waits for it. Only for threads outside Swift's cooperative pool (the engine's
-/// queue): the store's callbacks are synchronous, the network isn't.
+/// Runs `op` to completion on a task and waits for it: the store's callbacks are synchronous, the network and the
+/// credentials aren't. The task runs on ``BlockingExecutor``'s own threads, never on Swift's cooperative pool, so the
+/// wait can't starve the task it waits for whatever thread the caller is on (the engine's queue in the app; a test's
+/// cooperative thread: with every pool thread waiting here, a task left to the pool would never run).
 package final class BlockingBox<T>: @unchecked Sendable { package var value: T?; package init() {} }
+
+/// Where ``blocking(_:)``'s tasks run: a concurrent queue of its own.
+final class BlockingExecutor: TaskExecutor {
+    static let shared = BlockingExecutor()
+    private let queue = DispatchQueue(label: "sh.vaulthalla.vault.blocking", qos: .utility, attributes: .concurrent)
+
+    func enqueue(_ job: consuming ExecutorJob) {
+        let job = UnownedJob(job)
+        queue.async { job.runSynchronously(on: self.asUnownedTaskExecutor()) }
+    }
+}
 
 package func blocking<T: Sendable>(_ op: @escaping @Sendable () async -> T) -> T {
     let box = BlockingBox<T>()
     let done = DispatchSemaphore(value: 0)
-    Task.detached {
+    Task.detached(executorPreference: BlockingExecutor.shared) {
         box.value = await op()
         done.signal()
     }
