@@ -7,8 +7,8 @@
 #
 # The tarball is committed (as vaulthalla-server and vaulthalla-cloud commit theirs under subprojects/packagecache), so
 # no build, CI included, needs a token for the private vl-keykit repository. This one is
-# `git archive --format=tar.gz --prefix=vl-keykit-0.4.0/ ab42505bee0dc559a5ffb4cda30c84dca8c1a6df` of vl-keykit branch
-# feat/capi-credential (0.4.0: the sealed storage credential in the C API; not yet merged or tagged; the archive is
-# reproducible from that commit); replace it with the v0.4.0 release tarball once that is published.
-VLKEYKIT_VERSION=0.4.0
-VLKEYKIT_SOURCE=file:tools/keykit/vendor/vl-keykit-0.4.0-ab42505b.tar.gz#sha256=aa8754313b11989756da30f15da069bce7013fda8b7e4006c58d883ae034e079
+# `git archive --format=tar.gz --prefix=vl-keykit-0.5.0/ bfeff025633c881d37fbcb780a231cb5a2acb8e5` of vl-keykit branch
+# feat/desktop-attestation (0.5.0: key provenance, the key check and attestations in the C API; not yet merged or
+# tagged; the archive is reproducible from that commit); replace it with the v0.5.0 release tarball once that is published.
+VLKEYKIT_VERSION=0.5.0
+VLKEYKIT_SOURCE=file:tools/keykit/vendor/vl-keykit-0.5.0-bfeff025.tar.gz#sha256=07c47410b2c00542ad89907096db1c7206fe2db0fe7773df532cfba2e9d72dfd

@@ -28,6 +28,15 @@ final class ManualClock: DeviceAccessClock, @unchecked Sendable {
 /// one-time key the request sends, exactly as the cloud does; linking and VHC1 verification are ``FakeCloud``'s.
 final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
     let base = FakeCloud()
+    /// What a Mac recorded of each version's provenance (uid -> version), first upload wins, as the cloud keeps it.
+    struct RecordedProvenance {
+        var nodeID: String
+        var vaultID: UInt32
+        var keyCheck: String
+        var attestation: [String: Any]
+        var publicKeys: [[String: Any]]
+    }
+    var provenance: [String: [UInt32: RecordedProvenance]] = [:]
     let clock: ManualClock
     let lock = NSLock()
 
@@ -502,6 +511,23 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
             } else {
                 vaults[uid] = Vault(uid: uid, holds: [Hold(installation: me, active: true)])
                 order.append(uid)
+            }
+            // A Mac's origin is the Mac (recovery-enrollment.md, "A Mac's provenance"): its installation id and the vault id
+            // vl-keykit derives from the uid; anything else is 400 invalid_origin. A bare version takes it once.
+            if let origin = body["origin"] as? [String: Any] {
+                let want = try? Provenance.macOriginVaultID(uid: Data(wire.bytes))
+                guard origin["node_id"] as? String == me, (origin["vault_id"] as? NSNumber)?.uint32Value == want else {
+                    return refuse(400, "invalid_origin", "a Mac's origin is its own installation id and the vault id its uid gives")
+                }
+                let keys = (body["attestation_public_keys"] as? [[String: Any]]) ?? []
+                for v in (body["key_versions"] as? [[String: Any]]) ?? [] {
+                    guard let n = (v["version"] as? NSNumber)?.uint32Value, let check = v["key_check"] as? String,
+                          let a = v["attestation"] as? [String: Any] else { continue }
+                    if provenance[uid]?[n] == nil {
+                        provenance[uid, default: [:]][n] = .init(nodeID: me, vaultID: want ?? 0, keyCheck: check,
+                                                                 attestation: a, publicKeys: keys)
+                    }
+                }
             }
             let created = enrolled[uid] == nil
             var stored = enrolled[uid] ?? []

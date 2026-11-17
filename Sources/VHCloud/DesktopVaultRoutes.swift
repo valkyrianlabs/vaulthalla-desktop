@@ -20,17 +20,36 @@ public struct CloudVaultEnvelope: Decodable, Sendable {
 
 extension CloudClient {
     /// Enrolls a vault this Mac holds for recovery (key-manager.md "As built" 20): its envelopes (KEV1 to the account
-    /// key, standard base64 as enrollment takes them) and key versions. Registers the vault as this Mac's if it is new
-    /// (account-model.md "As built" 18).
-    public func enrollDesktopVault(_ uid: String, envelopes: [Data], versions: [UInt32]) async throws -> CloudEnrollment {
-        struct Version: Encodable { var version: UInt32 }
+    /// key, standard base64 as enrollment takes them) and key versions, with this Mac's provenance of the versions it
+    /// created (recovery-enrollment.md, "A Mac's provenance"): its origin, its attestation key, each version's key
+    /// check and attestation. Registers the vault as this Mac's if it is new (account-model.md "As built" 18).
+    public func enrollDesktopVault(_ uid: String, envelopes: [Data], versions: [UInt32],
+                                   provenance: VaultProvenance? = nil) async throws -> CloudEnrollment {
+        struct Attestation: Encodable { var keyId: UInt32; var signature: String; var publicKey: String }
+        struct Version: Encodable {
+            var version: UInt32
+            var keyCheck: String?
+            var attestation: Attestation?
+        }
+        struct Origin: Encodable { var nodeId: String; var vaultId: UInt32 }
+        struct PublicKey: Encodable { var keyId: UInt32; var publicKey: String }
         struct Body: Encodable {
+            var origin: Origin?
+            var attestationPublicKeys: [PublicKey]?
             var envelopes: [String]
             var keyVersions: [Version]
         }
+        let attested = Dictionary(uniqueKeysWithValues: (provenance?.versions ?? []).map { ($0.version, $0) })
+        let pk = provenance?.publicKey.base64EncodedString()
+        let rows = Set(versions).union(attested.keys).sorted().map { v in
+            Version(version: v, keyCheck: attested[v]?.keyCheck,
+                    attestation: attested[v].map { Attestation(keyId: provenance!.keyID, signature: $0.signature.base64EncodedString(),
+                                                               publicKey: pk!) })
+        }
         return try await signed("PUT", "/v1/recovery/vaults/\(try Self.checkedUid(uid))",
-                                body: Body(envelopes: envelopes.map { $0.base64EncodedString() },
-                                           keyVersions: versions.map(Version.init)))
+                                body: Body(origin: provenance.map { Origin(nodeId: $0.nodeID, vaultId: $0.vaultID) },
+                                           attestationPublicKeys: provenance.map { [PublicKey(keyId: $0.keyID, publicKey: pk!)] },
+                                           envelopes: envelopes.map { $0.base64EncodedString() }, keyVersions: rows))
     }
 
     /// `GET /v1/keys/vaults/{uid}/envelopes`: the vault's envelopes to every generation of the account key (a linked

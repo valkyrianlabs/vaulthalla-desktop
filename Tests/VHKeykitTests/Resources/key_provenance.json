@@ -1,0 +1,129 @@
+{
+  "attestation": "Ed25519 (RFC 8032, the 32-byte seed) over 'vh-key-attest-v1' \u2016 node_id (UTF-8) \u2016 UInt64BE(vault_id) \u2016 UInt32BE(version) \u2016 key_check (16 raw bytes)",
+  "attestations": [
+    {
+      "key_check": "72e4c8b7f8ab43b8ed8869a57cef1703",
+      "message_hex": "76682d6b65792d6174746573742d763130303030303030302d303030302d343030302d383030302d303030303030303030303031000000000000002a0000000372e4c8b7f8ab43b8ed8869a57cef1703",
+      "name": "server",
+      "node_id": "00000000-0000-4000-8000-000000000001",
+      "public_key_hex": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+      "seed_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "signature_hex": "fbda258fa125ef4237a54b7cde732c073ba598fa4a1a782226aa82514ee5c36a3ad452e6d36593337dc1619e61391c6ae20685155b11cc2b6deaf637e893840c",
+      "vault_id": 42,
+      "version": 3
+    },
+    {
+      "key_check": "7e43d00fe3743f2cb10621d4ace2b453",
+      "message_hex": "76682d6b65792d6174746573742d76313930793070383570657a6d626877657072623133386876796e72000000005648f1a3000000017e43d00fe3743f2cb10621d4ace2b453",
+      "name": "mac",
+      "node_id": "90y0p85pezmbhweprb138hvynr",
+      "public_key_hex": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+      "seed_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "signature_hex": "c03c7211e60bfec47439f55359ca27b8371dd86d467d094fb896c8436de086699362e6bd73611e47af467f4005c350797d100e950551bea3ccd4ea8201f13a0f",
+      "vault_id": 1447621027,
+      "version": 1
+    }
+  ],
+  "key_check": "lower-case hex of BLAKE2b-128 keyed by the 32 key bytes over 'vh-key-check-v1' \u2016 ASCII-decimal(vault_id) \u2016 UInt32BE(version)",
+  "key_checks": [
+    {
+      "key_check": "72e4c8b7f8ab43b8ed8869a57cef1703",
+      "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "vault_id": 42,
+      "version": 3
+    },
+    {
+      "key_check": "c7a67cdafd3140b29e19b0b5e543cb13",
+      "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "vault_id": 1,
+      "version": 1
+    },
+    {
+      "key_check": "fa502861d29ecdaa3c5613ad0ce6e8a1",
+      "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "vault_id": 2147483647,
+      "version": 7
+    },
+    {
+      "key_check": "7e43d00fe3743f2cb10621d4ace2b453",
+      "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "vault_id": 1447621027,
+      "version": 1
+    }
+  ],
+  "mac_origin_vault_id": "1 + (UInt32BE(vault_uid[0..3]) mod (2^31 - 1))",
+  "mac_origin_vault_ids": [
+    {
+      "vault_id": 1447621027,
+      "vault_uid": "as4f38nkrkaydxr834n3pk2xdr"
+    },
+    {
+      "vault_id": 253635901,
+      "vault_uid": "1wf2tf2bb9mqh1wpmptc7mq1y0"
+    },
+    {
+      "vault_id": 1,
+      "vault_uid": "fzzzzzr0000000000000000000"
+    },
+    {
+      "vault_id": 2,
+      "vault_uid": "zzzzzzr0000000000000000000"
+    },
+    {
+      "vault_id": 1,
+      "vault_uid": "00000000000000000000000000"
+    }
+  ],
+  "negative": [
+    {
+      "error": "bad_key",
+      "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e",
+      "vault_id": 1,
+      "version": 1,
+      "what": "key_check"
+    },
+    {
+      "error": "bad_vault_id",
+      "key_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "vault_id": 0,
+      "version": 1,
+      "what": "key_check"
+    },
+    {
+      "error": "bad_node_id",
+      "key_check": "72e4c8b7f8ab43b8ed8869a57cef1703",
+      "node_id": "",
+      "vault_id": 42,
+      "version": 3,
+      "what": "message"
+    },
+    {
+      "error": "bad_key_check",
+      "key_check": "72E4C8B7F8AB43B8ED8869A57CEF1703",
+      "node_id": "00000000-0000-4000-8000-000000000001",
+      "vault_id": 42,
+      "version": 3,
+      "what": "message"
+    },
+    {
+      "error": "bad_signature",
+      "key_check": "7e43d00fe3743f2cb10621d4ace2b453",
+      "node_id": "90y0p85pezmbhweprb138hvynr",
+      "public_key_hex": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+      "signature_hex": "c13c7211e60bfec47439f55359ca27b8371dd86d467d094fb896c8436de086699362e6bd73611e47af467f4005c350797d100e950551bea3ccd4ea8201f13a0f",
+      "vault_id": 1447621027,
+      "version": 1,
+      "what": "verify"
+    },
+    {
+      "error": "bad_signature",
+      "key_check": "7e43d00fe3743f2cb10621d4ace2b453",
+      "node_id": "00000000-0000-4000-8000-000000000001",
+      "public_key_hex": "03a107bff3ce10be1d70dd18e74bc09967e4d6309ba50d5f1ddc8664125531b8",
+      "signature_hex": "c03c7211e60bfec47439f55359ca27b8371dd86d467d094fb896c8436de086699362e6bd73611e47af467f4005c350797d100e950551bea3ccd4ea8201f13a0f",
+      "vault_id": 1447621027,
+      "version": 1,
+      "what": "verify"
+    }
+  ]
+}
