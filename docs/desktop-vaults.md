@@ -119,6 +119,28 @@ tested by `swift test`; **nothing is proven in Finder**: a File Provider extensi
     `VHVault` so their clients didn't change. *Undo:* fold them back, at the cost of the extension linking the cloud
     client.
 
+## Key provenance: this Mac attests the versions it creates (2026-11-17)
+
+A server takes a Mac's vault over canonically only if each key version is proven by its origin (vaulthalla-server
+`design/encryption/03-metadata-recovery.md` §6.5; found by the drill, decided by Cooper 2026-11-17). So this Mac signs
+for every key version it creates exactly as a server does, with vl-keykit's one implementation (`VHKeykit.Provenance`
+over its C API; no Swift copy of the formats):
+
+- **The origin**: node id = this Mac's Vaulthalla Cloud installation id; vault id = `macOriginVaultId(uid)`, a number
+  derived from the vault uid in a server vault id's range (nothing stored). The key check is over that vault id.
+- **The signing key**: an Ed25519 seed in the item `attestation-key` of the account's **app-only** keychain group
+  (this device only, like the link and the account key); never in the group shared with the File Provider extension.
+  Not the Secure Enclave: it signs only P-256, and the format is Ed25519. Made on first need; its id is derived from
+  its public key, and every attestation carries the public key.
+- **When**: creating a vault enrolls version 1 with its key check and attestation, before anything is stored. Opening
+  a vault this Mac created (`adopted` false) enrolls them again, which backfills a vault enrolled before this change
+  (the cloud lets the enrolling Mac fill a bare version once). An adopted vault's versions keep their original
+  origin; this Mac attests only versions it creates (none yet: Desktop doesn't rotate).
+- **What a server then proves**: the same rule as for a server's versions; a missing or wrong attestation is still
+  `salvage_required` (the drill checks both).
+- The bucket's root doesn't carry the attestation (the engine's C API takes a key check only, and its root names no
+  producer vault id): the proof travels in the cloud's records, as a server's does in a kit or export.
+
 ## Not done, and what the contracts didn't give
 
 - The sealed vault label (the portal shows the uid), the ejection conversion report, Keep Downloaded, thumbnails, and
@@ -126,12 +148,6 @@ tested by `swift test`; **nothing is proven in Finder**: a File Provider extensi
 - The engine's C API: no paging of `vault_changes`, no list of a root's writers (the UI can't name who wrote), and
   after an adoption the old Mac stays a named writer, so purges never delete (vl-vaultfmt `docs/engine.md`, "Limits").
 - vl-keykit: no export of an opened vault key (decision 3).
-- **A server can't adopt a Desktop-only vault canonically** (found by the drill, 2026-11-16). vaulthalla-server's
-  restore proves each key version by its origin's attestation (D1: a signature by the origin node's attestation key
-  over its node id, vault id, version and key check, recorded at enrollment). Desktop attests nothing: it enrolls the
-  envelope only, so `vh vault recover --from-cloud` refuses `salvage_required`, and only `--salvage` (the server
-  re-encrypts under a key of its own) takes the vault over. Making it canonical needs a Desktop attestation key (where
-  it lives, what anchors it) or a server rule for a Desktop origin: a trust decision, left to Cooper.
 - The fake cloud has one installation, so the adoption test's "replacement Mac" is a fresh keychain and container on
   the same installation id.
 

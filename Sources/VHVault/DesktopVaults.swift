@@ -107,6 +107,8 @@ public actor DesktopVaults {
     let account: CloudAccount
     let vaultKeys: VaultKeyStore
     let bucketKeys: BucketKeyStore
+    /// This Mac's attestation key, in the account's app-only items (never the group shared with the extension).
+    let attestationKeys: AttestationKeyStore
     public nonisolated let registry: DesktopVaultRegistry
     let makeStore: StoreFactory
     let clock: any DeviceAccessClock
@@ -130,6 +132,7 @@ public actor DesktopVaults {
         let keyItems = vaultItems ?? VaultItems(shared: items)
         vaultKeys = VaultKeyStore(vaultItems: keyItems)
         bucketKeys = BucketKeyStore(vaultItems: keyItems)
+        attestationKeys = AttestationKeyStore(items: items)
         refusals = KeyRefusalSignal(container: container)
         registry = DesktopVaultRegistry(container: container)
         self.makeStore = makeStore ?? { access, scratch in S3Store(credentials: access, scratch: scratch) }
@@ -192,7 +195,9 @@ public actor DesktopVaults {
                                                  hold: .holding, nodeID: me))
             // Recoverable before anything is stored: the envelope to the account key, enrolled (which registers it).
             progress(.enrolling)
-            _ = try await client.enrollDesktopVault(text, envelopes: [envelope], versions: [1])
+            // With this Mac's provenance of version 1 (its key check and attestation), so a server can adopt it.
+            _ = try await client.enrollDesktopVault(text, envelopes: [envelope], versions: [1],
+                                                    provenance: try provenance(text, versions: [1], installationID: me))
             progress(.registering)
             _ = try await client.registerDesktopVault(text)
             progress(.switchingOn)
@@ -221,6 +226,35 @@ public actor DesktopVaults {
         }
     }
 
+    // MARK: provenance
+
+    /// This Mac's provenance of `versions` of `uid` (docs/desktop-vaults.md, "Key provenance"): each key from the
+    /// keychain, checked and attested with vl-keykit.
+    func provenance(_ uid: String, versions: [UInt32], installationID: String) throws -> VaultProvenance {
+        let keys = vaultKeys
+        return try attestationKeys.provenance(uid: uid, installationID: installationID, versions: versions) { v, use in
+            guard try keys.withKey(uid, version: v, { try use($0) }) != nil else {
+                throw VaultError(local: "no_vault_key", "This Mac holds no key of this vault.")
+            }
+        }
+    }
+
+    /// Enrolls again, with their provenance, the versions of a vault this Mac created and still holds: a vault enrolled
+    /// before Desktop attested gets its versions proven (the cloud lets the enrolling Mac fill a bare version once); an
+    /// enrolled one changes nothing. Best effort: a failure is logged and tried at the next open.
+    func attestCreatedVersions(_ uid: String, installationID: String) async {
+        do {
+            guard let held = try vaultKeys.versions(uid) else { return }
+            // The envelopes the cloud has already (the same bytes: nothing new is stored); none, nothing to backfill.
+            guard let recorded = try await client.vaultEnvelopes(uid), !recorded.isEmpty else { return }
+            let envelopes = recorded.compactMap { Base64URL.decode($0.envelope) }
+            let p = try provenance(uid, versions: held.versions, installationID: installationID)
+            _ = try await client.enrollDesktopVault(uid, envelopes: envelopes, versions: held.versions, provenance: p)
+        } catch {
+            Self.log.notice("provenance: not recorded yet: \(String(describing: error), privacy: .public)")
+        }
+    }
+
     // MARK: opening
 
     /// Opens a vault this Mac holds (its keys in the keychain): the state file, else a re-anchor from the bucket.
@@ -238,6 +272,7 @@ public actor DesktopVaults {
             record.nodeID = me
             try? registry.save(record)
         }
+        if !record.adopted { await attestCreatedVersions(uid, installationID: me) }
         let session = try makeSession(uid, name: record.name, installationID: me, envelopes: [:])
         sessions[uid] = session
         if !engine { await session.handOverEngine() }

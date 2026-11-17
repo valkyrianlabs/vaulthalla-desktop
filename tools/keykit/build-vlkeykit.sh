@@ -98,7 +98,7 @@ ARCHS=arm64 MACOSX_DEPLOYMENT_TARGET=27.0 "$src/scripts/build-xcframework.sh" "$
 mv "$out/work/VLKeykit.xcframework" "$out/VLKeykit.xcframework"
 
 # The golden vectors the Swift wrapper's tests read must be this source's.
-for f in vhc.json vectors.json; do
+for f in vhc.json vectors.json key_provenance.json; do
     if [[ $vendor == 1 ]]; then
         mkdir -p "$vectors_dir"
         cp "$src/vectors/$f" "$vectors_dir/$f"

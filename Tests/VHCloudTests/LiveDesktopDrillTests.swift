@@ -260,6 +260,11 @@ struct LiveDesktopDrillTests {
         #expect((inspected["names_not_opaque"] as? [Any])?.isEmpty == true, "\(inspected)")
         #expect((inspected["found"] as? [Any])?.isEmpty == true, "\(inspected)")
         #expect(inspected["control"] as? Bool == true && (inspected["versions"] as? Int ?? 0) > 5)
+        let recorded = (try await control("storage", ["uid": uid])["versions"] as? [[String: Any]]) ?? []
+        let macVault = try Provenance.macOriginVaultID(uid: Data(try #require(Uid(base32: uid)).bytes))
+        #expect(recorded.count == 1 && recorded.first?["origin_node_id"] as? String == me &&
+                (recorded.first?["origin_vault_id"] as? NSNumber)?.uint32Value == macVault &&
+                recorded.first?["attested"] as? Bool == true, "version 1 recorded under this Mac's origin: \(recorded)")
         Self.note("2", "bucket: \(inspected["versions"] ?? 0) object versions, names opaque, no name or plaintext found")
 
         // ---------------------------------------------------------------- 3: the portal reads it back
@@ -289,14 +294,19 @@ struct LiveDesktopDrillTests {
             #expect(delivered.versions == [1] && delivered.missing.isEmpty)
             return try await control("server-finish", ["uid": uid, "expect": expected])
         }
-        // A canonical restore needs each key version attested by its origin (vaulthalla-server's D1); Desktop attests
-        // nothing, so the server refuses (an open decision: docs/desktop-vaults.md, "Not done"). The drill records that
-        // and goes on with the salvage the refusal names: the server re-encrypts under a key of its own.
-        let canonical = try await takeOver(salvage: false)
-        let refusal = (canonical["result"] as? [String: Any])?["error"] as? String
-        #expect(canonical["exit"] as? Int == 2 && refusal == "salvage_required", "\(canonical)")
-        Self.note("4", "canonical restore: exit \(canonical["exit"] ?? "?"), \(refusal ?? "no refusal")")
-        let finished = refusal == "salvage_required" ? try await takeOver(salvage: true) : canonical
+        // This Mac attested version 1 when it created the vault (docs/desktop-vaults.md, "Key provenance"): the server
+        // proves it canonically. First the negative: with the recorded attestation made wrong (one bit), the version is
+        // unproven and the restore stops with salvage_required; then, put back as the Mac recorded it, canonical.
+        _ = try await control("attestation", ["uid": uid])
+        let wrong = try await takeOver(salvage: false)
+        let refusal = (wrong["result"] as? [String: Any])?["error"] as? String
+        #expect(wrong["exit"] as? Int == 2 && refusal == "salvage_required", "a wrong attestation proves nothing: \(wrong)")
+        _ = try await control("attestation", ["uid": uid, "restore": true])
+        let finished = try await takeOver(salvage: false)
+        let result = finished["result"] as? [String: Any]
+        #expect(result?["mode"] as? String == "canonical" && (result?["salvage"] is NSNull || result?["salvage"] == nil),
+                "a canonical restore, nothing salvaged: \(finished)")
+        Self.note("4", "wrong attestation: \(refusal ?? "accepted?"); as recorded: \(result?["mode"] ?? "?")")
         #expect(finished["exit"] as? Int == 0, "\(finished)")
         #expect((finished["diff"] as? [String: Any])?.isEmpty == true, "the server's tree is the Mac's: \(finished)")
         let keys4 = finished["keys"] as? [[String: Any]] ?? []

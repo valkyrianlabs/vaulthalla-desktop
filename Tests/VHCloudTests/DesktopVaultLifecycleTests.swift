@@ -181,6 +181,47 @@ final class KeyedBucket: VaultStore, @unchecked Sendable {
         #expect(mac.bucket.currentKeys.contains(".vaulthalla/root"))
     }
 
+    /// docs/desktop-vaults.md, "Key provenance": creating a vault enrolls version 1 with this Mac's key check and
+    /// attestation (vl-keykit) under its own origin, with the signing key in the account's app-only items; the
+    /// attestation verifies only over that origin, vault id and version; opening a vault it created backfills a bare
+    /// enrollment (one from before Desktop attested).
+    @Test func aCreatedVaultsVersionIsAttestedByThisMacAndBackfilledOnOpen() async throws {
+        let (mac, key) = try await setUp()
+        try await mac.receive(key)
+        mac.fake.provisionAtOnce = true
+        let uid = try await { () async throws -> String in
+            let session = try await mac.vaults.create(name: "Taxes")
+            await mac.vaults.closeAll()
+            return session.uid
+        }()
+        let me = try #require(try mac.client.link()?.installationID)
+        let wire = Data(try #require(Uid(base32: uid)).bytes)
+        let vaultID = try Provenance.macOriginVaultID(uid: wire)
+        let recorded = try #require(mac.fake.provenance[uid]?[1])
+        #expect(recorded.nodeID == me && recorded.vaultID == vaultID)
+        let check = try #require(try VaultKeyStore(items: mac.items).withKey(uid, version: 1) {
+            try Provenance.keyCheck(key: $0, vaultID: UInt64(vaultID), version: 1)
+        })
+        #expect(recorded.keyCheck == check)
+        let pk = try #require((recorded.attestation["public_key"] as? String).flatMap { Data(base64Encoded: $0) })
+        let sig = try #require((recorded.attestation["signature"] as? String).flatMap { Data(base64Encoded: $0) })
+        #expect(Provenance.verify(publicKey: pk, nodeID: me, vaultID: UInt64(vaultID), version: 1, keyCheck: check, signature: sig))
+        #expect(!Provenance.verify(publicKey: pk, nodeID: me, vaultID: UInt64(vaultID) + 1, version: 1, keyCheck: check, signature: sig))
+        #expect(!Provenance.verify(publicKey: pk, nodeID: "00000000-0000-4000-8000-000000000001", vaultID: UInt64(vaultID),
+                                   version: 1, keyCheck: check, signature: sig))
+        #expect((recorded.attestation["key_id"] as? NSNumber)?.uint32Value == Provenance.keyID(publicKey: pk))
+        #expect(mac.memory.names.contains(AttestationKeyStore.item))
+
+        // A vault enrolled before Desktop attested: the next open records its provenance, with the cloud's envelopes.
+        mac.fake.provenance[uid] = nil
+        let enveloped = mac.fake.enrolled[uid]?.count
+        let again = mac.makeVaults()
+        _ = try await again.open(uid)
+        await again.closeAll()
+        #expect(mac.fake.provenance[uid]?[1]?.keyCheck == check)
+        #expect(mac.fake.enrolled[uid]?.count == enveloped)  // no new envelope
+    }
+
     @Test func opensAgainFromTheStateAndAdoptsOnAReplacementMac() async throws {
         let (mac, key) = try await setUp()
         try await mac.receive(key)
