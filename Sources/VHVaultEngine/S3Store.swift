@@ -84,17 +84,44 @@ public final class S3Store: VaultStore, @unchecked Sendable {
     public static let maxSinglePut: UInt64 = 5 << 30
     private static let log = Logger(subsystem: "sh.vaulthalla.app", category: "vault.s3")
 
+    /// How long a request may take (vl-vaultfmt 0.4.0: the store bounds every request and reports a write past a
+    /// bound as "outcome unknown"; the values are vaulthalla-server's). A bound cancels the task, which closes the
+    /// connection (or resets the HTTP/2 stream), so a stalled PUT can't complete minutes later from this Mac.
+    public struct Bounds: Sendable, Equatable {
+        /// No byte sent or received for this long fails the request (`timeoutIntervalForRequest`): below 1 byte/s for
+        /// 60 s. Every request, content uploads included (they have no total bound: a large file takes what it takes).
+        public var noProgress: TimeInterval = 60
+        /// A request with a body whose first byte isn't sent within this long (the connection never came up).
+        public var connect: TimeInterval = 30
+        /// The manifest root PUT, in all: a root whose reply is lost may still land later, below newer roots
+        /// (Backblaze orders versions by upload start), so its attempt is cut short and the engine told it is unknown.
+        public var rootTotal: TimeInterval = 60
+        /// Every other whole-object request (small: manifest segments, envelopes, listings, reads of headers).
+        public var smallTotal: TimeInterval? = nil
+
+        public init() {}
+    }
+
+    let bounds: Bounds
+
     /// `scratch`: where streamed uploads gather their sealed bytes (beside the vault's state).
-    public init(credentials: any S3CredentialSource, scratch: URL, timeout: TimeInterval = 120) {
+    public convenience init(credentials: any S3CredentialSource, scratch: URL, bounds: Bounds = Bounds()) {
+        self.init(credentials: credentials, scratch: scratch, bounds: bounds, protocolClasses: nil)
+    }
+
+    /// `protocolClasses`: tests answer through a local `URLProtocol`.
+    init(credentials: any S3CredentialSource, scratch: URL, bounds: Bounds, protocolClasses: [AnyClass]?) {
         self.credentials = credentials
         self.scratch = scratch
+        self.bounds = bounds
         let c = URLSessionConfiguration.ephemeral
+        if let protocolClasses { c.protocolClasses = protocolClasses }
         c.httpCookieStorage = nil
         c.httpShouldSetCookies = false
         c.urlCache = nil
         c.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
         c.urlCredentialStorage = nil
-        c.timeoutIntervalForRequest = timeout
+        c.timeoutIntervalForRequest = bounds.noProgress
         c.tlsMinimumSupportedProtocolVersion = .TLSv12
         session = URLSession(configuration: c, delegate: NoRedirects(), delegateQueue: nil)
     }
@@ -110,6 +137,8 @@ public final class S3Store: VaultStore, @unchecked Sendable {
         var headers: [(String, String)] = []
         var payloadHash = SigV4.emptyPayloadHash
         var write = false
+        /// A streamed content upload: no total bound.
+        var content = false
     }
 
     enum Body: Sendable {
@@ -118,36 +147,95 @@ public final class S3Store: VaultStore, @unchecked Sendable {
         case file(URL)
     }
 
-    /// Signs `call` with the key in force and sends it. Throws only for "no key" and transport failures; statuses are
-    /// the caller's to read.
+    /// Signs `call` with the key in force and sends it within its bounds. Throws only for "no key", transport failures
+    /// and bounds; statuses are the caller's to read. Any failure of a write is "outcome unknown": the request may have
+    /// reached the provider (a timeout after the body was sent above all), and only the engine can tell.
     func send(_ call: Call, body: Body = .none) throws(StoreError) -> (Data, HTTPURLResponse) {
-        let outcome: Result<(Data, HTTPURLResponse), StoreError> = blocking { [credentials, session] () async -> Result<(Data, HTTPURLResponse), StoreError> in
-            let date = Date()
-            let signed: URLRequest?
+        let date = Date()
+        let credentials = credentials
+        let signed: Result<URLRequest?, StoreError> = blocking {
             do {
-                signed = try await credentials.withS3Credentials { c in try Self.request(call, credentials: c, date: date) }
+                return .success(try await credentials.withS3Credentials { c in try Self.request(call, credentials: c, date: date) })
             } catch {
                 return .failure(error as? StoreError ?? .failed("the request couldn't be made"))
             }
-            guard var request = signed else { return .failure(.failed("no storage key is in force on this Mac")) }
-            do {
-                let (data, response): (Data, URLResponse)
-                switch body {
-                case .none: (data, response) = try await session.data(for: request)
-                case .data(let d):
-                    request.httpBody = nil
-                    (data, response) = try await session.upload(for: request, from: d)
-                case .file(let url): (data, response) = try await session.upload(for: request, fromFile: url)
-                }
-                guard let http = response as? HTTPURLResponse else { return .failure(.failed("not an HTTP answer")) }
-                if http.statusCode == 401 || http.statusCode == 403 { await credentials.providerRefused() }
-                return .success((data, http))
-            } catch {
-                let why = (error as? URLError).map { "the storage request failed (\($0.code.rawValue))" } ?? "the storage request failed"
-                return .failure(call.write ? .outcomeUnknown(why) : .failed(why))
+        }
+        guard var request = try signed.get() else { throw .failed("no storage key is in force on this Mac") }
+        let total = call.key == Self.rootKey && call.method == "PUT" ? bounds.rootTotal : (call.content ? nil : bounds.smallTotal)
+        let done = DispatchSemaphore(value: 0)
+        let watch = Watch()
+        let completion: @Sendable (Data?, URLResponse?, (any Error)?) -> Void = { data, response, error in
+            watch.finish(data, response, error)
+            done.signal()
+        }
+        let task: URLSessionTask
+        switch body {
+        case .none: task = session.dataTask(with: request, completionHandler: completion)
+        case .data(let d):
+            request.httpBody = nil
+            task = session.uploadTask(with: request, from: d, completionHandler: completion)
+        case .file(let url): task = session.uploadTask(with: request, fromFile: url, completionHandler: completion)
+        }
+        task.delegate = watch
+        if case .none = body {} else {
+            DispatchQueue.global().asyncAfter(deadline: .now() + bounds.connect) {
+                if !watch.sentAny { watch.cut("connect", task) }
             }
         }
-        return try outcome.get()
+        if let total { DispatchQueue.global().asyncAfter(deadline: .now() + total) { watch.cut("total", task) } }
+        task.resume()
+        done.wait()
+        let (data, response, error, bound) = watch.result()
+        if let http = response as? HTTPURLResponse, error == nil {
+            if http.statusCode == 401 || http.statusCode == 403 { blocking { await credentials.providerRefused() } }
+            return (data ?? Data(), http)
+        }
+        let why: String = if let bound {
+            "the storage request passed its \(bound) bound"
+        } else {
+            (error as? URLError).map { $0.code == .timedOut ? "the storage request made no progress for \(Int(bounds.noProgress)) s"
+                : "the storage request failed (\($0.code.rawValue))" } ?? "the storage request failed"
+        }
+        throw call.write ? .outcomeUnknown(why) : .failed(why)
+    }
+
+    static let rootKey = ".vaulthalla/root"
+
+    /// One task's progress and outcome: whether any body byte went out, and which bound cut it (if one did).
+    final class Watch: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+        private let lock = NSLock()
+        private var sent = false
+        private var bound: String?
+        private var finished = false
+        private var outcome: (Data?, URLResponse?, (any Error)?) = (nil, nil, nil)
+
+        var sentAny: Bool { lock.withLock { sent } }
+
+        func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64,
+                        totalBytesExpectedToSend: Int64) {
+            lock.withLock { sent = true }
+        }
+
+        /// Cancels the task for `name` unless it already finished (the first bound wins).
+        func cut(_ name: String, _ task: URLSessionTask) {
+            let cutting: Bool = lock.withLock {
+                guard !finished, bound == nil else { return false }
+                bound = name
+                return true
+            }
+            if cutting { task.cancel() }
+        }
+
+        func finish(_ data: Data?, _ response: URLResponse?, _ error: (any Error)?) {
+            lock.withLock {
+                finished = true
+                outcome = (data, response, error)
+            }
+        }
+
+        func result() -> (Data?, URLResponse?, (any Error)?, String?) {
+            lock.withLock { (outcome.0, outcome.1, outcome.2, bound) }
+        }
     }
 
     static func request(_ call: Call, credentials c: S3Credentials, date: Date) throws -> URLRequest {
@@ -351,7 +439,8 @@ public final class S3Store: VaultStore, @unchecked Sendable {
             do { try handle.close() } catch { throw .failed("the upload's scratch file can't be written") }
             defer { try? FileManager.default.removeItem(at: url) }
             let digest = SigV4.hex(hash.finalize())
-            let (data, r) = try store.send(Call(method: "PUT", key: key, payloadHash: digest, write: true), body: .file(url))
+            let (data, r) = try store.send(Call(method: "PUT", key: key, payloadHash: digest, write: true, content: true),
+                                           body: .file(url))
             try store.expect(data, r, write: true)
             return S3Store.object(r)
         }

@@ -1,7 +1,9 @@
 public import Foundation
 
 /// An in-memory versioned bucket that answers as Backblaze B2 does for a Desktop-only vault (version_log: every PUT a
-/// new version, conditional PUTs refused with "not implemented", a DELETE by name a delete marker), the same double as
+/// new version, conditional PUTs refused with "not implemented", a DELETE by name a delete marker, and a key's versions
+/// ordered by when their upload *started*: ``loseNextPut(keyPrefix:)`` and ``landLost()`` make a PUT whose reply was lost
+/// complete later, below versions written since, as measured on Backblaze on 2026-11-16), the same double as
 /// vl-vaultfmt's `tests/c_engine_lifecycle.c` bucket. For tests and previews; shared by every vault handle given it, so
 /// two handles read what the other wrote.
 public final class MemoryBucket: VaultStore, @unchecked Sendable {
@@ -26,6 +28,8 @@ public final class MemoryBucket: VaultStore, @unchecked Sendable {
         set { lock.withLock { pendingFailure = newValue } }
     }
     private var pendingFailure: StoreError?
+    private var losing: String?
+    private var lost: [Version] = []
 
     public init(versionLog: Bool = true) { self.versionLog = versionLog }
 
@@ -97,6 +101,14 @@ public final class MemoryBucket: VaultStore, @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         try begin()
+        if let prefix = losing, key.hasPrefix(prefix) {
+            // The upload starts now (its place in the order), its reply never arrives, it completes later.
+            losing = nil
+            seq += 1
+            lost.append(Version(key: key, id: String(format: "v%06d", seq), body: Data(bytes), marker: false,
+                                at: 1_800_000_000 + Int64(seq)))
+            throw .outcomeUnknown("the reply was lost")
+        }
         switch condition {
         case .none: break
         case .ifAbsent:
@@ -107,6 +119,20 @@ public final class MemoryBucket: VaultStore, @unchecked Sendable {
             guard let v = find(key, nil), Self.object(v).etag == etag else { throw .preconditionFailed }
         }
         return Self.object(add(key, Data(bytes), marker: false))
+    }
+
+    /// The next PUT of a key under `keyPrefix` loses its reply (``StoreError/outcomeUnknown(_:)``) and stays in flight.
+    public func loseNextPut(keyPrefix: String) { lock.withLock { losing = keyPrefix } }
+
+    /// The PUTs in flight complete, each in the place its start gave it (below anything started after it).
+    public func landLost() {
+        lock.withLock {
+            for v in lost {
+                let i = all.firstIndex { Int($0.id.dropFirst())! > Int(v.id.dropFirst())! } ?? all.count
+                all.insert(v, at: i)
+            }
+            lost = []
+        }
     }
 
     public func list(prefix: String) throws(StoreError) -> [ListedObject] {

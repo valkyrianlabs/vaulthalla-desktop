@@ -279,8 +279,11 @@ public final class Vault: @unchecked Sendable {
     func check(_ status: Int32) throws(VaultError) {
         guard status == VaultStatus.ok else {
             // A store callback's own failure says more than the engine's summary of it.
-            if let detail = storeBox.takeLastFailure() {
-                throw VaultError(status: status, message: detail)
+            if let detail = storeBox.takeLastFailureKind() {
+                // vl-vaultfmt 0.4.0's publish ends a root PUT of unknown outcome that no listing shows with a plain
+                // runtime error (VL_VAULTFMT_ERR_INTERNAL); the store said the outcome is unknown, so it is that.
+                let unknown = status == VaultStatus.internalError && detail.unknown
+                throw VaultError(status: unknown ? VaultStatus.storeOutcomeUnknown : status, message: detail.message)
             }
             throw fail(status)
         }
@@ -521,6 +524,8 @@ public final class Vault: @unchecked Sendable {
     }
 
     /// This installation joins the root's writers at the next publish (it opened another Mac's vault from the bucket).
+    /// Refused with ``VaultStatus/writersRefused`` on a version_log bucket (every Desktop-only vault): one Mac writes
+    /// there. Opening the vault on another Mac without a join takes it over instead.
     public func join() throws(VaultError) { try check(vl_vaultfmt_vault_join(handle)) }
 
     public func status() throws(VaultError) -> EngineStatus {

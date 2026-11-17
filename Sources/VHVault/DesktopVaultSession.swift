@@ -228,7 +228,8 @@ public actor DesktopVaultSession {
             do throws(VaultError) {
                 return .success(try await vault.perform { v throws(VaultError) in
                     let r: RefreshInfo? = refreshDue ? try v.refresh() : nil
-                    if joining { try v.join() }
+                    // Taking a vault over (adopted from another Mac): no join (a version_log bucket has one writer, and
+                    // refuses a second with writers_refused); the first publish names this Mac alone.
                     var p: PublishInfo?
                     if try v.status().unpublished || joining { p = try v.publish() }
                     _ = try? v.collectGarbageIfDue()
