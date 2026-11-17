@@ -130,6 +130,38 @@ public struct CloudStorage: Codable, Hashable, Sendable {
     public func vault(_ uid: String) -> Vault? { vaults.first { $0.vaultUid == uid } }
 }
 
+/// `GET /v1/storage/eject` (ManagedStorage `ejection`): the ejection and, per vault whose bucket is being ejected or was,
+/// every writer with its own conversion report (managed-storage.md "As built" 29). The customer's address is never here.
+public struct CloudEjectionProgress: Codable, Hashable, Sendable {
+    public struct Writer: Codable, Hashable, Sendable {
+        /// server or desktop.
+        public var kind: String
+        public var deploymentId: String?
+        public var installationId: String?
+        public var name: String
+        /// Whether the ejection waits for this writer (always for the Mac holding a Desktop-only vault).
+        public var waitedFor: Bool
+        public var convertedAt: Int64?
+    }
+
+    public struct Vault: Codable, Hashable, Sendable {
+        public var vaultUid: String
+        /// ejecting or ejected.
+        public var state: String
+        public var convertedAt: Int64?
+        public var writers: [Writer]
+    }
+
+    public var ejection: CloudStorage.Ejection?
+    public var vaults: [Vault]
+
+    /// Whether `installationID` (a Mac) reported its conversion of `uid`.
+    public func converted(_ uid: String, by installationID: String) -> Bool {
+        vaults.first { $0.vaultUid == uid }?.writers.contains { $0.kind == "desktop" && $0.installationId == installationID
+            && $0.convertedAt != nil } ?? false
+    }
+}
+
 /// `POST /v1/storage/vaults/{uid}/credentials` (201): a bucket key, its secret sealed to the one-time key the request
 /// sent. A Mac's key always carries `expires_at` and `renew_after`; a server's carries neither.
 public struct CloudIssuedCredential: Decodable, Sendable, CustomStringConvertible {

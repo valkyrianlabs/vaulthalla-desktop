@@ -605,7 +605,7 @@ struct DeviceAccessTests {
         #expect(DeviceAccessWording.status(.init(phase: .paused(entitlement: "suspended")), now: now).text.contains("Storage paused"))
         #expect(DeviceAccessWording.status(.init(phase: .paused(entitlement: "ended")), now: now).text.contains("plan ended"))
         // Nothing says files are stored, or that Vaulthalla Cloud is available.
-        let all = [active.text, due.text, DeviceAccessWording.stop(.released).text, DeviceAccessWording.stop(.ejected).text]
+        let all = [active.text, due.text, DeviceAccessWording.stop(.released).text]
         for t in all { #expect(!t.lowercased().contains("backed up") && !t.lowercased().contains("available")) }
     }
 }

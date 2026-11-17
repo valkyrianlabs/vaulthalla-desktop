@@ -19,8 +19,12 @@ public struct DesktopVaultRecord: Codable, Sendable, Hashable, Identifiable {
     /// The engine's node id for this Mac (its cloud installation id), recorded so the File Provider extension, which
     /// can't read the cloud link, opens the vault as the same writer. nil in records written before it existed.
     public var nodeID: String?
+    /// The account key generation the vault's sealed label (its name, for the portal and other installations) was last
+    /// sent to the cloud for; nil until one was (it is sent again after a rename or an account key rotation).
+    public var labelGeneration: UInt32?
 
-    public init(uid: String, name: String, createdAt: Date, published: Bool, adopted: Bool, hold: Hold, nodeID: String? = nil) {
+    public init(uid: String, name: String, createdAt: Date, published: Bool, adopted: Bool, hold: Hold, nodeID: String? = nil,
+                labelGeneration: UInt32? = nil) {
         self.uid = uid
         self.name = name
         self.createdAt = createdAt
@@ -28,6 +32,7 @@ public struct DesktopVaultRecord: Codable, Sendable, Hashable, Identifiable {
         self.adopted = adopted
         self.hold = hold
         self.nodeID = nodeID
+        self.labelGeneration = labelGeneration
     }
 
     public var id: String { uid }

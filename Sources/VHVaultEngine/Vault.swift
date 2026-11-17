@@ -279,12 +279,7 @@ public final class Vault: @unchecked Sendable {
     func check(_ status: Int32) throws(VaultError) {
         guard status == VaultStatus.ok else {
             // A store callback's own failure says more than the engine's summary of it.
-            if let detail = storeBox.takeLastFailureKind() {
-                // vl-vaultfmt 0.4.0's publish ends a root PUT of unknown outcome that no listing shows with a plain
-                // runtime error (VL_VAULTFMT_ERR_INTERNAL); the store said the outcome is unknown, so it is that.
-                let unknown = status == VaultStatus.internalError && detail.unknown
-                throw VaultError(status: unknown ? VaultStatus.storeOutcomeUnknown : status, message: detail.message)
-            }
+            if let detail = storeBox.takeLastFailure() { throw VaultError(status: status, message: detail) }
             throw fail(status)
         }
     }

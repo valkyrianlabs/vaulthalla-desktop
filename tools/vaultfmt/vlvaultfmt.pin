@@ -6,13 +6,13 @@
 #
 # The tarball is committed (as tools/keykit/vendor holds vl-keykit's), so no build, CI included, needs a token for the
 # private vl-vaultfmt repository. This one is
-# `git archive --format=tar.gz --prefix=vl-vaultfmt-0.4.0/ 0e81c8d043c8f6d841805abb1926b4cdfb6727d3` of vl-vaultfmt
-# branch fix/start-ordered-versions (0.4.0: one writer safe under Backblaze's start-ordered versions, several writers on
-# version_log refused with status 632; pull request 5, not yet merged or tagged; the archive is reproducible from that
-# commit); replace it with the v0.4.0 release once published.
+# `git archive --format=tar.gz --prefix=vl-vaultfmt-0.4.1/ 679d6a31e199c5f5f0b12db9448dc57c53dc5042`: commit 679d6a31
+# of vl-vaultfmt, version 0.4.1, untagged (a manifest root PUT of unknown outcome that no listing shows is reported as
+# status 603, store_outcome_unknown, not 4, internal; on top of 0.4.0's one writer safe under Backblaze's start-ordered
+# versions). The archive is reproducible from that commit; replace it with the v0.4.1 release once one is published.
 #
 # vl-vaultfmt is built against the vl-keykit source pinned in tools/keykit/vlkeykit.pin (not the 0.2.0 its own wrap
 # names), and VLVaultfmt.xcframework holds vl-vaultfmt alone: vl-keykit and libcrypto come from VLKeykit.xcframework,
 # so the app links exactly one copy of each.
-VLVAULTFMT_VERSION=0.4.0
-VLVAULTFMT_SOURCE=file:tools/vaultfmt/vendor/vl-vaultfmt-0.4.0-0e81c8d0.tar.gz#sha256=497d5f6811663c20b186c45a0137e67e5ffc649024a6d537cfcbfc1f92f46dcd
+VLVAULTFMT_VERSION=0.4.1
+VLVAULTFMT_SOURCE=file:tools/vaultfmt/vendor/vl-vaultfmt-0.4.1-679d6a31.tar.gz#sha256=f4be647a7a970b9450a4f112b92813b5c3327d2bbd7ea37b992f55af5d1b8b36

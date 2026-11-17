@@ -641,6 +641,15 @@ final class CloudModel {
         (storage?.vaults ?? []).filter { $0.desktop != nil || $0.movedTo != nil || $0.released != nil }
     }
 
+    /// A vault's name: the one this Mac gave a Desktop-only vault it holds (its own record), else its sealed label
+    /// opened with the recovery key (``openLabels()``); nil while neither is known.
+    func vaultName(_ uid: String) -> String? { desktopVaults?.name(uid) ?? labels[uid] }
+
+    /// Whether some vault has a sealed name this Mac hasn't opened yet (another installation's, or one from before).
+    var hasUnopenedLabels: Bool {
+        keyStatus?.holdsCurrent == true && vaults.contains { $0.label != nil && labels[$0.vaultUid] == nil }
+    }
+
     /// The server holding `uid`, by name, from `GET /v1/vaults`' replicas.
     func serverHolding(_ uid: String) -> String? {
         guard let id = vaults.first(where: { $0.vaultUid == uid })?.replicas.first?.deploymentId else { return nil }

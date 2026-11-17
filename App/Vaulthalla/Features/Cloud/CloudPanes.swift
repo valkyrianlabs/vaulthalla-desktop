@@ -176,7 +176,7 @@ private struct CloudRestoresPanel: View {
                 ForEach(cloud.restores, id: \.id) { restore in
                     HStack {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(cloud.labels[restore.vaultUid] ?? "Vault \(restore.vaultUid)").font(.headline)
+                            Text(cloud.vaultName(restore.vaultUid) ?? "Vault \(restore.vaultUid)").font(.headline)
                             Text("To \u{201C}\(restore.requesterName)\u{201D}").foregroundStyle(.fgMuted)
                         }
                         Spacer()
@@ -323,7 +323,7 @@ private struct CloudVaultsPane: View {
                     }
                 }
             } actions: {
-                if cloud.keyStatus?.holdsCurrent == true, cloud.vaults.contains(where: { $0.label != nil }), cloud.labels.isEmpty {
+                if cloud.hasUnopenedLabels {
                     Button("Show Names") { Task { await cloud.openLabels() } }.controlSize(.small)
                 }
             }
@@ -331,7 +331,7 @@ private struct CloudVaultsPane: View {
     }
 
     private func name(_ v: NodeMapping.Vault) -> String {
-        if let name = cloud.labels[v.uid] { return name }
+        if let name = cloud.vaultName(v.uid) { return name }
         for p in v.placements {
             if let node = p.node, let id = p.nodeVaultID,
                let local = cloud.nodeFacts[node]?.vaults.first(where: { $0.id == id }) { return local.name }
@@ -674,13 +674,17 @@ private struct CloudStoragePane: View {
     }
 }
 
-/// Vaults a Mac holds with no server (Desktop-only vaults), from `GET /v1/storage`: who holds each, its storage, and
-/// the holding Mac's key and its renewal in words (DeviceAccessWording), read-only. This build doesn't sync these
-/// vaults, so it never asks for a key and says so; the only action is to stop holding one, which narrows access.
+/// Vaults a Mac holds with no server (Desktop-only vaults), from `GET /v1/storage`: who holds each (by name: this Mac's
+/// own record, else the sealed label opened with the recovery key), its storage, and the holding Mac's key and its
+/// renewal in words (DeviceAccessWording). Without ``DesktopVaultsFeature`` this build doesn't sync these vaults, never
+/// asks for a key and says so; the only action is to stop holding one, which narrows access. With it: rename, Finder,
+/// and leaving managed storage (an ejection) with the person's own key.
 private struct CloudMacVaultsPanel: View {
     var cloud: CloudModel
     @State private var releasing: CloudStorage.Vault?
     @State private var creating = false
+    @State private var renaming: String?
+    @State private var owningKey: String?
 
     var body: some View {
         let me = cloud.installation?.id ?? ""
@@ -691,7 +695,7 @@ private struct CloudMacVaultsPanel: View {
                     let holder = DeviceAccessWording.holder(v, thisMac: me, server: cloud.serverHolding(v.vaultUid))
                     HStack(alignment: .firstTextBaseline) {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(cloud.labels[v.vaultUid] ?? "Vault \(v.vaultUid.prefix(8))…").font(.headline)
+                            Text(cloud.vaultName(v.vaultUid) ?? "Vault \(v.vaultUid.prefix(8))…").font(.headline)
                             Text(holder.text).font(.caption).foregroundStyle(tone(holder.tone))
                             if v.movedTo == nil, v.released == nil || v.desktop?.installationId == me {
                                 let bucket = DeviceAccessWording.bucket(v)
@@ -708,8 +712,16 @@ private struct CloudMacVaultsPanel: View {
                         }
                         if mine, let desktop = cloud.desktopVaults, desktop.adoptable.contains(v.vaultUid) {
                             Button("Sync on This Mac") {
-                                Task { await desktop.adopt(v.vaultUid, name: cloud.labels[v.vaultUid] ?? "Vault \(v.vaultUid.prefix(8))") }
+                                Task { await desktop.adopt(v.vaultUid, name: cloud.vaultName(v.vaultUid) ?? "Vault \(v.vaultUid.prefix(8))") }
                             }.controlSize(.small)
+                        }
+                        if mine, let desktop = cloud.desktopVaults, desktop.holds(v.vaultUid) {
+                            if desktop.takesOwnKey(v.vaultUid) {
+                                Button(desktop.needsOwnKey(v.vaultUid) ? "Enter Your Own Key\u{2026}" : "Use Your Own Key\u{2026}") {
+                                    owningKey = v.vaultUid
+                                }.controlSize(.small)
+                            }
+                            Button("Rename\u{2026}") { renaming = v.vaultUid }.controlSize(.small)
                         }
                         if mine {
                             Button("Stop Holding…") { releasing = v }.controlSize(.small).disabled(cloud.busy)
@@ -728,9 +740,19 @@ private struct CloudMacVaultsPanel: View {
                         .font(.caption).foregroundStyle(.fgSubtle)
                 }
             }
+        } actions: {
+            if cloud.hasUnopenedLabels {
+                Button("Show Names") { Task { await cloud.openLabels() } }.controlSize(.small)
+            }
         }
         .sheet(isPresented: $creating) {
             if let desktop = cloud.desktopVaults { NewDesktopVaultSheet(desktop: desktop) }
+        }
+        .sheet(item: .init(get: { renaming.map(SheetUid.init) }, set: { renaming = $0?.id })) { item in
+            if let desktop = cloud.desktopVaults { RenameDesktopVaultSheet(desktop: desktop, uid: item.id) }
+        }
+        .sheet(item: .init(get: { owningKey.map(SheetUid.init) }, set: { owningKey = $0?.id })) { item in
+            if let desktop = cloud.desktopVaults { OwnKeySheet(desktop: desktop, uid: item.id) }
         }
         .confirmationDialog("Stop holding this vault on this Mac?", isPresented: .init(get: { releasing != nil }, set: { if !$0 { releasing = nil } }),
                             titleVisibility: .visible, presenting: releasing) { v in
@@ -749,6 +771,108 @@ private struct CloudMacVaultsPanel: View {
         case .danger: StatusTone.danger.color
         case .neutral: .secondary
         }
+    }
+}
+
+private struct SheetUid: Identifiable {
+    let id: String
+}
+
+/// Renames a vault this Mac holds: its name here and in Finder, and its sealed label (the name the portal and the
+/// account's other installations show), sealed to the account key so Vaulthalla Cloud never reads it.
+private struct RenameDesktopVaultSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    var desktop: DesktopVaultsModel
+    var uid: String
+    @State private var name = ""
+    @State private var problem: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Rename Vault").font(.title2.bold())
+            Text("The new name shows here, in Finder, in the portal and on your other devices. It is sealed to your recovery key: Vaulthalla Cloud stores it without being able to read it.")
+                .fixedSize(horizontal: false, vertical: true)
+            TextField("Vault name", text: $name).textFieldStyle(.roundedBorder)
+            if let problem { Text(problem).foregroundStyle(StatusTone.danger.color) }
+            HStack {
+                Spacer()
+                Button("Cancel", role: .cancel) { dismiss() }
+                Button("Rename") {
+                    Task {
+                        problem = await desktop.rename(uid, to: name)
+                        if problem == nil { dismiss() }
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 420)
+        .onAppear { name = desktop.name(uid) ?? "" }
+    }
+}
+
+/// Leaving managed storage: the account holder ejected the account's storage to their own Backblaze account, and this
+/// Mac needs a key they make there (Vaulthalla Cloud's short-lived key ends, and it gives no other). The key is checked
+/// against the vault's bucket with reads only before anything switches; it is kept in the keychain group shared with the
+/// Finder extension and never logged.
+private struct OwnKeySheet: View {
+    @Environment(\.dismiss) private var dismiss
+    var desktop: DesktopVaultsModel
+    var uid: String
+    @State private var keyID = ""
+    @State private var secret = ""
+    @State private var problem: String?
+    @State private var checking = false
+
+    var body: some View {
+        let leaving = desktop.leaving(uid)
+        let provider = DeviceAccessWording.providerName(leaving?.ejection?.provider)
+        let bucket = leaving?.ejection?.location?.bucket
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Your Own Key for \u{201C}\(desktop.name(uid) ?? "this vault")\u{201D}").font(.title2.bold())
+            Text("Your storage moved out of Vaulthalla Cloud: the bucket\(bucket.map { " \u{201C}\($0)\u{201D}" } ?? "") is yours now, in your own \(provider) account. Vaulthalla Cloud's key for it ends within a day and it gives no other, so this Mac needs a key you make there.")
+                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("1. Sign in to \(provider) (it emailed you when the account became yours).")
+                Text("2. Make an application key that may read and write\(bucket.map { " the bucket \u{201C}\($0)\u{201D}" } ?? " this vault's bucket").")
+                Text("3. Enter its key ID and the application key here.")
+            }
+            .font(.callout).fixedSize(horizontal: false, vertical: true)
+            TextField("Key ID", text: $keyID).textFieldStyle(.roundedBorder)
+            SecureField("Application key", text: $secret).textFieldStyle(.roundedBorder)
+            Text("This Mac only reads the vault's state with the key first, to check it is this vault's bucket; nothing is written until then. The key stays on this Mac, in its keychain.")
+                .font(.caption).foregroundStyle(.fgMuted).fixedSize(horizontal: false, vertical: true)
+            Text("Until you enter one, the vault stays paused on this Mac. Nothing here or in the bucket is deleted; the bucket stays in your \(provider) account.")
+                .font(.caption).foregroundStyle(.fgMuted).fixedSize(horizontal: false, vertical: true)
+            if let problem { Text(problem).foregroundStyle(StatusTone.danger.color).fixedSize(horizontal: false, vertical: true) }
+            HStack {
+                if checking { ProgressView().controlSize(.small) }
+                Spacer()
+                Button("Cancel", role: .cancel) {
+                    secret = ""
+                    dismiss()
+                }
+                Button("Check and Use Key") {
+                    checking = true
+                    let typed = secret
+                    Task {
+                        problem = await desktop.useOwnKey(uid, keyID: keyID, secret: typed)
+                        checking = false
+                        if problem == nil {
+                            secret = ""
+                            dismiss()
+                        }
+                    }
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(checking || keyID.trimmingCharacters(in: .whitespaces).isEmpty || secret.isEmpty)
+            }
+        }
+        .padding(20)
+        .frame(width: 520)
+        .onDisappear { secret = "" }
     }
 }
 
