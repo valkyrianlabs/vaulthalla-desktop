@@ -283,7 +283,7 @@ struct LiveDesktopDrillTests {
         #expect(macKey.id == k3.id || macKey.refusal() == nil)
         // The server's restore, approved by the owner and delivered by this Mac (the account key's holder).
         func takeOver(salvage: Bool) async throws -> [String: Any] {
-            let server = try await control("server-start", ["uid": uid, "salvage": salvage])
+            let server = try await control("server-start", ["uid": uid, "salvage": salvage, "name": name])
             #expect(server["started"] as? Bool == true, "\(server)")
             #expect(server["approved"] as? Int == 200, "\(server)")
             let restoreID = server["restore_id"] as? String
@@ -309,6 +309,9 @@ struct LiveDesktopDrillTests {
         Self.note("4", "wrong attestation: \(refusal ?? "accepted?"); as recorded: \(result?["mode"] ?? "?")")
         #expect(finished["exit"] as? Int == 0, "\(finished)")
         #expect((finished["diff"] as? [String: Any])?.isEmpty == true, "the server's tree is the Mac's: \(finished)")
+        // Restored under the vault's own name (spaces and all), mounted as its slug (vaulthalla-server migration 096).
+        #expect(finished["vault_name"] as? String == name && finished["fuse_name"] as? String == "drill-taxes-\(tag)",
+                "\(finished["vault_name"] ?? "-") at \(finished["fuse_name"] ?? "-")")
         let keys4 = finished["keys"] as? [[String: Any]] ?? []
         #expect(keys4.contains { $0["key_id"] as? String == macKey.id && $0["revoke_reason"] as? String == "desktop_moved" },
                 "\(keys4)")
