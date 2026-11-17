@@ -27,14 +27,21 @@ final class StoreBox: @unchecked Sendable {
     let store: any VaultStore
     private let lock = NSLock()
     private var lastFailure: String?
+    private var lastUnknown = false
 
     init(_ store: any VaultStore) { self.store = store }
 
     /// The detail of the store's last failure, once (the engine's own message is a summary).
-    func takeLastFailure() -> String? {
+    func takeLastFailure() -> String? { takeLastFailureKind()?.message }
+
+    /// The store's last failure, once, and whether it was a write whose outcome is unknown.
+    func takeLastFailureKind() -> (message: String, unknown: Bool)? {
         lock.withLock {
-            defer { lastFailure = nil }
-            return lastFailure
+            defer {
+                lastFailure = nil
+                lastUnknown = false
+            }
+            return lastFailure.map { ($0, lastUnknown) }
         }
     }
 
@@ -44,7 +51,8 @@ final class StoreBox: @unchecked Sendable {
             return VaultStatus.ok
         } catch {
             switch error {
-            case .failed(let m), .outcomeUnknown(let m): lock.withLock { lastFailure = m }
+            case .failed(let m): lock.withLock { lastFailure = m; lastUnknown = false }
+            case .outcomeUnknown(let m): lock.withLock { lastFailure = m; lastUnknown = true }
             default: break
             }
             return error.status

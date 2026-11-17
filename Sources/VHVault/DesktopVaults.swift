@@ -321,7 +321,7 @@ public actor DesktopVaults {
 
     /// The account holder placed `uid` on this Mac (the portal's `PUT /v1/vaults/{uid}/desktop`): its keys come from the
     /// cloud's envelopes, opened with this Mac's account key, then the vault opens from the bucket (a re-anchor) and this
-    /// Mac joins its writers.
+    /// Mac takes it over (its first publish names this Mac alone: one Mac writes a vault).
     public func adopt(_ uid: String, name: String) async throws(DesktopVaultError) -> DesktopVaultSession {
         let me = try installationID()
         guard let wire = Uid(base32: uid) else { throw .unknownVault }

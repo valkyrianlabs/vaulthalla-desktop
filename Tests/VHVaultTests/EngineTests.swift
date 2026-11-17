@@ -7,13 +7,15 @@ import VHRecovery
 /// A vault on the in-memory B2-like bucket: what every engine test opens.
 struct Fixture {
     let uid = Uid.random()
-    let bucket = MemoryBucket()
+    let bucket: MemoryBucket
     let key = newVaultKey()
     let recipient = RecoverySeed.generate()
     let directory: URL
     let clock = TickingClock()
 
-    init() {
+    /// `versionLog` false: a bucket with conditional writes, where several Macs may write (version_log refuses them).
+    init(versionLog: Bool = true) {
+        bucket = MemoryBucket(versionLog: versionLog)
         directory = FileManager.default.temporaryDirectory.appending(path: "vhvault-\(UUID().uuidString)")
     }
 

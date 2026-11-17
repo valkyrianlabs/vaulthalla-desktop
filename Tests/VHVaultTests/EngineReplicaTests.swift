@@ -21,8 +21,8 @@ final class TestHost: EngineHost, @unchecked Sendable {
 /// The engine-backed File Provider replica (EngineReplica, behind VHFinder's FinderReplica) over the in-memory bucket:
 /// everything the extension asks, without the extension.
 @Suite struct EngineReplicaTests {
-    func setUp() throws -> (Fixture, TestHost, EngineReplica, URL) {
-        let f = Fixture()
+    func setUp(versionLog: Bool = true) throws -> (Fixture, TestHost, EngineReplica, URL) {
+        let f = Fixture(versionLog: versionLog)
         let vault = try f.created()
         let host = TestHost(vault)
         let replica = EngineReplica(host: host, numbersURL: f.directory.appending(path: "ids.json"))
@@ -122,7 +122,7 @@ final class TestHost: EngineHost, @unchecked Sendable {
     }
 
     @Test func changesSinceAnAnchorAndAnExpiredOne() async throws {
-        let (f, host, replica, downloads) = try setUp()
+        let (f, host, replica, downloads) = try setUp(versionLog: false)  // a second writer below: conditional writes only
         defer { f.cleanUp() }
         let start = await replica.currentAnchor
         let x = try await replica.create(.init(name: "x", parent: .root, kind: .file), contents: try file(downloads, Data("x".utf8)),

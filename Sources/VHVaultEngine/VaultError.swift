@@ -6,6 +6,7 @@ public enum VaultStatus {
     public static let ok: Int32 = 0
     public static let invalidArgument: Int32 = 1
     public static let bufferTooSmall: Int32 = 2
+    public static let internalError: Int32 = 4
     public static let notFound: Int32 = 6
     public static let storeFailed: Int32 = 600
     public static let storePreconditionFailed: Int32 = 601
@@ -31,6 +32,9 @@ public enum VaultStatus {
     public static let badEnvelope: Int32 = 629
     public static let noVault: Int32 = 630
     public static let busy: Int32 = 631
+    /// A change of the root's writers the vault can't take: several writers on a version_log bucket (every
+    /// Desktop-only vault: Backblaze orders versions by upload start), more than three, or the last one removed.
+    public static let writersRefused: Int32 = 632
 
     /// The library's stable name for `status` ("ok", "store_failed", "vhf1_chunk_auth_failed").
     public static func name(_ status: Int32) -> String { String(cString: vl_vaultfmt_status_name(status)) }
@@ -89,6 +93,7 @@ public struct VaultError: Error, Sendable, Equatable, CustomStringConvertible {
              VaultStatus.badEnvelope:
             "The vault's key on this Mac isn't the one its storage expects."
         case VaultStatus.noVault: "There is no vault in this storage yet."
+        case VaultStatus.writersRefused: "One Mac writes to this vault; another can't be added to it."
         default: message.isEmpty ? "The vault refused this (\(name))." : message
         }
     }

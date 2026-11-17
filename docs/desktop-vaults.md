@@ -15,7 +15,7 @@ The cloud's contract is vaulthalla-cloud `docs/design/account-model.md` ("As bui
 
 | Where | What |
 | --- | --- |
-| `tools/vaultfmt/` | `VLVaultfmt.xcframework` from the vendored vl-vaultfmt 0.3.0 source (pin, tarball, build script), built against VLKeykit's vl-keykit source; the archive holds vl-vaultfmt alone (vl-keykit and libcrypto are VLKeykit's). `live-s3.sh`: the live test |
+| `tools/vaultfmt/` | `VLVaultfmt.xcframework` from the vendored vl-vaultfmt 0.4.0 source (pin, tarball, build script), built against VLKeykit's vl-keykit source; the archive holds vl-vaultfmt alone (vl-keykit and libcrypto are VLKeykit's). `live-s3.sh`: the live test |
 | Modules | `VHVaultKeys` (keychain items: the app-only group and the group shared with the extension), `VHVaultEngine` (the engine, the S3 store, the Finder replica, the extension's host; **no cloud client**), `VHVault` (the lifecycle and `DeviceAccess`; re-exports `VHVaultEngine`). The File Provider extension links `VHVaultEngine` only |
 | `Sources/VHVaultEngine/Vault.swift`, `Bridge.swift` | the engine's C API (`vl_vaultfmt_engine.h`) in Swift: the store, keys and state tables, every call run off the cooperative pool, the state file `flock`ed to one process |
 | `SigV4.swift`, `S3Store.swift` | Signature Version 4 with CryptoKit; the bucket over `URLSession` (path-style, whole and ranged reads, streamed content PUTs through a file of sealed bytes, conditional PUT headers, version listings, deletes by version id), the key lent per request by `DeviceAccess`, a 401/403 reported through `providerRefusedKey()` |
@@ -34,7 +34,8 @@ The cloud's contract is vaulthalla-cloud `docs/design/account-model.md` ("As bui
   minutes leaves the vault registered and enrolled; its session finishes the creation when the key arrives.
 - **Open**: from the state file (no network needed to list), else a re-anchor from the bucket.
 - **Adopt** (the account holder placed the vault on this Mac): the cloud's envelopes opened with the account key, every
-  version into the keychain, a re-anchor, `join`, publish.
+  version into the keychain, a re-anchor, and a publish that **takes the vault over** (its first root names this Mac
+  alone; no `join`, see "One Mac writes a vault").
 - **Stop holding**: `DELETE /v1/vaults/{uid}/replica` through `DeviceAccess.release()`; the session closes; the state,
   the local files and the keys stay (the keys are recovery material).
 - **Sync**: publish two seconds after the last local change, refresh every minute (one HEAD while nothing moved), GC
@@ -45,6 +46,25 @@ The cloud's contract is vaulthalla-cloud `docs/design/account-model.md` ("As bui
 What the sheet says before anything is made: one Mac writes for now; no share links or server-side search; recovering
 it without this Mac needs the account recovery key; a lost Mac loses the names of changes it hadn't published (their
 bytes stay in the bucket and come back under "Recovered").
+
+## One Mac writes a vault
+
+A Desktop-only vault has exactly one writer, the Mac that holds it. Every Desktop-only vault is on a version_log bucket
+(Backblaze B2), and Backblaze orders a key's versions by when their upload **started**, not when it finished (measured
+live 2026-11-16; vl-vaultfmt 0.4.0's CHANGELOG): another writer's slow root PUT can land below a root this Mac already
+settled, which nothing in the protocol makes safe yet (vaulthalla-server `design/encryption/06-publish-without-preconditions.md`
+§11 has the proposal). So the engine refuses a second writer on such a bucket: `join` answers `writers_refused`
+(status 632) and records nothing, and a root naming several writers is never published. Moving a vault to another Mac
+is the account holder's (the portal), and that Mac takes it over.
+
+One writer is safe under that ordering since vl-vaultfmt 0.4.0: a root PUT whose reply was lost and that lands later,
+below roots this Mac published since, is recognized as this Mac's own superseded attempt and removed (or adopted when it
+landed first), never refused as `order_violation`; for 15 minutes after such a PUT the engine lists the root's versions
+instead of trusting one HEAD. `S3Store` bounds every request so a stalled PUT can't land much later
+(`S3Store.Bounds`, vaulthalla-server's values): the root PUT 60 s in all, a body's first byte within 30 s, no progress
+for 60 s fails any request, content uploads have no total deadline; a bound cancels the task (the connection closes)
+and a write cut short is "outcome unknown", never "failed". vl-vaultfmt 0.4.0 ends a root PUT of unknown outcome that
+no listing shows with a plain internal error; `Vault` reports it as unknown when the store said so.
 
 ## Finder
 
