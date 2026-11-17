@@ -33,10 +33,14 @@ public struct SystemDeviceAccessClock: DeviceAccessClock {
 ///
 /// An ejection (the account's managed storage handed to the customer's own provider account: managed-storage.md "As
 /// built" 13 and 25) converts the vault in place: from the moment the cloud's view shows its bucket `ejecting` (or
-/// `ejected`), this Mac reports the conversion (`POST .../ejected`, which the ejection waits for), keeps syncing on
-/// the cloud's last key until that key ends (``Phase/leaving(keyUntil:)``), and never asks the cloud for a key for the
-/// vault again. Then it waits for a key the person makes in their own account (``Phase/needsOwnKey(_:)``), which
-/// ``useOwnKey(_:)`` takes once it was checked against the bucket (``Phase/ownStorage``).
+/// `ejected`), this Mac records it locally, reports the conversion (`POST .../ejected`, which the ejection waits for),
+/// and keeps syncing on the cloud's key (``Phase/leaving(keyUntil:)``). While the cloud can still issue (the bucket
+/// `ejecting`, before the cloud destroys its own credential) that key is renewed at `renew_after` as a held vault's is;
+/// the first 409 `ejecting` / `ejected` (or the key view's `renewable` false, or the account's ejection past that step)
+/// ends renewal for good, recorded so a relaunch doesn't ask again, and the key in hand is the last. It never asks for a
+/// first key, and asks nothing once the person's own key is in use. When the last key ends it waits for a key the person
+/// makes in their own account (``Phase/needsOwnKey(_:)``), which ``useOwnKey(_:)`` takes once it was checked against the
+/// bucket (``Phase/ownStorage``). No answer of the cloud takes a vault out of these phases.
 public actor DeviceAccess {
     public struct Settings: Sendable, Equatable {
         /// How often the cloud's view is read while all is well (a revocation or a move is seen within this).
@@ -116,6 +120,8 @@ public actor DeviceAccess {
         public var reported: Bool
         /// The ejection finished: the bucket is in the person's own account now (its state `ejected`).
         public var complete: Bool
+        /// The cloud issues no more keys for the bucket: the key in hand is the last one.
+        public var renewalOver = false
         /// `GET /v1/storage`'s `provider` (b2: Backblaze), whose account the bucket goes to.
         public var provider: String?
     }
@@ -166,6 +172,9 @@ public actor DeviceAccess {
     /// When the conversion report is tried again after a failure, and how many failed in a row.
     private var reportAt: Date = .distantPast
     private var reportFailures = 0
+    /// While leaving: when the cloud's key is renewed again after a transient failure, and how many failed in a row.
+    private var leavingRenewAt: Date = .distantPast
+    private var leavingRenewFailures = 0
     private var onChange: (@Sendable (Status) -> Void)?
 
     private static let log = Logger(subsystem: "sh.vaulthalla.app", category: "cloud.device-access")
@@ -198,7 +207,8 @@ public actor DeviceAccess {
             }
             let location = (try? store.location(vaultUid)) ?? nil
             ejection = Ejection(location: location?.bucket.isEmpty == false ? location : nil, reported: false,
-                                complete: phase == .ownStorage)
+                                complete: phase == .ownStorage,
+                                renewalOver: (try? store.renewalIsOver(vaultUid)) == true)
             nextRefresh = clock.now
         } else if let reason = try? store.revokedReason(vaultUid) {
             phase = .stopped(.keyRevoked(reason: reason))
@@ -386,7 +396,7 @@ public actor DeviceAccess {
         case .retrying(_, _, let at): return [at, key?.expiresAt].compactMap { $0 }.min()
         case .waiting, .paused: return [nextRefresh, key?.expiresAt].compactMap { $0 }.min()
         case .leaving(let until):
-            return [nextRefresh, until, ejection?.reported == false ? reportAt : nil].compactMap { $0 }.min()
+            return [nextRefresh, until, ejection?.reported == false ? reportAt : nil, leavingRenewal].compactMap { $0 }.min()
         case .needsOwnKey: return [nextRefresh, ejection?.reported == false ? reportAt : nil].compactMap { $0 }.min()
         case .ownStorage: return ejection?.reported == false ? reportAt : clock.now + settings.pausedInterval
         case .starting, .holding:
@@ -525,6 +535,7 @@ public actor DeviceAccess {
     /// key in hand stays in use until it ends; none is asked for again.
     private func beginLeaving(_ v: CloudStorage.Vault, now: Date) {
         observeEjection(v)
+        if (try? store.renewalIsOver(vaultUid)) == true { ejection?.renewalOver = true }
         // Recorded where the bucket key lives (the extension reads it too), so it survives the cloud's key, a relaunch
         // and a cloud that can no longer be reached or no longer knows this Mac.
         if let location = ejection?.location {
@@ -540,10 +551,49 @@ public actor DeviceAccess {
             forget()
             phase = .needsOwnKey(.cloudKeyEnded)
         }
+        if v.credential?.renewable == false || v.state == "ejected" { endRenewal() }
+    }
+
+    /// When the cloud's key is due for renewal while leaving; nil when renewal is over (or there is no cloud key).
+    private var leavingRenewal: Date? {
+        guard case .leaving = phase, ejection?.renewalOver != true, let key, key.origin == .cloud else { return nil }
+        return max(key.renewAfter, leavingRenewAt)
+    }
+
+    /// The cloud issues no more keys for this vault's bucket: recorded for good (beside the record of leaving).
+    private func endRenewal() {
+        guard ejection?.renewalOver != true else { return }
+        ejection?.renewalOver = true
+        do { try store.markRenewalOver(vaultUid) } catch {
+            Self.log.notice("device access: the end of renewal isn't recorded yet: \(String(describing: error), privacy: .public)")
+        }
+    }
+
+    /// Renews the cloud's key while leaving (the same exchange as a held vault's). A 409 `ejecting` / `ejected` ends
+    /// renewal for good; anything else backs off while the key in hand is valid, and never stops the vault.
+    private func renewWhileLeaving(_ now: Date) async {
+        do {
+            let fresh = try await issueKey()
+            key = fresh
+            phase = .leaving(keyUntil: fresh.expiresAt)
+            leavingRenewFailures = 0
+            leavingRenewAt = .distantPast
+        } catch {
+            let e = DeviceAccessError.from(error)
+            Self.log.notice("device access: renewing while leaving: \(e.name, privacy: .public)")
+            if e == .ejecting || e == .ejected { return endRenewal() }
+            leavingRenewFailures += 1
+            var delay = min(settings.backoffBase * pow(2, Double(min(leavingRenewFailures - 1, 16))), settings.backoffCap)
+            if case .rateLimited(let after?) = e { delay = max(delay, TimeInterval(after)) }
+            leavingRenewAt = now + delay
+        }
     }
 
     private func observeEjection(_ view: CloudStorage) {
-        if let v = view.vault(vaultUid) { observeEjection(v) }
+        if let v = view.vault(vaultUid) {
+            observeEjection(v)
+            if v.credential?.renewable == false || v.state == "ejected" { endRenewal() }
+        }
         ejection?.provider = view.provider
     }
 
@@ -567,6 +617,7 @@ public actor DeviceAccess {
             phase = .needsOwnKey(.cloudKeyEnded)
         }
         if ejection?.reported != true, now >= reportAt { await reportConversion(now) }
+        if let due = leavingRenewal, now >= due { await renewWhileLeaving(now) }
         if phase != .ownStorage, now >= nextRefresh {
             nextRefresh = now + settings.waitingInterval
             if let view = try? await client.storage() { observeEjection(view) }
@@ -609,33 +660,39 @@ public actor DeviceAccess {
         nextRefresh = now + min(settings.waitingInterval, delay)
     }
 
+    /// One key from the cloud: a fresh one-time X25519 key, the sealed secret opened bound to this Mac, the vault and the
+    /// key id, acknowledged, kept (replacing the previous key and its secret).
+    private func issueKey() async throws -> BucketKey {
+        let oneTime = try CredentialKey.generate()
+        let issued = try await client.requestStorageCredential(vaultUid, publicKey: try oneTime.publicKey())
+        let keyID = try CloudClient.checkedKeyID(issued.keyId)
+        guard let expires = issued.expiresAt, let renew = issued.renewAfter, renew < expires,
+              issued.access == "full" || issued.access == "read_delete" else {
+            throw DeviceAccessError.malformed("a Mac's key without a valid expiry")
+        }
+        guard let sealed = Base64URL.decode(issued.sealedSecret) else { throw DeviceAccessError.malformed("the sealed secret") }
+        let secret: SecretBytes
+        do {
+            secret = try oneTime.open(sealed, installationID: installationID, vaultUid: uidBytes, keyID: keyID).secretBytes()
+        } catch {
+            // Not for this Mac, vault or key id: never used. The cloud revokes an unacknowledged key itself.
+            throw DeviceAccessError.malformed("a sealed secret that doesn't open for this Mac")
+        }
+        try await client.acknowledgeStorageCredential(keyID)
+        let fresh = BucketKey(vaultUid: vaultUid, keyID: keyID, access: issued.access, bucket: issued.bucket,
+                              bucketID: issued.bucketId, s3Endpoint: issued.s3Endpoint, region: issued.region,
+                              expiresAt: Date(timeIntervalSince1970: TimeInterval(expires)),
+                              renewAfter: Date(timeIntervalSince1970: TimeInterval(renew)), secret: secret)
+        do { try store.save(fresh) } catch {
+            // Kept in memory only (a process without the credential lease); a relaunch renews.
+            Self.log.notice("device access: the storage key is kept in memory only: \(String(describing: error), privacy: .public)")
+        }
+        return fresh
+    }
+
     private func renew(now: Date) async {
         do {
-            let oneTime = try CredentialKey.generate()
-            let issued = try await client.requestStorageCredential(vaultUid, publicKey: try oneTime.publicKey())
-            let keyID = try CloudClient.checkedKeyID(issued.keyId)
-            guard let expires = issued.expiresAt, let renew = issued.renewAfter, renew < expires,
-                  issued.access == "full" || issued.access == "read_delete" else {
-                throw DeviceAccessError.malformed("a Mac's key without a valid expiry")
-            }
-            guard let sealed = Base64URL.decode(issued.sealedSecret) else { throw DeviceAccessError.malformed("the sealed secret") }
-            let secret: SecretBytes
-            do {
-                secret = try oneTime.open(sealed, installationID: installationID, vaultUid: uidBytes, keyID: keyID).secretBytes()
-            } catch {
-                // Not for this Mac, vault or key id: never used. The cloud revokes an unacknowledged key itself.
-                throw DeviceAccessError.malformed("a sealed secret that doesn't open for this Mac")
-            }
-            try await client.acknowledgeStorageCredential(keyID)
-            let fresh = BucketKey(vaultUid: vaultUid, keyID: keyID, access: issued.access, bucket: issued.bucket,
-                                  bucketID: issued.bucketId, s3Endpoint: issued.s3Endpoint, region: issued.region,
-                                  expiresAt: Date(timeIntervalSince1970: TimeInterval(expires)),
-                                  renewAfter: Date(timeIntervalSince1970: TimeInterval(renew)), secret: secret)
-            do { try store.save(fresh) } catch {
-                // Kept in memory only (a process without the credential lease); a relaunch renews.
-                Self.log.notice("device access: the storage key is kept in memory only: \(String(describing: error), privacy: .public)")
-            }
-            key = fresh
+            key = try await issueKey()
             failures = 0
             renewNow = false
             resumed = false

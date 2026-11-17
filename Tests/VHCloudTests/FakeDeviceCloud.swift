@@ -124,6 +124,12 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
     var endpoint = "https://s3.us-west-004.backblazeb2.test"
     var region = "us-west-004"
     var issueAs: (keyID: String, secret: Data)?
+    /// Renewal while leaving: the daemon's side is in vaulthalla-cloud branch feat/desktop-renew-while-ejecting (not yet
+    /// merged). While the vault's bucket is `ejecting` and the cloud can still issue (before the ejection destroys its own
+    /// credential, which `runEjectionJob` stands for), the holding Mac gets keys as before; afterwards 409 `ejecting`,
+    /// and `ejected` for an ejected bucket. `sendRenewable` adds the caller's key view's field (its name not final).
+    var issueWhileEjecting = false
+    var sendRenewable = false
     private var counter = 0
 
     init(clock: ManualClock) { self.clock = clock }
@@ -270,6 +276,7 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
             }
             let waitedLongEnough = clock.now >= requested + Self.ejectWaitHours * 3600
             if !unconverted.isEmpty, !waitedLongEnough { return false }
+            issueWhileEjecting = false  // the destroy step: the cloud can't make keys for these buckets any more
             for uid in order where vaults[uid]!.bucketState == "ejecting" {
                 for i in vaults[uid]!.keys.indices where !["revoking", "revoked"].contains(vaults[uid]!.keys[i].state)
                     && vaults[uid]!.keys[i].installation != vaults[uid]!.holder {
@@ -377,6 +384,10 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
             out["desktop"] = NSNull()
         }
         out["credential"] = keyView(v, installation)
+        if sendRenewable, v.bucketState == "ejecting" || v.bucketState == "ejected", var own = out["credential"] as? [String: Any] {
+            own["renewable"] = v.bucketState == "ejecting" && issueWhileEjecting
+            out["credential"] = own
+        }
         // movedFromDesktop: this Mac's hold removed as `moved`, a replica active, and no hold of its own again.
         if v.holds.contains(where: { $0.installation == installation && $0.removedReason == "moved" }),
            !v.replicas.isEmpty, !v.holds.contains(where: { $0.installation == installation && $0.active }) {
@@ -572,12 +583,18 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
             guard offlineCopy else {
                 return refuse(409, "conflict", "the account key's offline copy isn't confirmed yet", reason: "account_key_unconfirmed")
             }
-            if v.bucketState != "ready" {
+            let renewingWhileEjecting = v.bucketState == "ejecting" && issueWhileEjecting
+            if v.bucketState != "ready", !renewingWhileEjecting {
                 if v.bucketState == "off" { return refuse(409, "conflict", "this vault's storage is switched off", reason: "bucket_off") }
                 if v.bucketState == "ejecting" { return refuse(409, "conflict", "this account's storage is being ejected", reason: "ejecting") }
+                if v.bucketState == "ejected" {
+                    return refuse(409, "conflict", "this bucket was ejected: read it with keys of your own at the provider", reason: "ejected")
+                }
                 return refuse(409, "conflict", "this vault's bucket isn't ready", reason: "bucket_not_ready")
             }
-            if let e = ejection, e != "refused" { return refuse(409, "conflict", "this account's storage is being ejected", reason: "ejecting") }
+            if let e = ejection, e != "refused", !renewingWhileEjecting {
+                return refuse(409, "conflict", "this account's storage is being ejected", reason: "ejecting")
+            }
             if storageAccess == "none" {
                 return refuse(402, "payment_required", "managed storage needs an active plan (\(cause))", reason: "payment_required",
                               details: ["cause": cause])

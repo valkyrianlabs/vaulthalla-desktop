@@ -160,6 +160,9 @@ public actor DesktopVaults {
     /// The vaults this Mac holds or held.
     public func records() -> [DesktopVaultRecord] { (try? registry.load()) ?? [] }
 
+    /// Whether `uid` left managed storage (recorded on this Mac: no cloud needed to know it).
+    public nonisolated func hasLeftManagedStorage(_ uid: String) -> Bool { (try? bucketKeys.hasLeftManagedStorage(uid)) == true }
+
     public func session(_ uid: String) -> DesktopVaultSession? { sessions[uid] }
 
     // MARK: readiness

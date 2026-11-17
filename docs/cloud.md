@@ -77,7 +77,7 @@ sync engine:
   (`hold_reassigned`) stops until the account holder places it here again, which the next view shows and which
   restarts it; `released` (this Mac) and `moved` (`moved_to`, a server) stop the same way; an unlinked Mac stays
   stopped. Every stop keeps local files. A bucket `ejecting` or `ejected` converts the vault in place instead: reported,
-  synced on the key in hand until it ends, then the person's own key ([`desktop-vaults.md`](desktop-vaults.md),
+  synced on the key in hand (renewed while the cloud still issues) until the last one ends, then the person's own key ([`desktop-vaults.md`](desktop-vaults.md),
   "Leaving managed storage").
 - **The secret** lives in memory (`SecretBytes`) and in the keychain group shared with the File Provider extension (`BucketKeyStore`:
   `storage-key.<uid>` says what the key is, `storage-key.<uid>.<key id>` holds the secret's bytes, written only by the

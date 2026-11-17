@@ -97,6 +97,9 @@ public struct BucketKeyStore: Sendable {
         /// The vault left managed storage (an ejection was seen): kept, with the bucket's location, whatever happens
         /// to the key, so the vault never needs the cloud to say so again. nil in items written before it existed.
         var leftManaged: Bool?
+        /// While leaving managed storage: the cloud said it issues no more keys for the bucket (409 `ejecting` or
+        /// `ejected`, or its key view said so), so the key in hand is the last one. nil before it was said.
+        var renewalOver: Bool?
 
         init(keyID: String, access: String, bucket: String, bucketID: String, s3Endpoint: String, region: String,
              expiresAt: Int64, renewAfter: Int64, revoked: Bool, revokedReason: String? = nil, origin: String? = nil,
@@ -170,6 +173,17 @@ public struct BucketKeyStore: Sendable {
         try items.write(Self.item(uid), JSONEncoder().encode(m), operation: "record that a vault left managed storage")
     }
 
+    /// Records that the cloud issues no more keys for a vault leaving managed storage (kept across a relaunch, and
+    /// when the key in hand is forgotten). Only on a vault already recorded as having left.
+    public func markRenewalOver(_ uid: String) throws {
+        guard var m = try metadata(uid), m.leftManaged == true, m.renewalOver != true else { return }
+        m.renewalOver = true
+        try items.write(Self.item(uid), JSONEncoder().encode(m), operation: "record that a vault's key is the last one")
+    }
+
+    /// Whether the cloud said it issues no more keys for this vault (see ``markRenewalOver(_:)``).
+    public func renewalIsOver(_ uid: String) throws -> Bool { try metadata(uid)?.renewalOver == true }
+
     /// The cloud's reason when it revoked the last key and the person hasn't asked for a new one; nil otherwise (and for
     /// a vault that left managed storage, which has no cloud to revoke its keys).
     public func revokedReason(_ uid: String) throws -> String? {
@@ -191,7 +205,10 @@ public struct BucketKeyStore: Sendable {
         defer { raw.resetBytes(in: 0 ..< raw.count) }
         try items.write(Self.secretItem(key.vaultUid, key.keyID), raw, operation: "store a storage key")
         var m = key.metadata()
-        if previous?.leftManaged == true { m.leftManaged = true }  // a vault that left managed storage stays left
+        if previous?.leftManaged == true {  // a vault that left managed storage stays left (and its renewal's end stays)
+            m.leftManaged = true
+            m.renewalOver = previous?.renewalOver
+        }
         try items.write(Self.item(key.vaultUid), JSONEncoder().encode(m), operation: "store a storage key")
         if let previous, !previous.keyID.isEmpty, previous.keyID != key.keyID {
             try? items.delete(Self.secretItem(key.vaultUid, previous.keyID), operation: "forget a storage key")

@@ -49,9 +49,13 @@ public struct CloudStorage: Codable, Hashable, Sendable {
         /// replaced, access_changed, not_delivered, ejection, other.
         public var revokedReason: String?
         public var revokedAt: Int64?
+        /// While the vault's bucket is `ejecting`: whether the cloud still issues this Mac a key for it (false once it
+        /// destroyed its own credential). Being added by vaulthalla-cloud branch feat/desktop-renew-while-ejecting (not
+        /// merged; the name isn't final): absent means "try, and stop on 409 `ejecting` / `ejected`".
+        public var renewable: Bool?
 
         public init(keyId: String? = nil, state: String, access: String? = nil, expiresAt: Int64? = nil, renewAfter: Int64? = nil,
-                    revokedReason: String? = nil, revokedAt: Int64? = nil) {
+                    revokedReason: String? = nil, revokedAt: Int64? = nil, renewable: Bool? = nil) {
             self.keyId = keyId
             self.state = state
             self.access = access
@@ -59,6 +63,7 @@ public struct CloudStorage: Codable, Hashable, Sendable {
             self.renewAfter = renewAfter
             self.revokedReason = revokedReason
             self.revokedAt = revokedAt
+            self.renewable = renewable
         }
     }
 

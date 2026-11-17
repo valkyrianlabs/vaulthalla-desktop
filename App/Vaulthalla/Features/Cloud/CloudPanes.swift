@@ -29,6 +29,8 @@ struct CloudView: View {
                         }
                     }
                     if cloud.phase != .linked {
+                        // Vaults whose storage is in the person's own account need no link: they come first.
+                        if let desktop = cloud.desktopVaults, !desktop.leftVaults.isEmpty { LeftVaultsPanel(desktop: desktop) }
                         CloudLinkPanel(cloud: cloud)
                     } else {
                         switch section {
@@ -44,6 +46,7 @@ struct CloudView: View {
                 .frame(maxWidth: .infinity, alignment: .topLeading)
             }
             .task(id: section) {
+                await cloud.desktopVaults?.startLeft()
                 if cloud.phase == .linked, cloud.lastRefresh.map({ Date.now.timeIntervalSince($0) > 30 }) ?? true {
                     await cloud.refresh()
                 }
@@ -543,6 +546,7 @@ private struct CloudStoragePane: View {
 
     var body: some View {
         let nodes = app.nodes.filter { $0.pairing.isPaired && cloud.hasManagedStorage($0.id) }
+        if let desktop = cloud.desktopVaults, !desktop.leftVaults.isEmpty { LeftVaultsPanel(desktop: desktop) }
         if !cloud.macHeldVaults.isEmpty || cloud.desktopVaults != nil { CloudMacVaultsPanel(cloud: cloud) }
         if nodes.isEmpty, cloud.macHeldVaults.isEmpty, cloud.desktopVaults == nil {
             Panel {
@@ -690,7 +694,8 @@ private struct CloudMacVaultsPanel: View {
         let me = cloud.installation?.id ?? ""
         Panel(title: "Vaults kept by a Mac", subtitle: "A vault with no server, held by one Mac of your account.") {
             VStack(alignment: .leading, spacing: 12) {
-                ForEach(cloud.macHeldVaults) { v in
+                // Vaults that left managed storage are listed above (Vaults in your own storage), from this Mac's records.
+                ForEach(cloud.macHeldVaults.filter { cloud.desktopVaults?.hasLeft($0.vaultUid) != true }) { v in
                     let mine = v.desktop?.installationId == me
                     let holder = DeviceAccessWording.holder(v, thisMac: me, server: cloud.serverHolding(v.vaultUid))
                     HStack(alignment: .firstTextBaseline) {
@@ -778,6 +783,58 @@ private struct SheetUid: Identifiable {
     let id: String
 }
 
+/// Vaults this Mac holds whose storage is in the person's own provider account (they left managed storage), from this
+/// Mac's own records: shown whatever the link (unlinked, linking, the cloud unreachable), since they need none. Each
+/// says only what is true without the cloud: its name, where its storage is, the bucket, and its state; and takes the
+/// person's own key (the same sheet as everywhere).
+private struct LeftVaultsPanel: View {
+    var desktop: DesktopVaultsModel
+    @State private var owningKey: String?
+
+    var body: some View {
+        Panel(title: "Vaults in your own storage", subtitle: "Their storage is in your own storage provider account. This Mac syncs them with a key you made there.") {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(desktop.leftVaults) { r in
+                    let leaving = desktop.leaving(r.uid)
+                    let provider = DeviceAccessWording.providerName(leaving?.ejection?.provider)
+                    let state = desktop.leftState(r.uid)
+                    HStack(alignment: .firstTextBaseline) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(r.name).font(.headline)
+                            Text("In your own \(provider) account" + (leaving?.ejection?.location.map { ", bucket \u{201C}\($0.bucket)\u{201D}" } ?? ""))
+                                .font(.caption).foregroundStyle(.fgSubtle)
+                        }
+                        Spacer()
+                        StatusBadge(label: state.label, tone: tone(state.tone))
+                        Button(desktop.needsOwnKey(r.uid) ? "Enter Your Own Key\u{2026}"
+                               : leaving?.phase == .ownStorage ? "Use Another Key\u{2026}" : "Use Your Own Key\u{2026}") {
+                            owningKey = r.uid
+                        }
+                        .controlSize(.small)
+                        .disabled(leaving == nil)
+                    }
+                    if let line = desktop.leavingLine(r.uid) {
+                        Text(line.text).font(.caption).foregroundStyle(.fgMuted).fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+        .sheet(item: .init(get: { owningKey.map(SheetUid.init) }, set: { owningKey = $0?.id })) { item in
+            OwnKeySheet(desktop: desktop, uid: item.id)
+        }
+    }
+
+    private func tone(_ t: ManagedStorageWording.Tone) -> StatusTone {
+        switch t {
+        case .ok: .ok
+        case .info: .info
+        case .warn: .warn
+        case .danger: .danger
+        case .neutral: .unknown
+        }
+    }
+}
+
 /// Renames a vault this Mac holds: its name here and in Finder, and its sealed label (the name the portal and the
 /// account's other installations show), sealed to the account key so Vaulthalla Cloud never reads it.
 private struct RenameDesktopVaultSheet: View {
@@ -832,7 +889,7 @@ private struct OwnKeySheet: View {
         let bucket = leaving?.ejection?.location?.bucket
         VStack(alignment: .leading, spacing: 14) {
             Text("Your Own Key for \u{201C}\(desktop.name(uid) ?? "this vault")\u{201D}").font(.title2.bold())
-            Text("Your storage moved out of Vaulthalla Cloud: the bucket\(bucket.map { " \u{201C}\($0)\u{201D}" } ?? "") is yours now, in your own \(provider) account. Vaulthalla Cloud's key for it ends within a day and it gives no other, so this Mac needs a key you make there.")
+            Text("Your storage moved out of Vaulthalla Cloud: the bucket\(bucket.map { " \u{201C}\($0)\u{201D}" } ?? "") is yours now, in your own \(provider) account. The key this Mac used for it stops working once the move is done, and no other comes, so this Mac needs a key you make there.")
                 .fixedSize(horizontal: false, vertical: true)
             VStack(alignment: .leading, spacing: 4) {
                 Text("1. Sign in to \(provider) (it emailed you when the account became yours).")
