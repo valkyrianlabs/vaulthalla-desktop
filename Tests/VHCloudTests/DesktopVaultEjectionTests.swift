@@ -308,6 +308,116 @@ import VHRecovery
         await offline.closeAll()
     }
 
+    func keyRequests(_ mac: Mac) -> Int { mac.fake.sent.filter { $0.hasPrefix("POST ") && $0.contains("/credentials ") }.count }
+
+    /// While the bucket is `ejecting` and the cloud can still issue (vaulthalla-cloud feat/desktop-renew-while-ejecting,
+    /// in the fake as `issueWhileEjecting`), the key is renewed at `renew_after` as a held vault's; a transient failure
+    /// backs off and retries; the first 409 ends renewal for good, across a relaunch; the last key then ends as before.
+    @Test func whileEjectingTheKeyIsRenewedUntilA409EndsItForGood() async throws {
+        let (mac, uid, _) = try await setUp()
+        let s = try await session(mac, uid)
+        mac.fake.issueWhileEjecting = true
+        mac.fake.ownerEjects()
+        try await stepWithView(mac, uid)
+        guard case .leaving(let first) = await s.access.phase else { Issue.record("not leaving"); return }
+        let me = try #require(try mac.client.link()?.installationID)
+
+        // Renewed at renew_after: the same exchange, a later end.
+        let asked = keyRequests(mac)
+        mac.clock.set(try #require(await s.access.status.renewAfter) + 1)
+        _ = await s.access.step()
+        guard case .leaving(let second) = await s.access.phase else { Issue.record("not leaving"); return }
+        #expect(second > first && keyRequests(mac) == asked + 1)
+        #expect(mac.fake.activeKey(uid)?.expiresAt == second)
+        #expect(try BucketKeyStore(items: mac.items).hasLeftManagedStorage(uid))
+        try await write(s, "renewed.txt")
+        await s.syncNow(force: true)
+        #expect(await s.status.state == .upToDate)
+        #expect(await s.status.sentence.contains("or later"))
+
+        // A transient failure backs off and retries; the vault keeps leaving.
+        mac.clock.set(try #require(await s.access.status.renewAfter) + 1)
+        mac.fake.failNext = (503, "unavailable", "provider_unavailable", nil)
+        mac.fake.failNextMatching = "/credentials"  // the view is read first; the key request is what fails
+        _ = await s.access.step()
+        #expect(await s.access.phase == .leaving(keyUntil: second))
+        mac.clock.advance(31)
+        _ = await s.access.step()
+        guard case .leaving(let third) = await s.access.phase else { Issue.record("not leaving"); return }
+        #expect(third > second)
+
+        // The cloud destroyed its own credential: 409 ejecting ends renewal, recorded.
+        mac.fake.issueWhileEjecting = false
+        mac.clock.set(try #require(await s.access.status.renewAfter) + 1)
+        let before409 = keyRequests(mac)
+        _ = await s.access.step()
+        #expect(keyRequests(mac) == before409 + 1)
+        #expect(await s.access.phase == .leaving(keyUntil: third))
+        #expect(await s.access.status.ejection?.renewalOver == true)
+        #expect(try BucketKeyStore(items: mac.items).renewalIsOver(uid))
+        mac.clock.advance(3600)
+        _ = await s.access.step()
+        #expect(keyRequests(mac) == before409 + 1)  // asked once, never again
+
+        // Across a relaunch: the key in hand is the last; nothing is asked; it ends as before.
+        await mac.vaults.closeAll()
+        let again = try DeviceAccess(client: mac.client, vaultUid: uid, installationID: me, store: BucketKeyStore(items: mac.items),
+                                     clock: mac.clock)
+        #expect(await again.phase == .leaving(keyUntil: third))
+        _ = await again.step()
+        #expect(keyRequests(mac) == before409 + 1)
+        mac.clock.set(third + 1)
+        _ = await again.step()
+        #expect(await again.phase == .needsOwnKey(.cloudKeyEnded))
+        #expect(keyRequests(mac) == before409 + 1)
+    }
+
+    /// The cloud's key view saying renewal is over ends it without a request; a vault on the person's own key asks the
+    /// cloud for nothing, even while the cloud could still issue.
+    @Test func theKeyViewEndsRenewalAndTheOwnKeyNeverAsks() async throws {
+        let (mac, uid, _) = try await setUp()
+        let s = try await session(mac, uid)
+        mac.fake.issueWhileEjecting = true
+        mac.fake.sendRenewable = true
+        mac.fake.ownerEjects()
+        try await stepWithView(mac, uid)
+        #expect(await s.access.status.ejection?.renewalOver == false)
+        let asked = keyRequests(mac)
+        mac.fake.issueWhileEjecting = false
+        mac.clock.advance(16 * 60)  // the view is read again, before renew_after
+        _ = await s.access.step()
+        #expect(await s.access.status.ejection?.renewalOver == true)
+        #expect(keyRequests(mac) == asked)
+
+        mac.fake.issueWhileEjecting = true
+        mac.policy.accept { [fake = mac.fake] id in fake.providerAccepts(id) || id == Self.ownID }
+        try await useOwnKey(mac, uid)  // taken early, while the key in hand still works
+        #expect(await s.access.phase == .ownStorage)
+        for _ in 0 ..< 4 {
+            mac.clock.advance(13 * 3600)
+            _ = await s.access.step()
+        }
+        #expect(keyRequests(mac) == asked)
+        #expect(await s.access.phase == .ownStorage)
+    }
+
+    /// Once the ejection is complete the bucket is `ejected`: the view ends renewal for good and no key is asked for (the
+    /// daemon would answer `bucket_not_ready`, an ejected bucket having no live row).
+    @Test func anEjectedBucketEndsRenewalWithoutARequest() async throws {
+        let (mac, uid, _) = try await setUp()
+        let s = try await session(mac, uid)
+        mac.fake.issueWhileEjecting = true
+        mac.fake.ownerEjects()
+        try await stepWithView(mac, uid)
+        #expect(await s.access.status.ejection?.renewalOver == false)
+        #expect(mac.fake.runEjectionJob())
+        let asked = keyRequests(mac)
+        mac.clock.advance(13 * 3600)  // past renew_after: the view is read first
+        _ = await s.access.step()
+        #expect(await s.access.status.ejection?.renewalOver == true)
+        #expect(keyRequests(mac) == asked)
+    }
+
     @Test func aMacOfflineThroughTheEjectionReportsLateAndSwitches() async throws {
         let (mac, uid, _) = try await setUp()
         let s = try await session(mac, uid)

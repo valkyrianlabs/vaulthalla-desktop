@@ -130,7 +130,8 @@ public enum DeviceAccessWording {
         let kept = "Nothing on this Mac is deleted: the vault's folders and names, and changes not sent yet, stay here. Opening files and adding new ones needs the key."
         switch phase {
         case .leaving(let until):
-            return Line(text: "Your storage is moving to your own \(p) account: Vaulthalla Cloud no longer keeps it. This vault keeps syncing on its current key until \(when(until, now: now)); after that it needs a key you make in your \(p) account for the bucket\(bucket).",
+            let renewed = ejection?.renewalOver == true ? "" : " or later (the key is renewed while the move lasts)"
+            return Line(text: "Your storage is moving to your own \(p) account: Vaulthalla Cloud no longer keeps it. This vault keeps syncing on its current key until \(when(until, now: now))\(renewed); after that it needs a key you make in your \(p) account for the bucket\(bucket).",
                         tone: .info)
         case .needsOwnKey(.cloudKeyEnded):
             if ejection?.complete == true {

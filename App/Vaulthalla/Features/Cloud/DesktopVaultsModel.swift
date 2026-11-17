@@ -33,6 +33,36 @@ final class DesktopVaultsModel {
         // group on first use; this app alone writes them (it holds the lease) and alone talks to the cloud.
         vaults = DesktopVaults(client: client, account: account, items: items, container: container,
                                vaultItems: .app(lease: items.lease))
+        records = (try? vaults.registry.load()) ?? []
+    }
+
+    /// Vaults this Mac holds that left managed storage: their storage is in the person's own provider account. Known from
+    /// this Mac's own records, whatever its link to the cloud.
+    var leftVaults: [DesktopVaultRecord] { records.filter { $0.hold == .holding && vaults.hasLeftManagedStorage($0.uid) } }
+
+    func hasLeft(_ uid: String) -> Bool { vaults.hasLeftManagedStorage(uid) }
+
+    /// Opens the vaults that left managed storage, linked or not (they need no cloud), so their state shows and they take
+    /// the person's own key. The rest open with ``start()`` once this Mac is linked.
+    func startLeft() async {
+        records = await vaults.records()
+        let left = leftVaults
+        guard !left.isEmpty else { return }
+        if !started {
+            inFinder = Set(((try? await NSFileProviderManager.domains()) ?? []).compactMap {
+                DesktopVaultDomainID(identifier: $0.identifier.rawValue)?.vaultUid
+            })
+        }
+        for r in left where await vaults.session(r.uid) == nil {
+            do throws(DesktopVaultError) { _ = try await vaults.open(r.uid, engine: !inFinder.contains(r.uid)) } catch {
+                problem = error.sentence
+            }
+        }
+        if refusalObserver == nil {
+            let vaults = vaults
+            refusalObserver = vaults.refusals.observe { Task { await vaults.followRefusals() } }
+        }
+        await observeSessions()
     }
 
     /// The vaults this Mac holds, open, once per launch (after the link is known).
@@ -50,7 +80,7 @@ final class DesktopVaultsModel {
             }
         }
         let vaults = vaults
-        refusalObserver = vaults.refusals.observe { Task { await vaults.followRefusals() } }
+        if refusalObserver == nil { refusalObserver = vaults.refusals.observe { Task { await vaults.followRefusals() } } }
         await observeSessions()
         await refresh()
     }
@@ -147,6 +177,23 @@ final class DesktopVaultsModel {
 
     /// Whether the vault can take the person's own key now (its storage is being ejected to them, or was).
     func takesOwnKey(_ uid: String) -> Bool { leaving(uid) != nil }
+
+    /// The vault's storage in the person's own account, in words (the line ``DeviceAccessWording/leaving`` says).
+    func leavingLine(_ uid: String) -> ManagedStorageWording.Line? {
+        guard let l = leaving(uid) else { return nil }
+        return DeviceAccessWording.leaving(l.phase, ejection: l.ejection, now: .now)
+    }
+
+    /// A short state for a vault that left managed storage.
+    func leftState(_ uid: String) -> (label: String, tone: ManagedStorageWording.Tone) {
+        switch leaving(uid)?.phase {
+        case .ownStorage?: ("On your own key", .ok)
+        case .needsOwnKey(.refused)?: ("Key refused", .danger)
+        case .needsOwnKey?: ("Needs your key", .warn)
+        case .leaving?: ("Moving", .info)
+        default: ("Opening", .neutral)
+        }
+    }
 
     /// Whether the vault is paused until the person's own key.
     func needsOwnKey(_ uid: String) -> Bool {

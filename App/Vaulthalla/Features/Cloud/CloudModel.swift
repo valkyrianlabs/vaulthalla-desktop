@@ -145,7 +145,8 @@ final class CloudModel {
     }
 
     /// Whether the section shows: the defaults switch, or a Mac already linked.
-    var isVisible: Bool { Self.isEnabledByDefaults || phase == .linked }
+    /// A vault this Mac holds that left managed storage shows the section too, linked or not: its own key is entered there.
+    var isVisible: Bool { Self.isEnabledByDefaults || phase == .linked || desktopVaults?.leftVaults.isEmpty == false }
     var isOwner: Bool { items.role == .owner }
 
     // MARK: - messages

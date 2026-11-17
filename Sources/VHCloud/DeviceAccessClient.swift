@@ -49,9 +49,14 @@ public struct CloudStorage: Codable, Hashable, Sendable {
         /// replaced, access_changed, not_delivered, ejection, other.
         public var revokedReason: String?
         public var revokedAt: Int64?
+        /// `renewable_during_ejection` (vaulthalla-cloud managed-storage.md "As built" 32), on a Mac's own key view: nil
+        /// outside an ejection; true while the cloud still issues this Mac a key for the `ejecting` bucket; false once
+        /// the cloud destroyed its own credential, once `ejected`, or when this Mac can't renew. Absent from a daemon
+        /// without it, which means "try, and stop on 409 `ejecting`".
+        public var renewableDuringEjection: Bool?
 
         public init(keyId: String? = nil, state: String, access: String? = nil, expiresAt: Int64? = nil, renewAfter: Int64? = nil,
-                    revokedReason: String? = nil, revokedAt: Int64? = nil) {
+                    revokedReason: String? = nil, revokedAt: Int64? = nil, renewableDuringEjection: Bool? = nil) {
             self.keyId = keyId
             self.state = state
             self.access = access
@@ -59,6 +64,7 @@ public struct CloudStorage: Codable, Hashable, Sendable {
             self.renewAfter = renewAfter
             self.revokedReason = revokedReason
             self.revokedAt = revokedAt
+            self.renewableDuringEjection = renewableDuringEjection
         }
     }
 
