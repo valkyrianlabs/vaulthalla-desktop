@@ -90,6 +90,17 @@ public struct KEV1Header: Hashable, Sendable {
 /// Sealed vault labels (`vh.vault-label.v1`).
 public enum VaultLabel {
     public static let sealedSize = Int(VL_KEYKIT_LABEL_SEALED_SIZE)
+    /// The longest name a label holds, in UTF-8 bytes (it is padded to this, so the label's size says nothing).
+    public static let maxNameBytes = 128
+
+    /// `name` as a label can hold it, as a server cuts it (vaulthalla-server `ops::cloud_storage::sealableName`):
+    /// control characters dropped, cut to 128 bytes of UTF-8 at a character boundary, "vault" when nothing is left.
+    public static func sealableName(_ name: String) -> String {
+        var scalars = String.UnicodeScalarView(name.unicodeScalars.filter { $0.value >= 0x20 && $0.value != 0x7F })
+        while String(scalars).utf8.count > maxNameBytes { scalars.removeLast() }
+        let out = String(scalars)
+        return out.isEmpty ? "vault" : out
+    }
 
     /// Seals a vault's name for `vaultUid` (16 bytes) to the account key of `statement`.
     public static func seal(_ name: String, statement: KeyStatement, vaultUid: Data) throws(KeykitError) -> Data {

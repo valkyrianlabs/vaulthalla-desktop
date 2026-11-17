@@ -20,7 +20,8 @@ key's flows, node mapping, portal links and wording, Desktop-only vault access),
   (the cloud's `node_id` is only a hint). On a node waiting for the account key that this Mac holds: "Use This
   Account's Recovery Key", `cloud.key.confirm` answered with this Mac's approval key (Touch ID, no digits compared);
   "Set Up Approvals" registers that key once, approved in the node's web console.
-- **Vaults**: every vault by its uid, where it is, and whether the account key covers it; names open with the key.
+- **Vaults**: every vault by its name (this Mac's own Desktop-only vaults by their record; others by their sealed
+  label, opened with the key: "Show Names"), where it is, and whether the account key covers it.
 - **Recovery Key**: create the account's key (shown once, two groups typed back, then approved in the browser), get it
   from another device (a transfer whose code both screens show) or by typing the recovery code, the fingerprint
   computed here, the offline copy (print, or record one), rotation, devices asking for the key.
@@ -47,8 +48,9 @@ sync engine:
 - **Routes** (`DeviceAccessClient.swift`): `GET /v1/storage` (`CloudStorage`, with `desktop`, the caller's own
   `credential` and `moved_to`), `GET /v1/vaults/{uid}` (`CloudVault.desktop`), registering a vault with no deployment
   (`POST /v1/vaults`, idempotent for the Mac that holds it), the writer's storage switch
-  (`PUT /v1/storage/vaults/{uid}`), the credential request and its acknowledgement, and the release
-  (`DELETE /v1/vaults/{uid}/replica`). The error envelope's `reason` is kept (`CloudError.declined`) and mapped to
+  (`PUT /v1/storage/vaults/{uid}`), the credential request and its acknowledgement, the release
+  (`DELETE /v1/vaults/{uid}/replica`), the sealed label (`PUT /v1/vaults/{uid}/label`), and the ejection's progress and
+  report (`GET /v1/storage/eject`, `POST /v1/storage/vaults/{uid}/ejected`). The error envelope's `reason` is kept (`CloudError.declined`) and mapped to
   `DeviceAccessError`, one case per reason the daemon gives (managed-storage.md "As built" 27's table: `held_by_server`
   and `held_by_desktop` with the holder's name from the envelope's `details`, `unplaced`, `no_such_vault`,
   `no_such_key`, `key_<state>`, `bucket_not_ready`, `bucket_off`, `bucket_deleting`, `ejecting`, `ejected`,
@@ -74,7 +76,9 @@ sync engine:
   Losing the vault follows `released`: taken off by the account holder (`hold_removed`) or given to another Mac
   (`hold_reassigned`) stops until the account holder places it here again, which the next view shows and which
   restarts it; `released` (this Mac) and `moved` (`moved_to`, a server) stop the same way; an unlinked Mac stays
-  stopped. Every stop keeps local files.
+  stopped. Every stop keeps local files. A bucket `ejecting` or `ejected` converts the vault in place instead: reported,
+  synced on the key in hand until it ends, then the person's own key ([`desktop-vaults.md`](desktop-vaults.md),
+  "Leaving managed storage").
 - **The secret** lives in memory (`SecretBytes`) and in the keychain group shared with the File Provider extension (`BucketKeyStore`:
   `storage-key.<uid>` says what the key is, `storage-key.<uid>.<key id>` holds the secret's bytes, written only by the
   credential owner), never in UserDefaults, a file, a log or an error; it is deleted when the key is replaced,

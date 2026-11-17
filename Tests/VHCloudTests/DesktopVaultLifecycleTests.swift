@@ -6,38 +6,71 @@ import VHKeykit
 import VHRecovery
 @testable import VHVault
 
-/// The bucket as a provider that checks keys: every request needs the key ``DeviceAccess`` holds (refused otherwise,
-/// as moto refuses an unknown key), over the B2-like in-memory bucket.
+/// What the provider behind a ``KeyedBucket`` takes, changed by a test as it goes: which key ids it accepts now, and
+/// which key ids reach another bucket than the vault's (a key the person made for another bucket).
+final class ProviderPolicy: @unchecked Sendable {
+    private let lock = NSLock()
+    private var acceptsNow: @Sendable (String) -> Bool = { _ in true }
+    private var buckets: [String: MemoryBucket] = [:]
+    func accept(_ rule: @escaping @Sendable (String) -> Bool) { lock.withLock { acceptsNow = rule } }
+    func route(_ keyID: String, to bucket: MemoryBucket) { lock.withLock { buckets[keyID] = bucket } }
+    func accepts(_ id: String) -> Bool { lock.withLock { acceptsNow }(id) }
+    func bucket(for id: String) -> MemoryBucket? { lock.withLock { buckets[id] } }
+    private var made: [KeyedBucket] = []
+    func record(_ store: KeyedBucket) { lock.withLock { made.append(store) } }
+    /// Every store made over this provider (a session's, a key check's), newest last.
+    var stores: [KeyedBucket] { lock.withLock { made } }
+}
+
+/// The bucket as a provider that checks keys: every request needs a key (refused 403 otherwise, as moto refuses an
+/// unknown key), over the B2-like in-memory bucket (or the one ``ProviderPolicy`` routes the key to). Counts the
+/// vault bucket's writes and the key ids requests were signed with, so a test sees nothing was written before a switch.
 final class KeyedBucket: VaultStore, @unchecked Sendable {
     let inner: MemoryBucket
-    let access: DeviceAccess
+    let credentials: any S3CredentialSource
+    let policy: ProviderPolicy
+    private let lock = NSLock()
+    private var writeCount = 0
+    private var presented: [String] = []
     var versionLog: Bool { inner.versionLog }
+    var writes: Int { lock.withLock { writeCount } }
+    /// Every key id a request was signed with, in order.
+    var keyIDs: [String] { lock.withLock { presented } }
 
-    init(_ inner: MemoryBucket, access: DeviceAccess) {
+    init(_ inner: MemoryBucket, credentials: any S3CredentialSource, policy: ProviderPolicy = ProviderPolicy()) {
         self.inner = inner
-        self.access = access
+        self.credentials = credentials
+        self.policy = policy
     }
 
-    private func gate() throws(StoreError) {
-        let access = access
-        guard blocking({ await access.withS3Credentials { _ in true } ?? false }) else { throw .failed("no key: 403") }
+    private func gate(write: Bool = false) throws(StoreError) -> MemoryBucket {
+        let credentials = credentials
+        guard let id = blocking({ await credentials.withS3Credentials { $0.accessKeyID } ?? nil }) else { throw .failed("no key: 403") }
+        lock.withLock { presented.append(id) }
+        guard policy.accepts(id) else {
+            blocking { await credentials.providerRefused() }
+            throw .failed("HTTP 403 InvalidAccessKeyId")
+        }
+        let target = policy.bucket(for: id) ?? inner
+        if write, target === inner { lock.withLock { writeCount += 1 } }
+        return target
     }
 
-    func get(_ key: String, versionID: String?) throws(StoreError) -> ObjectBody { try gate(); return try inner.get(key, versionID: versionID) }
+    func get(_ key: String, versionID: String?) throws(StoreError) -> ObjectBody { try gate().get(key, versionID: versionID) }
     func getRange(_ key: String, versionID: String?, offset: UInt64, length: UInt64) throws(StoreError) -> (bytes: Data, total: UInt64) {
-        try gate(); return try inner.getRange(key, versionID: versionID, offset: offset, length: length)
+        try gate().getRange(key, versionID: versionID, offset: offset, length: length)
     }
-    func head(_ key: String) throws(StoreError) -> StoredObject { try gate(); return try inner.head(key) }
+    func head(_ key: String) throws(StoreError) -> StoredObject { try gate().head(key) }
     func put(_ key: String, _ bytes: UnsafeRawBufferPointer, condition: PutCondition) throws(StoreError) -> StoredObject {
-        try gate(); return try inner.put(key, bytes, condition: condition)
+        try gate(write: true).put(key, bytes, condition: condition)
     }
-    func list(prefix: String) throws(StoreError) -> [ListedObject] { try gate(); return try inner.list(prefix: prefix) }
+    func list(prefix: String) throws(StoreError) -> [ListedObject] { try gate().list(prefix: prefix) }
     func versions(_ key: String, stopAt: String?, underPrefix: Bool) throws(StoreError) -> [ListedVersion] {
-        try gate(); return try inner.versions(key, stopAt: stopAt, underPrefix: underPrefix)
+        try gate().versions(key, stopAt: stopAt, underPrefix: underPrefix)
     }
-    func remove(_ key: String, versionID: String?) throws(StoreError) { try gate(); try inner.remove(key, versionID: versionID) }
+    func remove(_ key: String, versionID: String?) throws(StoreError) { try gate(write: true).remove(key, versionID: versionID) }
     func beginContent(_ key: String, size: UInt64?) throws(StoreError) -> any ContentUpload {
-        try gate(); return try inner.beginContent(key, size: size)
+        try gate(write: true).beginContent(key, size: size)
     }
 }
 
@@ -58,6 +91,9 @@ final class KeyedBucket: VaultStore, @unchecked Sendable {
         let items: LeasedAccountItems
         let container: URL
         let bucket: MemoryBucket
+        let policy = ProviderPolicy()
+        /// Writes to the vault's bucket through any store the vaults made.
+        var bucketWrites: Int { policy.stores.reduce(0) { $0 + $1.writes } }
         var vaults: DesktopVaults!
 
         init(fake: FakeDeviceCloud, clock: ManualClock, bucket: MemoryBucket) async throws {
@@ -81,9 +117,13 @@ final class KeyedBucket: VaultStore, @unchecked Sendable {
             var sync = DesktopVaultSession.Settings()
             sync.automatic = false
             let bucket = bucket
+            let policy = policy
             return DesktopVaults(client: client, account: account, items: items, container: container,
-                                 makeStore: { access, _ in KeyedBucket(bucket, access: access) }, clock: clock,
-                                 syncSettings: sync, bucketWait: 5)
+                                 makeStore: { credentials, _ in
+                                     let store = KeyedBucket(bucket, credentials: credentials, policy: policy)
+                                     policy.record(store)
+                                     return store
+                                 }, clock: clock, syncSettings: sync, bucketWait: 5)
         }
 
         func receive(_ key: AccountKey) async throws { _ = try await account.receive(recoveryCode: try key.recoveryCode()) }

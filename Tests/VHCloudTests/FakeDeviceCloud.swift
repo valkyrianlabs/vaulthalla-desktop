@@ -24,8 +24,12 @@ final class ManualClock: DeviceAccessClock, @unchecked Sendable {
 /// `setVault`, `issueCredential`, `acknowledge`, the hooks that revoke keys, `publicRevokeReason`), `accounts::lastRelease`
 /// and `holderDetails`, and `src/http/Errors.cpp` (the error envelope with `reason` and `details`); every refusal of
 /// these routes carries its reason, as managed-storage.md "As built" 27's table lists them. The numbers are the daemon's defaults (`storage.desktop_key_minutes` 1440,
-/// `storage.desktop_renew_minutes` 720, `storage.credentials_per_hour` 10). Secrets are sealed with vl-keykit to the
-/// one-time key the request sends, exactly as the cloud does; linking and VHC1 verification are ``FakeCloud``'s.
+/// `storage.desktop_renew_minutes` 720, `storage.credentials_per_hour` 10, `storage.eject_wait_hours` 72). Secrets are
+/// sealed with vl-keykit to the one-time key the request sends, exactly as the cloud does; linking and VHC1
+/// verification are ``FakeCloud``'s. Also: the sealed vault label (`PUT /v1/vaults/{uid}/label`, `GET /v1/vaults`:
+/// Deployments.cpp) and the ejection (`POST /v1/storage/eject`'s effect, the `account.eject` job of Jobs.cpp
+/// `ejectAccount`, `GET /v1/storage/eject` and `POST /v1/storage/vaults/{uid}/ejected`: ManagedStorage.cpp `ejection`,
+/// `reportConverted`, `settleReports`).
 final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
     let base = FakeCloud()
     /// What a Mac recorded of each version's provenance (uid -> version), first upload wins, as the cloud keeps it.
@@ -78,6 +82,13 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
         var waitingReason: String?
         var enabled = false
         var keys: [Key] = []
+        /// The sealed label's bytes (240), as `vault.label` stores them; nil before one was sent.
+        var label: Data?
+        var labelSetAt: Date?
+        /// `storage_writer_report` kind `converted`: writer (`desktop:<installation>`) -> when.
+        var converted: [String: Date] = [:]
+        /// The bucket's `converted_at`, set once every waited-for writer reported (`settleReports`).
+        var convertedAt: Date?
         var holder: String? { holds.last(where: \.active)?.installation }
     }
 
@@ -90,10 +101,17 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
     var cause = "active"
     var offlineCopy = true
     var ejection: String?
+    var ejectionRequestedAt: Date?
+    static let ejectWaitHours: TimeInterval = 72
     var installationRevoked = false
     /// What Desktop sent, for the checks that no secret leaves it.
     var sent: [String] = []
     var credentialRequests = 0
+    /// `POST .../ejected` calls received.
+    var conversionReports = 0
+    /// A sealed label's first bytes (its magic), to check a label's structure as `label::sealedGeneration` does; nil
+    /// checks the size only.
+    var labelMagic: Data?
     /// Test switches: answer the next signed storage request with this failure; leave out a Mac key's expiry; seal
     /// to another installation's binding.
     var failNext: (status: Int, code: String, reason: String?, retryAfter: String?)?
@@ -101,6 +119,11 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
     /// The bucket is ready as soon as the switch goes on (no provisioning step to wait for).
     var provisionAtOnce = false
     var sealForAnotherInstallation = false
+    /// Where buckets are and what key the provider makes (the live test points them at moto and a key made there).
+    var bucketName: @Sendable (String) -> String = { "vhc-\($0)" }
+    var endpoint = "https://s3.us-west-004.backblazeb2.test"
+    var region = "us-west-004"
+    var issueAs: (keyID: String, secret: Data)?
     private var counter = 0
 
     init(clock: ManualClock) { self.clock = clock }
@@ -215,6 +238,62 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
         }
     }
 
+    /// `POST /v1/storage/eject` by the account holder (ManagedStorage `eject`): the ejection is `requested`, every
+    /// provisioned bucket `ejecting`, the portal's reader keys revoked (none here), buckets never provisioned deleted.
+    func ownerEjects() {
+        lock.withLock {
+            ejection = "requested"
+            ejectionRequestedAt = clock.now
+            for uid in order {
+                switch vaults[uid]!.bucketState {
+                case "ready", "off": vaults[uid]!.bucketState = "ejecting"
+                case "waiting": vaults[uid]!.bucketState = "deleted"; vaults[uid]!.enabled = false
+                default: break
+                }
+            }
+        }
+    }
+
+    /// One run of the `account.eject` job (Jobs.cpp `ejectAccount`): the subscription cancelled (`converting`), then it
+    /// waits while a vault a linked writer holds isn't converted, up to `storage.eject_wait_hours`; then the tidy step
+    /// (keys of installations that no longer hold the vault go, `ejection_tidy`; the holding Mac's key stays: it is the
+    /// customer's now and expires at the provider), the member keys destroyed, the member ejected: buckets `ejected`,
+    /// the ejection `complete`. Returns whether it finished.
+    @discardableResult
+    func runEjectionJob() -> Bool {
+        lock.withLock {
+            guard let state = ejection, state != "complete", state != "refused", let requested = ejectionRequestedAt else { return true }
+            if state == "requested" { ejection = "converting" }
+            let unconverted = order.filter { u in
+                let v = vaults[u]!
+                return v.bucketState == "ejecting" && v.convertedAt == nil && (v.holder != nil || !v.replicas.isEmpty)
+            }
+            let waitedLongEnough = clock.now >= requested + Self.ejectWaitHours * 3600
+            if !unconverted.isEmpty, !waitedLongEnough { return false }
+            for uid in order where vaults[uid]!.bucketState == "ejecting" {
+                for i in vaults[uid]!.keys.indices where !["revoking", "revoked"].contains(vaults[uid]!.keys[i].state)
+                    && vaults[uid]!.keys[i].installation != vaults[uid]!.holder {
+                    revoke(uid, i, "ejection_tidy")
+                }
+                vaults[uid]!.bucketState = "ejected"
+            }
+            ejection = "complete"
+            return true
+        }
+    }
+
+    /// The provider's view of a key: the bucket takes it while it is in force and before its own expiry (B2's
+    /// `validDurationInSeconds`; after an ejection only the provider's expiry ends the Mac's key).
+    func providerAccepts(_ keyID: String) -> Bool {
+        lock.withLock {
+            order.flatMap { vaults[$0]!.keys }.contains { $0.id == keyID && ["issued", "active", "superseded"].contains($0.state)
+                && clock.now < $0.expiresAt }
+        }
+    }
+
+    /// A label another installation sent (a server, or another Mac), as the cloud stores it.
+    func storeLabel(_ uid: String, _ sealed: Data) { lock.withLock { vaults[uid]!.label = sealed; vaults[uid]!.labelSetAt = clock.now } }
+
     func keys(_ uid: String) -> [Key] { lock.withLock { vaults[uid]!.keys } }
     func activeKey(_ uid: String) -> Key? { keys(uid).first { $0.state == "active" } }
 
@@ -284,11 +363,11 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
         let visible = ["ready", "off", "ejecting", "ejected"].contains(v.bucketState)
         var out: [String: Any] = ["vault_uid": v.uid, "enabled": v.enabled, "state": v.bucketState,
                                   "reason": v.waitingReason ?? NSNull(),
-                                  "bucket": visible ? "vhc-\(v.uid)" : NSNull(), "bucket_id": visible ? "b-\(v.uid)" : NSNull(),
-                                  "s3_endpoint": visible ? "https://s3.us-west-004.backblazeb2.test" : NSNull(),
-                                  "region": visible ? "us-west-004" : NSNull(),
+                                  "bucket": visible ? bucketName(v.uid) : NSNull(), "bucket_id": visible ? "b-\(v.uid)" : NSNull(),
+                                  "s3_endpoint": visible ? endpoint : NSNull(),
+                                  "region": visible ? region : NSNull(),
                                   "content_retention_days": v.bucketState == "none" ? NSNull() : 30,
-                                  "detached_at": NSNull(), "converted_at": NSNull()]
+                                  "detached_at": NSNull(), "converted_at": v.convertedAt.map { secs($0) as Any } ?? NSNull()]
         if let h = v.holder {
             var key = keyView(v, h)
             key["key_id"] = nil
@@ -319,7 +398,7 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
     }
 
     private func vaultJSON(_ v: Vault) -> [String: Any] {
-        var out: [String: Any] = ["vault_uid": v.uid, "label": NSNull(), "registered_at": 1,
+        var out: [String: Any] = ["vault_uid": v.uid, "label": v.label.map { Base64URL.encode($0) as Any } ?? NSNull(), "registered_at": 1,
                                   "replicas": v.replicas.map { ["deployment_id": $0, "origin_vault_id": 3, "added_at": 1] }]
         out["desktop"] = v.holder.map { ["installation_id": $0, "name": names[$0] ?? "Mac", "fingerprint": "aaaa-bbbb-cccc-dddd",
                                          "last_seen": NSNull(), "since": 1] as [String: Any] } ?? NSNull()
@@ -340,6 +419,13 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
     }
 
     private func secs(_ d: Date) -> Int64 { Int64(d.timeIntervalSince1970.rounded(.down)) }
+
+    /// ManagedStorage.cpp `ejectionJson` (the customer's address never appears).
+    private func ejectionJSON() -> Any {
+        ejection.map { ["state": $0, "requested_at": 1, "subscription_cancelled_at": NSNull(), "tidied_at": NSNull(),
+                        "credential_destroyed_at": NSNull(), "completed_at": $0 == "complete" ? 2 as Any : NSNull(),
+                        "refused": NSNull()] as [String: Any] } ?? NSNull()
+    }
 
     private func handle(_ request: URLRequest) -> (Data, HTTPURLResponse) {
         let path = request.url!.path
@@ -372,16 +458,65 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
         let me = mac
         switch (method, parts.count) {
         case ("GET", 2) where path == "/v1/storage":
-            let ejectionJSON: Any = ejection.map { ["state": $0, "requested_at": 1, "subscription_cancelled_at": NSNull(),
-                                                    "tidied_at": NSNull(), "credential_destroyed_at": NSNull(),
-                                                    "completed_at": NSNull(), "refused": NSNull()] as [String: Any] } ?? NSNull()
             return reply(200, ["entitlement": ["state": entitlementState.map { $0 as Any } ?? NSNull(), "plan": "storage_1tb",
                                                "storage_quota_bytes": 1_000_000_000_000, "storage_access": storageAccess,
                                                "cause": cause],
                                "usage": ["stored_bytes": NSNull(), "date": NSNull()],
-                               "account_key_offline_copy_confirmed": offlineCopy, "ejection": ejectionJSON,
+                               "account_key_offline_copy_confirmed": offlineCopy, "ejection": ejectionJSON(),
                                "ejection_portal_url": "https://app.vaulthalla.test/storage/leave", "provider": "fake",
                                "vaults": order.map { vaultView(vaults[$0]!, me) }])
+        // Deployments.cpp `GET /v1/vaults`: a Desktop reads every vault of its account, each with its sealed label.
+        case ("GET", 2) where path == "/v1/vaults":
+            return reply(200, ["vaults": order.map { vaultJSON(vaults[$0]!) }])
+        // Deployments.cpp `PUT /v1/vaults/{uid}/label`: an installation; the uid checked (404 no_such_vault); the label
+        // base64url of exactly 240 bytes with a label's structure (`label::sealedGeneration`), else 400 invalid_label;
+        // then requireVault(Write): the Mac holding it (409 with the holder otherwise, 404 for an unknown vault).
+        case ("PUT", 4) where parts[1] == "vaults" && parts[3] == "label":
+            let uid = parts[2]
+            guard Uid(base32: uid) != nil else { return refuse(404, "not_found", "no such vault", reason: "no_such_vault") }
+            guard let text = body["label"] as? String, let sealed = Base64URL.decode(text), sealed.count == VaultLabel.sealedSize else {
+                return refuse(400, "invalid_argument", "`label` is a sealed label: base64url of \(VaultLabel.sealedSize) bytes",
+                              reason: "invalid_label")
+            }
+            if let magic = labelMagic, sealed.prefix(magic.count) != magic {
+                return refuse(400, "invalid_argument", "`label` isn't a sealed vault label (bad_magic)", reason: "invalid_label")
+            }
+            guard let v = vaults[uid] else { return refuse(404, "not_found", "no such vault", reason: "no_such_vault") }
+            guard v.holder == me else { return conflict(heldElsewhere(v)) }
+            vaults[uid]!.label = sealed
+            vaults[uid]!.labelSetAt = clock.now
+            return reply(204, [:])
+        // ManagedStorage.cpp `ejection`: a Desktop or the portal (a server: 403 not_for_servers).
+        case ("GET", 3) where path == "/v1/storage/eject":
+            let ejecting = order.filter { ["ejecting", "ejected"].contains(vaults[$0]!.bucketState) }
+            let list: [[String: Any]] = ejecting.map { uid in
+                let v = vaults[uid]!
+                var writers: [[String: Any]] = v.replicas.map { ["kind": "server", "deployment_id": $0, "name": "nas", "waited_for": true,
+                                                                  "converted_at": NSNull()] }
+                if let h = v.holder {
+                    writers.append(["kind": "desktop", "installation_id": h, "name": names[h] ?? "Mac", "waited_for": true,
+                                    "converted_at": v.converted["desktop:\(h)"].map { secs($0) as Any } ?? NSNull()])
+                }
+                return ["vault_uid": uid, "state": v.bucketState, "converted_at": v.convertedAt.map { secs($0) as Any } ?? NSNull(),
+                        "writers": writers]
+            }
+            return reply(200, ["ejection": ejectionJSON(), "members": [], "vaults": list])
+        // ManagedStorage.cpp `reportConverted`: requireVault(Write) (the holding Mac), a bucket `ejecting` or `ejected`
+        // (409 not_ejecting otherwise), the writer's report recorded once (ON CONFLICT DO NOTHING), `settleReports`.
+        case ("POST", 5) where parts[1] == "storage" && parts[2] == "vaults" && parts[4] == "ejected":
+            let uid = parts[3]
+            guard Uid(base32: uid) != nil, let v = vaults[uid] else {
+                return refuse(404, "not_found", "no such vault", reason: "no_such_vault")
+            }
+            guard v.holder == me else { return conflict(heldElsewhere(v)) }
+            guard ["ejecting", "ejected"].contains(v.bucketState) else {
+                return refuse(409, "conflict", "this vault's storage isn't being ejected", reason: "not_ejecting")
+            }
+            if vaults[uid]!.converted["desktop:\(me)"] == nil { vaults[uid]!.converted["desktop:\(me)"] = clock.now }
+            conversionReports += 1
+            // Every writer with a linked installation has reported (a Desktop-only vault: its Mac).
+            if vaults[uid]!.convertedAt == nil, v.replicas.isEmpty { vaults[uid]!.convertedAt = clock.now }
+            return reply(204, [:])
         case ("GET", 3) where parts[1] == "vaults":
             guard let v = vaults[parts[2]] else { return refuse(404, "not_found", "no such vault", reason: "no_such_vault") }
             return reply(200, vaultJSON(v))
@@ -453,8 +588,8 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
                               reason: "rate_limited")
             }
             counter += 1
-            let keyID = "key-\(counter)"  // FakeProvider's ids (As built 27)
-            let secret = Data("SECRET-\(counter)-\(UUID().uuidString)".utf8)
+            let keyID = issueAs?.keyID ?? "key-\(counter)"  // FakeProvider's ids (As built 27)
+            let secret = issueAs?.secret ?? Data("SECRET-\(counter)-\(UUID().uuidString)".utf8)
             let issued = Date(timeIntervalSince1970: clock.now.timeIntervalSince1970.rounded(.down))
             let expires = issued + Self.keyMinutes * 60
             let renew = expires - Self.renewMinutes * 60
@@ -468,8 +603,8 @@ final class FakeDeviceCloud: CloudTransport, @unchecked Sendable {
             vaults[uid]!.keys.append(Key(id: keyID, installation: me, access: storageAccess, state: "issued", issuedAt: issued,
                                          expiresAt: expires, renewAfter: renew, secret: secret))
             credentialRequests += 1
-            return reply(201, ["key_id": keyID, "access": storageAccess, "bucket": "vhc-\(uid)", "bucket_id": "b-\(uid)",
-                               "s3_endpoint": "https://s3.us-west-004.backblazeb2.test", "region": "us-west-004",
+            return reply(201, ["key_id": keyID, "access": storageAccess, "bucket": bucketName(uid), "bucket_id": "b-\(uid)",
+                               "s3_endpoint": endpoint, "region": region,
                                "sealed_secret": Base64URL.encode(sealed),
                                "expires_at": omitExpiry ? NSNull() as Any : secs(expires),
                                "renew_after": omitExpiry ? NSNull() as Any : secs(renew)])

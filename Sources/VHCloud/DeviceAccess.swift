@@ -30,6 +30,13 @@ public struct SystemDeviceAccessClock: DeviceAccessClock {
 /// entitlement's `storage_access` `none` (suspended, ended) pauses it, and a vault moved to a server, placed on another
 /// Mac or released stops it, keeping every local file. Failures back off. The secret lives in memory and in
 /// ``BucketKeyStore`` only, and is forgotten when its key is superseded, expires or is revoked.
+///
+/// An ejection (the account's managed storage handed to the customer's own provider account: managed-storage.md "As
+/// built" 13 and 25) converts the vault in place: from the moment the cloud's view shows its bucket `ejecting` (or
+/// `ejected`), this Mac reports the conversion (`POST .../ejected`, which the ejection waits for), keeps syncing on
+/// the cloud's last key until that key ends (``Phase/leaving(keyUntil:)``), and never asks the cloud for a key for the
+/// vault again. Then it waits for a key the person makes in their own account (``Phase/needsOwnKey(_:)``), which
+/// ``useOwnKey(_:)`` takes once it was checked against the bucket (``Phase/ownStorage``).
 public actor DeviceAccess {
     public struct Settings: Sendable, Equatable {
         /// How often the cloud's view is read while all is well (a revocation or a move is seen within this).
@@ -71,8 +78,14 @@ public actor DeviceAccess {
         case unlinked
         /// This Mac released the vault (`released.reason` `released`).
         case released
-        /// The account's storage moved to the customer's own provider account.
-        case ejected
+    }
+
+    /// Why a vault whose storage was ejected to the person waits for their own key.
+    public enum OwnKeyNeed: Sendable, Equatable {
+        /// The cloud's last key for the bucket ended (it expired, or the provider refused it); the cloud gives no other.
+        case cloudKeyEnded
+        /// The provider refused the person's own key (deleted, or without the access the vault needs).
+        case refused
     }
 
     public enum Phase: Sendable, Equatable {
@@ -86,6 +99,25 @@ public actor DeviceAccess {
         /// A failure; the next attempt is at `at`.
         case retrying(DeviceAccessError, attempt: Int, at: Date)
         case stopped(Stop)
+        /// The account's storage is being ejected to the person (or was): the vault was converted in place and syncs on
+        /// the cloud's last key until `keyUntil`. No key is asked of the cloud again.
+        case leaving(keyUntil: Date)
+        /// Paused until the person enters a key they made in their own provider account; nothing local is deleted.
+        case needsOwnKey(OwnKeyNeed)
+        /// On the person's own key, in their own provider account. The cloud is never asked for a key for this vault.
+        case ownStorage
+    }
+
+    /// An ejection as this vault sees it.
+    public struct Ejection: Sendable, Equatable {
+        /// The bucket a key of the person's must reach (its name, endpoint and region stay the same).
+        public var location: BucketLocation?
+        /// The cloud recorded this Mac's conversion report.
+        public var reported: Bool
+        /// The ejection finished: the bucket is in the person's own account now (its state `ejected`).
+        public var complete: Bool
+        /// `GET /v1/storage`'s `provider` (b2: Backblaze), whose account the bucket goes to.
+        public var provider: String?
     }
 
     /// What the UI shows: never a key id or a secret.
@@ -95,6 +127,8 @@ public actor DeviceAccess {
         public var expiresAt: Date?
         public var renewAfter: Date?
         public var nextCheck: Date?
+        /// Set once the vault's storage is being ejected to the person (or was).
+        public var ejection: Ejection?
     }
 
     /// What the sync engine signs with, valid only inside ``DeviceAccess/withCredentials(_:)``.
@@ -127,6 +161,11 @@ public actor DeviceAccess {
     private var sleeper: Task<Void, any Error>?
     /// Checks in a row that found the bucket still being provisioned.
     private var provisioningChecks = 0
+    /// An ejection: where the bucket is, whether the cloud recorded this Mac's conversion, whether it finished.
+    private var ejection: Ejection?
+    /// When the conversion report is tried again after a failure, and how many failed in a row.
+    private var reportAt: Date = .distantPast
+    private var reportFailures = 0
     private var onChange: (@Sendable (Status) -> Void)?
 
     private static let log = Logger(subsystem: "sh.vaulthalla.app", category: "cloud.device-access")
@@ -142,11 +181,19 @@ public actor DeviceAccess {
         self.settings = settings
         uidBytes = Data(uid.bytes)
         key = try? store.load(vaultUid)
-        if let reason = try? store.revokedReason(vaultUid) { phase = .stopped(.keyRevoked(reason: reason)) }
+        if (try? store.isOwnStorage(vaultUid)) == true {
+            // The person's own key (or their refused one): this vault left managed storage, and the cloud is never asked
+            // for a key again. Whether the cloud recorded the conversion is read once per launch.
+            phase = key != nil ? .ownStorage : .needsOwnKey(.refused)
+            ejection = Ejection(location: try? store.location(vaultUid), reported: false, complete: true)
+        } else if let reason = try? store.revokedReason(vaultUid) {
+            phase = .stopped(.keyRevoked(reason: reason))
+        }
     }
 
     public var status: Status {
-        Status(phase: phase, access: key?.access, expiresAt: key?.expiresAt, renewAfter: key?.renewAfter, nextCheck: nextWake())
+        Status(phase: phase, access: key?.access, expiresAt: key?.expiresAt, renewAfter: key?.renewAfter, nextCheck: nextWake(),
+               ejection: ejection)
     }
 
     public func observe(_ handler: @escaping @Sendable (Status) -> Void) {
@@ -175,6 +222,7 @@ public actor DeviceAccess {
         defer { onChange?(status) }
         let now = clock.now
         if case .stopped = phase { return nil }
+        if isLeaving { return await stepLeaving(now) }
         forgetIfExpired(now)
         if now >= nextRefresh {
             do {
@@ -188,6 +236,7 @@ public actor DeviceAccess {
         switch phase {
         case .stopped: return nil
         case .waiting, .paused: return nextWake()
+        case .leaving, .needsOwnKey, .ownStorage: return await stepLeaving(now)
         case .retrying(_, _, let at) where now < at: return at
         default: break
         }
@@ -199,6 +248,11 @@ public actor DeviceAccess {
     /// that isn't the account holder's revocation ends here once the view shows this Mac holding the vault again (the
     /// account holder placed it back; the caller runs the loop again).
     public func apply(_ view: CloudStorage) async {
+        if isLeaving {
+            observeEjection(view)
+            onChange?(status)
+            return
+        }
         if case .stopped(let stop) = phase {
             guard Self.endsWhenHeldAgain(stop), let v = view.vault(vaultUid), v.movedTo == nil, v.released == nil,
                   v.desktop?.installationId == installationID else { return }
@@ -220,6 +274,24 @@ public actor DeviceAccess {
     /// The provider refused the key (the sync engine's 401 or 403): the cloud's view is read now, and a new key asked for
     /// (the loop wakes, rather than keep a dead key until `renew_after`).
     public func providerRefusedKey() {
+        switch phase {
+        case .ownStorage:
+            // The person's own key: kept as a tombstone that says the vault is theirs, so no relaunch asks the cloud.
+            key = nil
+            do { try store.delete(vaultUid, revokedReason: BucketKeyStore.ownKeyRefused) } catch {
+                Self.log.notice("device access: a refused key couldn't be removed: \(String(describing: error), privacy: .public)")
+            }
+            phase = .needsOwnKey(.refused)
+            onChange?(status)
+            return
+        case .leaving:
+            forget()
+            phase = .needsOwnKey(.cloudKeyEnded)
+            onChange?(status)
+            return
+        case .needsOwnKey: return
+        default: break
+        }
         nextRefresh = .distantPast
         renewNow = true
         sleeper?.cancel()
@@ -258,6 +330,29 @@ public actor DeviceAccess {
         onChange?(status)
     }
 
+    /// The person's own key for the vault's bucket, made in their own provider account after an ejection, once the
+    /// caller checked it reaches this vault's bucket (``VaultBucketCheck``): kept where the bucket key lives (the
+    /// keychain group shared with the File Provider extension), and used from now on. Never asks the cloud for anything
+    /// but the conversion report, if it is still due. Refused while the vault is still in managed storage.
+    public func useOwnKey(_ own: BucketKey) throws {
+        guard own.origin == .customer, own.vaultUid == vaultUid else { throw DeviceAccessError.malformed("not the person's own key") }
+        guard isLeaving else {
+            throw DeviceAccessError.forbidden("This vault is still in Vaulthalla Cloud's managed storage; it takes no key of yours.")
+        }
+        try store.save(own)
+        key = own
+        phase = .ownStorage
+        renewNow = false
+        failures = 0
+        if ejection == nil { ejection = Ejection(location: nil, reported: false, complete: true) }
+        ejection?.location = BucketLocation(bucket: own.bucket, bucketID: own.bucketID, s3Endpoint: own.s3Endpoint, region: own.region)
+        sleeper?.cancel()  // the loop wakes: a conversion report still due goes now
+        onChange?(status)
+    }
+
+    /// Where a key of the person's must reach, once the vault's storage is being ejected to them (or was).
+    public var ownKeyLocation: BucketLocation? { isLeaving ? ejection?.location : nil }
+
     /// The key in force, for signing requests now. Nil without one (or past its expiry); the secret's buffer is zeroed
     /// when `body` returns.
     public func withCredentials<R>(_ body: (Credentials) throws -> R) rethrows -> R? {
@@ -276,6 +371,10 @@ public actor DeviceAccess {
         case .stopped: return nil
         case .retrying(_, _, let at): return [at, key?.expiresAt].compactMap { $0 }.min()
         case .waiting, .paused: return [nextRefresh, key?.expiresAt].compactMap { $0 }.min()
+        case .leaving(let until):
+            return [nextRefresh, until, ejection?.reported == false ? reportAt : nil].compactMap { $0 }.min()
+        case .needsOwnKey: return [nextRefresh, ejection?.reported == false ? reportAt : nil].compactMap { $0 }.min()
+        case .ownStorage: return ejection?.reported == false ? reportAt : clock.now + settings.pausedInterval
         case .starting, .holding:
             if renewNow || key == nil { return clock.now }
             return [nextRefresh, key!.renewAfter, key!.expiresAt].min()
@@ -321,7 +420,13 @@ public actor DeviceAccess {
             let replicas = (try? await client.vault(vaultUid))?.replicas ?? []
             return stop(.notHeld(replicas.isEmpty ? .unplaced : .heldByServer(name: nil)))
         }
-        if v.state == "ejected" { return stop(.ejected) }
+        // Ejected to the customer, or being: converted in place (before the plan's check: the ejection ends the
+        // subscription, and the vault must not wait for a plan).
+        if v.state == "ejecting" || v.state == "ejected" {
+            beginLeaving(v, now: now)
+            ejection?.provider = view.provider
+            return
+        }
         if view.entitlement.storageAccess == "none" {
             // Suspended or ended: the cloud revoked every key and refuses new ones.
             forget()
@@ -332,7 +437,6 @@ public actor DeviceAccess {
         if let e = view.ejection, e.state != "refused", e.state != "complete" { return wait(.ejecting, now: now) }
         switch v.state {
         case "ready": provisioningChecks = 0
-        case "ejecting": return wait(.ejecting, now: now)
         case "off", "none": return wait(.bucketOff, now: now)
         case "emptying", "deleted":
             forget()
@@ -394,6 +498,85 @@ public actor DeviceAccess {
         }
     }
 
+    // MARK: leaving managed storage (an ejection)
+
+    private var isLeaving: Bool {
+        switch phase {
+        case .leaving, .needsOwnKey, .ownStorage: true
+        default: false
+        }
+    }
+
+    /// The cloud's view shows the vault's bucket being ejected (or ejected): the vault converts in place. The cloud's
+    /// key in hand stays in use until it ends; none is asked for again.
+    private func beginLeaving(_ v: CloudStorage.Vault, now: Date) {
+        observeEjection(v)
+        renewNow = false
+        nextRefresh = now + settings.waitingInterval
+        if let key, key.origin == .cloud, now < key.expiresAt {
+            phase = .leaving(keyUntil: key.expiresAt)
+        } else {
+            forget()
+            phase = .needsOwnKey(.cloudKeyEnded)
+        }
+    }
+
+    private func observeEjection(_ view: CloudStorage) {
+        if let v = view.vault(vaultUid) { observeEjection(v) }
+        ejection?.provider = view.provider
+    }
+
+    private func observeEjection(_ v: CloudStorage.Vault) {
+        var e = ejection ?? Ejection(location: nil, reported: false, complete: false)
+        if let bucket = v.bucket, let id = v.bucketId, let endpoint = v.s3Endpoint, let region = v.region {
+            e.location = BucketLocation(bucket: bucket, bucketID: id, s3Endpoint: endpoint, region: region)
+        } else if e.location == nil, let key {
+            e.location = BucketLocation(bucket: key.bucket, bucketID: key.bucketID, s3Endpoint: key.s3Endpoint, region: key.region)
+        }
+        if v.state == "ejected" { e.complete = true }
+        ejection = e
+    }
+
+    /// One round while the vault leaves managed storage: the cloud's last key ending, the conversion report until the
+    /// cloud recorded it, and (until the person's own key is in use) the cloud's view now and then, to say when the
+    /// bucket became the person's. Never a key request.
+    private func stepLeaving(_ now: Date) async -> Date? {
+        if case .leaving = phase, key == nil || now >= key!.expiresAt {
+            forget()
+            phase = .needsOwnKey(.cloudKeyEnded)
+        }
+        if ejection?.reported != true, now >= reportAt { await reportConversion(now) }
+        if phase != .ownStorage, now >= nextRefresh {
+            nextRefresh = now + settings.waitingInterval
+            if let view = try? await client.storage() { observeEjection(view) }
+        }
+        return nextWake()
+    }
+
+    /// `POST .../ejected`, once: the ejection waits for it. The cloud's own record is read first (a relaunch reports
+    /// nothing twice); a vault whose storage the cloud says isn't being ejected has nothing to report.
+    private func reportConversion(_ now: Date) async {
+        do {
+            if try await client.ejectionProgress().converted(vaultUid, by: installationID) {
+                ejection?.reported = true
+                return
+            }
+            try await client.reportEjectionConverted(vaultUid)
+            ejection?.reported = true
+        } catch {
+            let e = DeviceAccessError.from(error)
+            if case .other(409, "not_ejecting", _) = e {
+                ejection?.reported = true
+                return
+            }
+            Self.log.notice("device access: the conversion report waits: \(e.name, privacy: .public)")
+            reportFailures += 1
+            // Unlinked: nothing can report it until this Mac is linked again (a relaunch tries once more).
+            reportAt = e == .unlinked ? .distantFuture
+                : now + min(settings.pausedInterval, settings.backoffBase * pow(2, Double(min(reportFailures - 1, 16))))
+        }
+    }
+
     private func wait(_ reason: DeviceAccessError, now: Date) {
         phase = .waiting(reason)
         guard reason == .bucketNotReady else {
@@ -449,12 +632,15 @@ public actor DeviceAccess {
         case .unlinked: stop(.unlinked)
         case .heldByServer, .heldByAnotherMac, .unplaced: stop(.notHeld(e))
         case .noSuchVault: stop(.vaultRemoved)
-        case .ejected: stop(.ejected)
+        case .ejecting, .ejected:
+            // The cloud's view says which vault is being ejected: read it now (it converts the vault in place).
+            phase = .waiting(e)
+            nextRefresh = now
         case .paymentRequired:
             forget()
             phase = .paused(entitlement: nil)
             nextRefresh = now + settings.pausedInterval
-        case .bucketNotReady, .bucketOff, .bucketDeleting, .accountKeyUnconfirmed, .ejecting:
+        case .bucketNotReady, .bucketOff, .bucketDeleting, .accountKeyUnconfirmed:
             wait(e, now: now)
         case .rateLimited(let after):
             failures += 1

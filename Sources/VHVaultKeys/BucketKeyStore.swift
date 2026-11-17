@@ -4,11 +4,23 @@ public import VHCore
 // MARK: - the key
 
 /// A managed bucket's key as this Mac holds it for a Desktop-only vault: short-lived (the cloud's
-/// `storage.desktop_key_minutes`, 24 hours), renewed from `renewAfter` (12 hours before the end). The secret is a
-/// zeroing ``SecretBytes``; nothing here prints it.
+/// `storage.desktop_key_minutes`, 24 hours), renewed from `renewAfter` (12 hours before the end). Or, once the
+/// account's storage was ejected to the customer, the key the person made in their own provider account
+/// (``Origin/customer``): no expiry, never renewed, never asked of the cloud. The secret is a zeroing ``SecretBytes``;
+/// nothing here prints it.
 public struct BucketKey: Sendable, CustomStringConvertible {
+    public enum Origin: String, Codable, Sendable {
+        /// Issued by Vaulthalla Cloud (short-lived, renewed through the cloud).
+        case cloud
+        /// Made by the person in their own provider account after an ejection.
+        case customer
+    }
+
+    /// A customer's key has no expiry of its own: it lasts until the person deletes it at the provider.
+    public static let noExpiry = Date(timeIntervalSince1970: 253_402_300_799)  // 9999-12-31T23:59:59Z
+
     public init(vaultUid: String, keyID: String, access: String, bucket: String, bucketID: String, s3Endpoint: String,
-                region: String, expiresAt: Date, renewAfter: Date, secret: SecretBytes) {
+                region: String, expiresAt: Date, renewAfter: Date, secret: SecretBytes, origin: Origin = .cloud) {
         self.vaultUid = vaultUid
         self.keyID = keyID
         self.access = access
@@ -19,6 +31,7 @@ public struct BucketKey: Sendable, CustomStringConvertible {
         self.expiresAt = expiresAt
         self.renewAfter = renewAfter
         self.secret = secret
+        self.origin = origin
     }
 
     public let vaultUid: String
@@ -32,13 +45,30 @@ public struct BucketKey: Sendable, CustomStringConvertible {
     public var expiresAt: Date
     public var renewAfter: Date
     public let secret: SecretBytes
+    public let origin: Origin
 
-    public var description: String { "BucketKey(\(access), until \(expiresAt), redacted)" }
+    public var description: String { "BucketKey(\(origin.rawValue), \(access), until \(expiresAt), redacted)" }
 
     func metadata(revoked: Bool = false) -> BucketKeyStore.Metadata {
         BucketKeyStore.Metadata(keyID: keyID, access: access, bucket: bucket, bucketID: bucketID, s3Endpoint: s3Endpoint,
                                 region: region, expiresAt: Int64(expiresAt.timeIntervalSince1970),
-                                renewAfter: Int64(renewAfter.timeIntervalSince1970), revoked: revoked)
+                                renewAfter: Int64(renewAfter.timeIntervalSince1970), revoked: revoked,
+                                origin: origin == .customer ? Origin.customer.rawValue : nil)
+    }
+}
+
+/// Where a vault's bucket is: what a key the person brings is tried against, after an ejection.
+public struct BucketLocation: Sendable, Equatable {
+    public var bucket: String
+    public var bucketID: String
+    public var s3Endpoint: String
+    public var region: String
+
+    public init(bucket: String, bucketID: String, s3Endpoint: String, region: String) {
+        self.bucket = bucket
+        self.bucketID = bucketID
+        self.s3Endpoint = s3Endpoint
+        self.region = region
     }
 }
 
@@ -58,9 +88,31 @@ public struct BucketKeyStore: Sendable {
         var expiresAt: Int64
         var renewAfter: Int64
         var revoked: Bool
-        /// The cloud's `revoked_reason` for a tombstone.
+        /// The cloud's `revoked_reason` for a tombstone; ``BucketKeyStore/ownKeyRefused`` for a customer's key the
+        /// provider refused.
         var revokedReason: String?
+        /// `customer` for the person's own key after an ejection; nil (the cloud's) otherwise.
+        var origin: String?
+
+        init(keyID: String, access: String, bucket: String, bucketID: String, s3Endpoint: String, region: String,
+             expiresAt: Int64, renewAfter: Int64, revoked: Bool, revokedReason: String? = nil, origin: String? = nil) {
+            self.keyID = keyID
+            self.access = access
+            self.bucket = bucket
+            self.bucketID = bucketID
+            self.s3Endpoint = s3Endpoint
+            self.region = region
+            self.expiresAt = expiresAt
+            self.renewAfter = renewAfter
+            self.revoked = revoked
+            self.revokedReason = revokedReason
+            self.origin = origin
+        }
     }
+
+    /// The tombstone reason of a customer's own key the provider refused: the vault waits for another key from the
+    /// person, never for one from the cloud.
+    public static let ownKeyRefused = "own_key_refused"
 
     public static func item(_ uid: String) -> String { "storage-key.\(uid)" }
     static func secretItem(_ uid: String, _ keyID: String) -> String { "storage-key.\(uid).\(keyID)" }
@@ -80,13 +132,25 @@ public struct BucketKeyStore: Sendable {
         return BucketKey(vaultUid: uid, keyID: m.keyID, access: m.access, bucket: m.bucket, bucketID: m.bucketID,
                          s3Endpoint: m.s3Endpoint, region: m.region,
                          expiresAt: Date(timeIntervalSince1970: TimeInterval(m.expiresAt)),
-                         renewAfter: Date(timeIntervalSince1970: TimeInterval(m.renewAfter)), secret: SecretBytes(raw))
+                         renewAfter: Date(timeIntervalSince1970: TimeInterval(m.renewAfter)), secret: SecretBytes(raw),
+                         origin: m.origin == BucketKey.Origin.customer.rawValue ? .customer : .cloud)
+    }
+
+    /// Whether the vault's key, kept or refused, is the person's own (its storage was ejected to them): such a vault never
+    /// asks the cloud for a key again.
+    public func isOwnStorage(_ uid: String) throws -> Bool {
+        try metadata(uid)?.origin == BucketKey.Origin.customer.rawValue
     }
 
     /// The cloud's reason when it revoked the last key and the person hasn't asked for a new one; nil otherwise.
     public func revokedReason(_ uid: String) throws -> String? {
         guard let m = try metadata(uid), m.revoked else { return nil }
         return m.revokedReason ?? "account_holder"
+    }
+
+    /// Where the vault's kept (or refused) key points.
+    public func location(_ uid: String) throws -> BucketLocation? {
+        try metadata(uid).map { BucketLocation(bucket: $0.bucket, bucketID: $0.bucketID, s3Endpoint: $0.s3Endpoint, region: $0.region) }
     }
 
     /// Keeps `key` (replacing the vault's previous key and its secret).

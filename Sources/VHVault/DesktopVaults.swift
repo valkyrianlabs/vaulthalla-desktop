@@ -57,6 +57,12 @@ public enum DesktopVaultError: Error, Sendable, Equatable, CustomStringConvertib
     /// The cloud has no envelope of the vault this Mac's account key opens.
     case noKeyForVault
     case unknownVault
+    /// The vault is still in Vaulthalla Cloud's managed storage: it takes no key of the person's own.
+    case stillManaged
+    /// The person's own key doesn't do (refused, another bucket, another vault...): nothing was switched.
+    case ownKey(VaultBucketCheck.Refusal)
+    /// What the person typed isn't a key (`what`: the key ID or the application key).
+    case invalidKey(String)
 
     public var description: String { "DesktopVaultError(\(sentence))" }
 
@@ -69,6 +75,9 @@ public enum DesktopVaultError: Error, Sendable, Equatable, CustomStringConvertib
         case .notHeldHere: "Vaulthalla Cloud doesn't show this Mac holding that vault. The account holder places it in the portal."
         case .noKeyForVault: "None of the vault's keys in Vaulthalla Cloud opens with this Mac's recovery key."
         case .unknownVault: "This Mac doesn't know that vault."
+        case .stillManaged: "This vault is still in Vaulthalla Cloud's managed storage: it needs no key of yours."
+        case .ownKey(let r): r.sentence
+        case .invalidKey(let what): "That isn't a \(what) (copy it from your storage account, without spaces)."
         }
     }
 
@@ -101,7 +110,8 @@ public enum DesktopVaultCreationStep: Sendable, Equatable {
 /// here from another Mac (its keys from the cloud's envelopes, opened with the account key), and stopping holding one.
 /// Each open vault is a ``DesktopVaultSession``: its ``DeviceAccess`` renewal loop and its sync loop.
 public actor DesktopVaults {
-    public typealias StoreFactory = @Sendable (_ access: DeviceAccess, _ scratch: URL) -> any VaultStore
+    /// The bucket signed with a key: ``DeviceAccess`` (the key in force) or, to check a key the person brings, that key.
+    public typealias StoreFactory = @Sendable (_ credentials: any S3CredentialSource, _ scratch: URL) -> any VaultStore
 
     let client: CloudClient
     let account: CloudAccount
@@ -135,7 +145,7 @@ public actor DesktopVaults {
         attestationKeys = AttestationKeyStore(items: items)
         refusals = KeyRefusalSignal(container: container)
         registry = DesktopVaultRegistry(container: container)
-        self.makeStore = makeStore ?? { access, scratch in S3Store(credentials: access, scratch: scratch) }
+        self.makeStore = makeStore ?? { credentials, scratch in S3Store(credentials: credentials, scratch: scratch) }
         self.clock = clock
         self.accessSettings = accessSettings
         self.syncSettings = syncSettings
@@ -200,6 +210,8 @@ public actor DesktopVaults {
                                                     provenance: try provenance(text, versions: [1], installationID: me))
             progress(.registering)
             _ = try await client.registerDesktopVault(text)
+            // Its name, sealed to the account key, so the portal and the account's other installations show it.
+            await sendLabel(text)
             progress(.switchingOn)
             _ = try await client.setManagedStorage(text, enabled: true)
             let session = try makeSession(text, name: name, installationID: me, envelopes: [1: envelope])
@@ -273,6 +285,7 @@ public actor DesktopVaults {
             try? registry.save(record)
         }
         if !record.adopted { await attestCreatedVersions(uid, installationID: me) }
+        await sendLabel(uid)  // a vault from before labels, or the account key rotated since: nothing if current
         let session = try makeSession(uid, name: record.name, installationID: me, envelopes: [:])
         sessions[uid] = session
         if !engine { await session.handOverEngine() }
@@ -336,6 +349,7 @@ public actor DesktopVaults {
             }
             try registry.save(DesktopVaultRecord(uid: uid, name: name, createdAt: Date(), published: true, adopted: true,
                                                  hold: .holding, nodeID: me))
+            await sendLabel(uid)
             let raw = Dictionary(envelopes.compactMap { e in Base64URL.decode(e.envelope).map { (e.keyVersion, $0) } }) { a, _ in a }
             let session = try makeSession(uid, name: name, installationID: me, envelopes: raw, joining: true)
             sessions[uid] = session
@@ -344,6 +358,83 @@ public actor DesktopVaults {
         } catch {
             throw DesktopVaultError.from(error)
         }
+    }
+
+    // MARK: the name (the sealed label)
+
+    /// Renames a vault this Mac holds: the name this Mac and Finder show, and its sealed label in the cloud (the
+    /// portal's and the account's other installations' name for it). The vault's own manifest keeps the name it was
+    /// created with: the engine's C API has no vault rename (vl-vaultfmt `docs/engine.md`).
+    public func rename(_ uid: String, to name: String) async throws(DesktopVaultError) {
+        guard var record = try? registry.record(uid), record.hold == .holding else { throw .unknownVault }
+        record.name = name
+        record.labelGeneration = nil  // sent again below, sealed with the new name
+        do { try registry.save(record) } catch { throw .keys(String(describing: error)) }
+        await sendLabel(uid)
+    }
+
+    /// Seals the vault's name to the current account key generation and sends it (`PUT /v1/vaults/{uid}/label`), unless
+    /// the cloud has it for that generation already, as a server reseals after a rotation. The cloud stores a ciphertext
+    /// it can't open: it sees that a label exists, its fixed size (240 bytes: the name is padded to 128), the generation
+    /// and account in its clear prefix, and when it changed. Best effort: a failure is logged and tried at the next open.
+    func sendLabel(_ uid: String) async {
+        guard let record = try? registry.record(uid), record.hold == .holding else { return }
+        do {
+            guard let sealed = try await account.sealLabel(record.name, vaultUid: uid) else { return }
+            if record.labelGeneration == sealed.generation { return }
+            try await client.putVaultLabel(uid, sealed: sealed.sealed)
+            if var r = try registry.record(uid) {
+                r.labelGeneration = sealed.generation
+                try registry.save(r)
+            }
+        } catch {
+            Self.log.notice("label: not sent yet: \(DeviceAccessError.from(error).name, privacy: .public)")
+        }
+    }
+
+    // MARK: leaving managed storage (an ejection)
+
+    /// The person's own key for a vault whose managed storage was ejected to them (the bucket is theirs now, in their own
+    /// provider account; the cloud's short-lived key ends and the cloud gives no other). It is checked first, with reads
+    /// only: the vault's current manifest root, fetched with this key, must open with the vault's keys under its uid and
+    /// follow what this Mac has (``VaultBucketCheck``); nothing is written before that. Then it is kept where the bucket
+    /// key lives (the keychain group shared with the File Provider extension) and the vault syncs with it; the cloud is
+    /// never asked for a key for this vault again. The key is never logged, and no error carries it.
+    public func useOwnKey(_ uid: String, keyID: String, secret: SecretBytes) async throws(DesktopVaultError) {
+        guard let session = sessions[uid], let wire = Uid(base32: uid) else { throw .unknownVault }
+        let id = keyID.trimmingCharacters(in: .whitespacesAndNewlines)
+        let unreserved = Set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
+        guard (1 ... 128).contains(id.count), id.allSatisfy(unreserved.contains) else { throw .invalidKey("key ID") }
+        let printable = secret.withUnsafeBytes { b in (1 ... 256).contains(b.count) && b.allSatisfy { $0 > 0x20 && $0 < 0x7F } }
+        guard printable else { throw .invalidKey("application key") }
+        guard let location = await session.access.ownKeyLocation else { throw .stillManaged }
+        let own = BucketKey(vaultUid: uid, keyID: id, access: "full", bucket: location.bucket, bucketID: location.bucketID,
+                            s3Endpoint: location.s3Endpoint, region: location.region, expiresAt: BucketKey.noExpiry,
+                            renewAfter: BucketKey.noExpiry, secret: secret, origin: .customer)
+        let credentials = OwnKeyCredentials(own)
+        let probe = makeStore(credentials, registry.scratchURL(uid))
+        let keys = KeychainVaultKeys(store: vaultKeys, uid: uid)
+        let known = await session.knownHead()
+        // Blocking requests: off Swift's cooperative pool, as every engine and store call.
+        let checked: VaultBucketCheck.Refusal? = await withCheckedContinuation { done in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do throws(VaultBucketCheck.Refusal) {
+                    _ = try VaultBucketCheck.verify(probe, uid: wire, keys: keys, known: known)
+                    done.resume(returning: nil)
+                } catch {
+                    done.resume(returning: error)
+                }
+            }
+        }
+        if let checked { throw .ownKey(checked) }
+        do {
+            try await session.access.useOwnKey(own)
+        } catch DeviceAccessError.forbidden {
+            throw .stillManaged
+        } catch {
+            throw DesktopVaultError.from(error)
+        }
+        await session.ownKeyInUse()
     }
 
     // MARK: releasing

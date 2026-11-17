@@ -1,12 +1,15 @@
 #!/usr/bin/env bash
-# The opt-in live test of VHVault (Tests/VHVaultTests/LiveS3Tests.swift) against a real S3-compatible endpoint that checks
-# every credential: moto server in a throwaway container on the Linux box `dev`, started by vaulthalla-cloud's own
-# tests/live/s3dev-moto.sh (moto pinned by digest, an administrator key that exists only in that container).
+# The opt-in live tests of VHVault (Tests/VHVaultTests/LiveS3Tests.swift) and of leaving managed storage
+# (Tests/VHCloudTests/LiveS3EjectionTests.swift) against a real S3-compatible endpoint that checks every credential: moto
+# server in a throwaway container on the Linux box `dev`, started by vaulthalla-cloud's own tests/live/s3dev-moto.sh
+# (moto pinned by digest, an administrator key that exists only in that container).
 #
 #   tools/vaultfmt/live-s3.sh /path/to/vaulthalla-cloud [swift test arguments]
 #
-# On dev, inside s3dev-moto.sh's environment, a bootstrap creates a versioned bucket and an IAM user whose policy allows
-# S3 on that bucket only, and hands this script that user's key (never the administrator's). The Mac reaches moto through
+# On dev, inside s3dev-moto.sh's environment, a bootstrap creates two versioned buckets: one with an IAM user whose
+# policy allows S3 on it only (LiveS3Tests), and one for the ejection with two such users (one stands in for the cloud's
+# key, the other for the key a customer makes in their own account after an ejection; the first bucket's key is the
+# key for the wrong bucket). It hands this script those users' keys (never the administrator's). The Mac reaches moto through
 # an SSH tunnel to dev's loopback for the test's duration only (nothing listens on the LAN); closing the session ends
 # the bootstrap, and s3dev-moto.sh removes the container and its credentials. Needs `ssh dev` with podman, curl and
 # python3-boto3 there.
@@ -31,8 +34,8 @@ trap cleanup EXIT
 chmod 700 "$work"
 scp -q -o ClearAllForwardings=yes "$cloud/tests/live/s3dev-moto.sh" "$cloud/tests/live/moto-patches.py" "dev:$remote/"
 cat > "$work/bootstrap.py" << 'PY'
-# Runs inside s3dev-moto.sh: a versioned bucket and a key scoped to it, printed once as JSON; then waits for stdin to
-# close (the test is over). The administrator key stays in this process's environment.
+# Runs inside s3dev-moto.sh: two versioned buckets and keys scoped to each, printed once as JSON; then waits for stdin
+# to close (the test is over). The administrator key stays in this process's environment.
 import json, os, sys, uuid
 import boto3
 ep = os.environ["VHC_S3DEV_ENDPOINT"]
@@ -42,15 +45,24 @@ bucket = "vh-live-" + uuid.uuid4().hex[:12]
 s3 = boto3.client("s3", **admin)
 s3.create_bucket(Bucket=bucket)
 s3.put_bucket_versioning(Bucket=bucket, VersioningConfiguration={"Status": "Enabled"})
+eject = bucket + "-eject"
+s3.create_bucket(Bucket=eject)
+s3.put_bucket_versioning(Bucket=eject, VersioningConfiguration={"Status": "Enabled"})
 iam = boto3.client("iam", **admin)
-iam.create_user(UserName="vh-live-mac")
-iam.put_user_policy(UserName="vh-live-mac", PolicyName="bucket", PolicyDocument=json.dumps({
-    "Version": "2012-10-17",
-    "Statement": [{"Effect": "Allow", "Action": "s3:*",
-                   "Resource": [f"arn:aws:s3:::{bucket}", f"arn:aws:s3:::{bucket}/*"]}]}))
-key = iam.create_access_key(UserName="vh-live-mac")["AccessKey"]
+def scoped(user, name):
+    iam.create_user(UserName=user)
+    iam.put_user_policy(UserName=user, PolicyName="bucket", PolicyDocument=json.dumps({
+        "Version": "2012-10-17",
+        "Statement": [{"Effect": "Allow", "Action": "s3:*",
+                       "Resource": [f"arn:aws:s3:::{name}", f"arn:aws:s3:::{name}/*"]}]}))
+    return iam.create_access_key(UserName=user)["AccessKey"]
+key = scoped("vh-live-mac", bucket)
+cloud = scoped("vh-live-cloud", eject)
+own = scoped("vh-live-own", eject)
 print(json.dumps({"port": int(ep.rsplit(":", 1)[1]), "bucket": bucket, "access": key["AccessKeyId"],
-                  "secret": key["SecretAccessKey"]}), flush=True)
+                  "secret": key["SecretAccessKey"], "eject_bucket": eject, "cloud_access": cloud["AccessKeyId"],
+                  "cloud_secret": cloud["SecretAccessKey"], "own_access": own["AccessKeyId"],
+                  "own_secret": own["SecretAccessKey"]}), flush=True)
 sys.stdin.read()
 PY
 scp -q -o ClearAllForwardings=yes "$work/bootstrap.py" "dev:$remote/"
@@ -84,6 +96,9 @@ cd "$root"
 status=0
 VH_LIVE_S3=1 VH_LIVE_S3_ENDPOINT="http://127.0.0.1:$local_port" VH_LIVE_S3_BUCKET="$(field bucket)" \
     VH_LIVE_S3_REGION=us-east-1 VH_LIVE_S3_ACCESS_KEY="$(field access)" VH_LIVE_S3_SECRET_KEY="$(field secret)" \
-    swift test --filter LiveS3Tests "$@" || status=$?
+    VH_LIVE_S3_EJECT_BUCKET="$(field eject_bucket)" VH_LIVE_S3_CLOUD_ACCESS_KEY="$(field cloud_access)" \
+    VH_LIVE_S3_CLOUD_SECRET_KEY="$(field cloud_secret)" VH_LIVE_S3_OWN_ACCESS_KEY="$(field own_access)" \
+    VH_LIVE_S3_OWN_SECRET_KEY="$(field own_secret)" \
+    swift test --filter 'LiveS3Tests|LiveS3EjectionTests' "$@" || status=$?
 exec 3>&-
 exit $status

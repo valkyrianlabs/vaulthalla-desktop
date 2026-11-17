@@ -96,8 +96,12 @@ public enum DeviceAccessWording {
         }
     }
 
+    /// The provider's name in a sentence (`GET /v1/storage`'s `provider`): managed storage is Backblaze B2.
+    public static func providerName(_ provider: String?) -> String { provider == "b2" || provider == nil ? "Backblaze" : "storage provider" }
+
     /// The renewal loop's state, for a vault this Mac holds.
     public static func status(_ s: DeviceAccess.Status, now: Date) -> Line {
+        if let line = leaving(s.phase, ejection: s.ejection, now: now) { return line }
         switch s.phase {
         case .starting: return Line(text: "Checking its storage key", tone: .info)
         case .holding:
@@ -115,6 +119,33 @@ public enum DeviceAccessWording {
         case .retrying(let e, _, let at):
             return Line(text: "\(e.message) Next try \(within(at, now: now)).", tone: .warn)
         case .stopped(let stop): return Self.stop(stop)
+        case .leaving, .needsOwnKey, .ownStorage: return Line(text: "", tone: .neutral)  // said above
+        }
+    }
+
+    /// A vault leaving managed storage (an ejection to the person's own provider account), in words; nil otherwise.
+    public static func leaving(_ phase: DeviceAccess.Phase, ejection: DeviceAccess.Ejection?, now: Date) -> Line? {
+        let p = providerName(ejection?.provider)
+        let bucket = ejection?.location.map { " \u{201C}\($0.bucket)\u{201D}" } ?? ""
+        let kept = "Nothing on this Mac is deleted: the vault's folders and names, and changes not sent yet, stay here. Opening files and adding new ones needs the key."
+        switch phase {
+        case .leaving(let until):
+            return Line(text: "Your storage is moving to your own \(p) account: Vaulthalla Cloud no longer keeps it. This vault keeps syncing on its current key until \(when(until, now: now)); after that it needs a key you make in your \(p) account for the bucket\(bucket).",
+                        tone: .info)
+        case .needsOwnKey(.cloudKeyEnded):
+            if ejection?.complete == true {
+                return Line(text: "Paused: this vault's storage is in your own \(p) account now, and Vaulthalla Cloud's key for it has ended. Sign in to \(p), make an application key for the bucket\(bucket), and enter it here. \(kept)",
+                            tone: .warn)
+            }
+            return Line(text: "Paused: your storage is moving to your own \(p) account, and Vaulthalla Cloud's key for it has ended. When \(p) tells you the account is yours, make an application key there for the bucket\(bucket) and enter it here. \(kept)",
+                        tone: .warn)
+        case .needsOwnKey(.refused):
+            return Line(text: "Paused: \(p) refused the key you entered for this vault (deleted, or without access to the bucket\(bucket)). Enter another key from your \(p) account. \(kept)",
+                        tone: .danger)
+        case .ownStorage:
+            return Line(text: "In your own \(p) account, with the key you entered. Vaulthalla Cloud no longer keeps this vault's storage and is never asked for its key.",
+                        tone: .ok)
+        default: return nil
         }
     }
 
@@ -134,7 +165,6 @@ public enum DeviceAccessWording {
         case .vaultRemoved: Line(text: "This vault is no longer in your Vaulthalla Cloud account.", tone: .neutral)
         case .unlinked: Line(text: "This Mac isn't linked to Vaulthalla Cloud any more.", tone: .danger)
         case .released: Line(text: "This Mac no longer holds this vault. Its local copy stays.", tone: .neutral)
-        case .ejected: Line(text: "Its storage is in your own storage account now.", tone: .neutral)
         }
     }
 

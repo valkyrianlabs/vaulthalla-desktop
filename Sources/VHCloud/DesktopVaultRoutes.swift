@@ -52,6 +52,28 @@ extension CloudClient {
                                            envelopes: envelopes.map { $0.base64EncodedString() }, keyVersions: rows))
     }
 
+    /// `PUT /v1/vaults/{uid}/label {label}` (204, Deployments.cpp): the vault's name sealed to the account key (240 bytes,
+    /// base64url), from the Mac that holds it, as a server sends its replica's. The cloud checks the size and the
+    /// structure, never the content (it can't open it): 400 `invalid_label`; a vault this Mac doesn't hold is 409
+    /// `held_by_*` / `unplaced`, an unknown one 404 `no_such_vault`.
+    public func putVaultLabel(_ uid: String, sealed: Data) async throws {
+        struct Body: Encodable { var label: String }
+        _ = try await signedData("PUT", "/v1/vaults/\(try Self.checkedUid(uid))/label",
+                                 body: encode(Body(label: Base64URL.encode(sealed))))
+    }
+
+    /// `POST /v1/storage/vaults/{uid}/ejected` (204, ManagedStorage `reportConverted`): this Mac, the vault's writer, no
+    /// longer depends on the cloud's managed storage for it (an ejection: the bucket becomes the customer's). The
+    /// ejection waits for this report (up to `storage.eject_wait_hours`); repeating it changes nothing. 409
+    /// `not_ejecting` when the vault's storage isn't being ejected.
+    public func reportEjectionConverted(_ uid: String) async throws {
+        try await signedEmpty("POST", "/v1/storage/vaults/\(try Self.checkedUid(uid))/ejected")
+    }
+
+    /// `GET /v1/storage/eject` (ManagedStorage `ejection`; a Desktop or the portal, never a server): the ejection's
+    /// progress and, per vault being ejected, each writer's own conversion report.
+    public func ejectionProgress() async throws -> CloudEjectionProgress { try await signed("GET", "/v1/storage/eject") }
+
     /// `GET /v1/keys/vaults/{uid}/envelopes`: the vault's envelopes to every generation of the account key (a linked
     /// Desktop may read any vault of its account). Nil when the vault isn't enrolled or the account has no key yet (404).
     public func vaultEnvelopes(_ uid: String) async throws -> [CloudVaultEnvelope]? {

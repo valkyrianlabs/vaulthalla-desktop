@@ -117,6 +117,56 @@ final class DesktopVaultsModel {
 
     func holds(_ uid: String) -> Bool { records.contains { $0.uid == uid && $0.hold == .holding } }
 
+    /// The name this Mac gave a vault it holds or held (no unlock needed: it is this Mac's own record).
+    func name(_ uid: String) -> String? { records.first { $0.uid == uid }?.name }
+
+    /// Renames a vault this Mac holds: here, in Finder, and its sealed label for the portal and other installations.
+    func rename(_ uid: String, to name: String) async -> String? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return "Give the vault a name." }
+        do throws(DesktopVaultError) {
+            try await vaults.rename(uid, to: trimmed)
+        } catch {
+            return error.sentence
+        }
+        records = await vaults.records()
+        if inFinder.contains(uid) {
+            // The domain's display name follows (adding a domain with the same identifier updates it).
+            let domain = NSFileProviderDomain(identifier: NSFileProviderDomainIdentifier(rawValue: DesktopVaultDomainID.prefix + uid),
+                                              displayName: DesktopVaultDomainID.displayName(vault: trimmed))
+            domain.supportsSyncingTrash = false
+            try? await NSFileProviderManager.add(domain)
+        }
+        return nil
+    }
+
+    // MARK: leaving managed storage (an ejection)
+
+    /// The vault's storage is being ejected to the person's own provider account, or was (nil otherwise).
+    func leaving(_ uid: String) -> DesktopVaultSession.Leaving? { states[uid]?.leaving }
+
+    /// Whether the vault can take the person's own key now (its storage is being ejected to them, or was).
+    func takesOwnKey(_ uid: String) -> Bool { leaving(uid) != nil }
+
+    /// Whether the vault is paused until the person's own key.
+    func needsOwnKey(_ uid: String) -> Bool {
+        if case .needsOwnKey? = leaving(uid)?.phase { return true }
+        return false
+    }
+
+    /// Checks the person's own key against the vault's bucket (reads only) and switches the vault to it. The secret goes
+    /// straight into zeroing bytes and the keychain group shared with the Finder extension; it is never logged.
+    func useOwnKey(_ uid: String, keyID: String, secret: String) async -> String? {
+        let bytes = SecretBytes(Data(secret.utf8))
+        do throws(DesktopVaultError) {
+            try await vaults.useOwnKey(uid, keyID: keyID, secret: bytes)
+        } catch {
+            return error.sentence
+        }
+        if let s = await vaults.session(uid) { _ = await s.syncNow(force: true) }
+        return nil
+    }
+
     func sentence(_ uid: String) -> String? {
         if inFinder.contains(uid) {
             return "Shown in Finder: Finder syncs it; Vaulthalla renews its storage key while it runs. If Vaulthalla isn't running when the key expires, Finder pauses the vault until you open Vaulthalla; nothing is lost."

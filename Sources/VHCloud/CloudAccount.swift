@@ -205,6 +205,16 @@ public actor CloudAccount {
         }
     }
 
+    /// A vault's name sealed to the current generation of the account key (`vh.vault-label.v1`, vl-keykit), as a server
+    /// seals it to its pinned key: only the public statement is needed, from the cloud's chain verified against this
+    /// account's public id, so nothing is unlocked. The name is cut as a server cuts it (``VaultLabel/sealableName(_:)``).
+    /// Nil when the account has no recovery key yet.
+    public func sealLabel(_ name: String, vaultUid: String) async throws -> (sealed: Data, generation: UInt32)? {
+        guard let uid = Uid32.bytes(vaultUid) else { throw DeviceAccessError.noSuchVault }
+        guard let current = try await status().current else { return nil }
+        return (try VaultLabel.seal(VaultLabel.sealableName(name), statement: current, vaultUid: uid), current.generation)
+    }
+
     /// Delivers a restore with the account key. Call it only after the person confirmed the restore code.
     public func deliver(_ restore: CloudClient.Restore) async throws -> CloudClient.Delivered {
         guard let held = try keys.held() else { throw CloudError.keyMismatch("This Mac doesn't hold the recovery key.") }

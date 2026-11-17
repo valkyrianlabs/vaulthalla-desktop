@@ -16,3 +16,20 @@ extension DeviceAccess: S3CredentialSource {
 }
 
 extension DesktopVaultSession: EngineHost {}
+
+/// A key the person brings (their own, after an ejection), lent to a store only to check it reaches the vault's bucket
+/// before anything switches to it (``DesktopVaults/useOwnKey(_:keyID:secret:)``).
+final class OwnKeyCredentials: S3CredentialSource, @unchecked Sendable {
+    let key: BucketKey
+
+    init(_ key: BucketKey) { self.key = key }
+
+    func withS3Credentials<R: Sendable>(_ body: @Sendable (S3Credentials) throws -> R) async rethrows -> R? {
+        try key.secret.withUnsafeBytes { secret in
+            try body(S3Credentials(accessKeyID: key.keyID, secret: secret, bucket: key.bucket, endpoint: key.s3Endpoint,
+                                   region: key.region))
+        }
+    }
+
+    func providerRefused() async {}  // the check reports the refusal itself
+}

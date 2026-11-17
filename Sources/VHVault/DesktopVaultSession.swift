@@ -33,6 +33,16 @@ public actor DesktopVaultSession {
         case refusedRoot(String)
         /// DeviceAccess stopped (released, moved, revoked...).
         case stopped(DeviceAccess.Stop)
+        /// The vault's storage was ejected to the person's own provider account and this Mac waits for a key they make
+        /// there (``DesktopVaults/useOwnKey(_:keyID:secret:)``). Nothing local is deleted.
+        case needsOwnKey(DeviceAccess.OwnKeyNeed)
+    }
+
+    /// The vault leaving managed storage (an ejection), while it does and after.
+    public struct Leaving: Sendable, Equatable {
+        /// ``DeviceAccess/Phase/leaving(keyUntil:)``, ``DeviceAccess/Phase/needsOwnKey(_:)`` or ``DeviceAccess/Phase/ownStorage``.
+        public var phase: DeviceAccess.Phase
+        public var ejection: DeviceAccess.Ejection?
     }
 
     public struct Status: Sendable, Equatable {
@@ -45,9 +55,13 @@ public actor DesktopVaultSession {
         public var recovered: UInt64
         /// The engine's change-log revision after the last round: when it moves, Finder is told to enumerate changes.
         public var revision: UInt64 = 0
+        /// Set while the vault's storage is ejected to the person (and after).
+        public var leaving: Leaving?
 
         /// What the person reads about the vault.
         public var sentence: String {
+            let ejection = leaving.flatMap { DeviceAccessWording.leaving($0.phase, ejection: $0.ejection, now: Date())?.text }
+            if case .needsOwnKey = state, let ejection { return ejection }
             var s: String = switch state {
             case .opening: "Opening\u{2026}"
             case .waitingForStorage(let why): why.map { "Waiting: \($0.message)" } ?? "Waiting for its storage."
@@ -59,7 +73,9 @@ public actor DesktopVaultSession {
             case .refusedRoot(let reason):
                 "Paused: this Mac refused the vault's storage (\(reason)), so it sends nothing. Your files on this Mac are kept."
             case .stopped(let stop): DesktopVaultSession.words(stop)
+            case .needsOwnKey: "Paused: this vault needs a key from your own storage account. Nothing on this Mac is deleted."
             }
+            if let ejection { s = ejection + " " + s }
             if contentConflicts > 0 {
                 s += contentConflicts == 1 ? " One file was changed here and elsewhere: both versions are kept (Versions)."
                     : " \(contentConflicts) files were changed here and elsewhere: both versions of each are kept (Versions)."
@@ -201,9 +217,22 @@ public actor DesktopVaultSession {
     @discardableResult
     public func syncNow(force: Bool = false) async -> TimeInterval {
         let phase = await access.phase
+        let leaving: Leaving? = switch phase {
+        case .leaving, .needsOwnKey, .ownStorage: Leaving(phase: phase, ejection: await access.status.ejection)
+        default: nil
+        }
+        if leaving != status.leaving {
+            var s = status
+            s.leaving = leaving
+            set(s)
+        }
         if case .stopped(let stop) = phase {
             set(.stopped(stop))
             return settings.refreshInterval
+        }
+        if case .needsOwnKey(let need) = phase {
+            set(.needsOwnKey(need))
+            return min(settings.refreshInterval, 5)
         }
         if engineHandedOver { return settings.refreshInterval }
         let haveKey = await access.withS3Credentials { _ in true } ?? false
@@ -343,6 +372,23 @@ public actor DesktopVaultSession {
         }
     }
 
+    /// The head this Mac knows (the engine's recorded root), to check a key the person brings against; nil while the
+    /// engine isn't open here (Finder runs it, or it never opened).
+    func knownHead() async -> (epoch: UInt64, rootSHA256: String)? {
+        guard let vault, let s = try? await vault.perform({ v throws(VaultError) in try v.status() }),
+              let epoch = s.epoch, let sha = s.rootSHA256 else { return nil }
+        return (epoch, sha)
+    }
+
+    /// The person's own key is in use (``DesktopVaults/useOwnKey(_:keyID:secret:)``): the next round refreshes and sends
+    /// what waited.
+    func ownKeyInUse() async {
+        nextRefresh = .distantPast
+        if status.unpublished { publishAt = Date() }
+        set(.upToDate)
+        if !settings.automatic { await syncNow(force: true) }
+    }
+
     /// This Mac stops holding the vault (``DeviceAccess/release()``); the session closes, local data stays.
     func release() async throws {
         try await access.release()
@@ -368,7 +414,6 @@ public actor DesktopVaultSession {
         case .vaultRemoved: "Your account no longer has this vault."
         case .unlinked: "This Mac isn't linked to Vaulthalla Cloud any more."
         case .released: "This Mac stopped holding this vault. Its files here are kept."
-        case .ejected: "Your account's storage moved to your own storage account."
         }
     }
 }
