@@ -126,6 +126,12 @@ tested by `swift test`; **nothing is proven in Finder**: a File Provider extensi
 - The engine's C API: no paging of `vault_changes`, no list of a root's writers (the UI can't name who wrote), and
   after an adoption the old Mac stays a named writer, so purges never delete (vl-vaultfmt `docs/engine.md`, "Limits").
 - vl-keykit: no export of an opened vault key (decision 3).
+- **A server can't adopt a Desktop-only vault canonically** (found by the drill, 2026-11-16). vaulthalla-server's
+  restore proves each key version by its origin's attestation (D1: a signature by the origin node's attestation key
+  over its node id, vault id, version and key check, recorded at enrollment). Desktop attests nothing: it enrolls the
+  envelope only, so `vh vault recover --from-cloud` refuses `salvage_required`, and only `--salvage` (the server
+  re-encrypts under a key of its own) takes the vault over. Making it canonical needs a Desktop attestation key (where
+  it lives, what anchors it) or a server rule for a Desktop origin: a trust decision, left to Cooper.
 - The fake cloud has one installation, so the adoption test's "replacement Mac" is a fresh keychain and container on
   the same installation id.
 
@@ -139,6 +145,15 @@ tested by `swift test`; **nothing is proven in Finder**: a File Provider extensi
   the extension unable to reach the cloud client, the refusal signal, and an expired key with the app not running.
 - `swift test --filter DesktopVaultHandOverTests`: the engine handed to Finder with the key still renewed here, and a
   signalled refusal followed.
+- **The drill** (`tools/vaultfmt/desktop-drill.sh`, opt-in): Desktop's real client code against the real Vaulthalla
+  Cloud daemon, moto, the portal and a Vaulthalla server on `ssh dev`, which vaulthalla-cloud's `ci/milestone --only
+  desktop` brings up there (its `tests/milestone/README.md`, "Desktop-only vaults, end to end"; checkouts at
+  `/srv/wave4-{cloud,server,portal}` on dev by default, synced from this Mac first). `LiveDesktopDrillTests` links this
+  Mac, creates the account key and has it approved, creates a vault with `DesktopVaults.create`, writes, renames,
+  trashes and publishes, lives through a renewal and an expired key refused by moto, has the bucket inspected and the
+  portal read it back, then delivers a server's restore and sees the vault moved. Everything stays in a
+  `MemoryAccountItemStore` and a temporary container (no keychain item, no app data); the Mac reaches dev's loopback
+  only, through tunnels on the same port numbers. About 15 minutes after dev's builds.
 - `swift test --filter DesktopVaultLifecycleTests`: the lifecycle against `FakeDeviceCloud` (extended from the daemon's
   `Enrollment.cpp` and `KeyManager.cpp`) with a bucket that checks the bucket key.
 - `tools/vaultfmt/live-s3.sh <vaulthalla-cloud checkout>`: opt-in, against moto on `ssh dev` (vaulthalla-cloud's

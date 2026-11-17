@@ -226,6 +226,50 @@ struct DeviceAccessTests {
         #expect(await access.phase == .holding)
     }
 
+    /// A clock whose sleep lasts until the test moves it (or the sleep is cancelled).
+    final class HeldClock: DeviceAccessClock, @unchecked Sendable {
+        private let lock = NSLock()
+        private var current: Date
+        init(_ start: Date) { current = start }
+        var now: Date { lock.withLock { current } }
+        func sleep(until: Date) async throws {
+            while now < until { try await Task.sleep(for: .milliseconds(2)) }
+        }
+    }
+
+    /// Found by the drill (tools/vaultfmt/desktop-drill.sh): the cloud expired the Mac's key and deleted it at the
+    /// provider; the sync engine's 403 reported it, but the loop slept on until `renew_after` (hours, in production)
+    /// with a dead key. The refusal now wakes the loop: the view is read and a new key asked for at once.
+    @Test func aKeyTheProviderRefusesIsReplacedWithoutWaitingForRenewAfter() async throws {
+        let s = try await linked()
+        let uid = s.fake.vault(heldBy: s.fake.mac)
+        let held = HeldClock(Self.start)
+        let access = try DeviceAccess(client: s.client, vaultUid: uid, installationID: s.fake.mac, store: s.store, clock: held)
+        let runner = Task { await access.run() }
+        defer { runner.cancel() }
+        let first = try await #require(eventuallyKey(s, uid))
+        // The cloud expires it (its clock ahead of this Mac's) and deletes it at the provider; this Mac's clock stays.
+        s.fake.clock.set(first.expiresAt)
+        s.fake.expireDue()
+        s.fake.clock.set(Self.start)
+        await access.providerRefusedKey()
+        let end = Date() + 5
+        while Date() < end, s.fake.activeKey(uid).map({ $0.id == first.id }) ?? true { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(s.fake.activeKey(uid).map { $0.id != first.id } == true)
+        #expect(held.now == Self.start)  // nothing waited for renew_after
+        runner.cancel()
+        _ = await runner.value
+    }
+
+    func eventuallyKey(_ s: Setup, _ uid: String) async throws -> FakeDeviceCloud.Key? {
+        let end = Date() + 5
+        while Date() < end {
+            if let k = s.fake.activeKey(uid) { return k }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        return nil
+    }
+
     @Test func theCloudsExpiredViewIsRenewNow() async throws {
         let s = try await linked()
         let uid = s.fake.vault(heldBy: s.fake.mac)
@@ -426,7 +470,8 @@ struct DeviceAccessTests {
             let access = try s.access(uid)
             let next = await access.step()
             #expect(await access.phase == .waiting(c.want))
-            #expect(next == s.clock.now + 15 * 60)
+            // A bucket still being provisioned is checked again soon (below); the other reasons every 15 minutes.
+            #expect(next == s.clock.now + (c.want == .bucketNotReady ? 10 : 15 * 60))
         }
         #expect(s.fake.credentialRequests == 0)
         // The same reasons on the request itself (the view was older than the cloud's state).
@@ -440,6 +485,28 @@ struct DeviceAccessTests {
         s.clock.advance(15 * 60)
         _ = await access.step()
         #expect(await access.phase == .holding)
+    }
+
+    /// Found by the drill (tools/vaultfmt/desktop-drill.sh): a new vault's bucket is still being provisioned when its
+    /// storage is switched on, and the creation waits for its key; checked only every 15 minutes, the creation gave up.
+    @Test func aBucketBeingProvisionedIsCheckedSoonThenLessOften() async throws {
+        let s = try await linked()
+        let uid = s.fake.vault(heldBy: s.fake.mac)
+        s.fake.lock.withLock { s.fake.vaults[uid]!.bucketState = "waiting"; s.fake.vaults[uid]!.waitingReason = nil }
+        let access = try s.access(uid)
+        var waits: [TimeInterval] = []
+        for _ in 0 ..< 9 {
+            let next = try #require(await access.step())
+            waits.append(next.timeIntervalSince(s.clock.now))
+            s.clock.set(next)
+        }
+        #expect(waits == [10, 20, 40, 80, 160, 320, 640, 900, 900])
+        #expect(s.fake.credentialRequests == 0)
+        // Ready: the key at once, and the next provisioning wait starts short again.
+        s.fake.lock.withLock { s.fake.vaults[uid]!.bucketState = "ready" }
+        s.clock.advance(900)
+        _ = await access.step()
+        #expect(await access.phase == .holding && s.fake.credentialRequests == 1)
     }
 
     // MARK: the secret stays out of everything else

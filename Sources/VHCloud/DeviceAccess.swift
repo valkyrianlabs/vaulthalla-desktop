@@ -36,6 +36,9 @@ public actor DeviceAccess {
         public var refreshInterval: TimeInterval = 30 * 60
         /// How often a vault that waits (its bucket, the offline copy, an ejection) is checked again.
         public var waitingInterval: TimeInterval = 15 * 60
+        /// A bucket being provisioned (storage just switched on) is checked again after this, doubling per check up to
+        /// `waitingInterval`: provisioning takes seconds to minutes, and a new vault waits for it.
+        public var provisioningInterval: TimeInterval = 10
         /// How often a paused vault (no storage access) is checked again.
         public var pausedInterval: TimeInterval = 60 * 60
         /// The first retry after a failure, doubling per failure up to `backoffCap`.
@@ -120,6 +123,10 @@ public actor DeviceAccess {
     /// After ``resume()``: the cloud's lingering `revoked_reason` `account_holder` is the one the person overrode.
     private var resumed = false
     private var failures = 0
+    /// The run loop's current sleep, which a refused key ends early.
+    private var sleeper: Task<Void, any Error>?
+    /// Checks in a row that found the bucket still being provisioned.
+    private var provisioningChecks = 0
     private var onChange: (@Sendable (Status) -> Void)?
 
     private static let log = Logger(subsystem: "sh.vaulthalla.app", category: "cloud.device-access")
@@ -151,8 +158,14 @@ public actor DeviceAccess {
     public func run() async {
         while !Task.isCancelled {
             guard let next = await step() else { return }
-            // Never a busy loop, whatever a step returns.
-            do { try await clock.sleep(until: max(next, clock.now + 1)) } catch { return }
+            // Never a busy loop, whatever a step returns. The sleep is its own task so that the provider refusing the
+            // key (``providerRefusedKey()``) ends it early instead of waiting for `renew_after` or the next view read.
+            let clock = clock
+            let until = max(next, clock.now + 1)
+            let nap = Task { try await clock.sleep(until: until) }
+            sleeper = nap
+            _ = await withTaskCancellationHandler { await nap.result } onCancel: { nap.cancel() }
+            sleeper = nil
         }
     }
 
@@ -204,10 +217,12 @@ public actor DeviceAccess {
         }
     }
 
-    /// The provider refused the key (the sync engine's 401 or 403): read the cloud's view at the next step.
+    /// The provider refused the key (the sync engine's 401 or 403): the cloud's view is read now, and a new key asked for
+    /// (the loop wakes, rather than keep a dead key until `renew_after`).
     public func providerRefusedKey() {
         nextRefresh = .distantPast
         renewNow = true
+        sleeper?.cancel()
     }
 
     /// After ``Stop/keyRevoked(reason:)``, the person asks for a new key.
@@ -316,7 +331,7 @@ public actor DeviceAccess {
         }
         if let e = view.ejection, e.state != "refused", e.state != "complete" { return wait(.ejecting, now: now) }
         switch v.state {
-        case "ready": break
+        case "ready": provisioningChecks = 0
         case "ejecting": return wait(.ejecting, now: now)
         case "off", "none": return wait(.bucketOff, now: now)
         case "emptying", "deleted":
@@ -381,7 +396,13 @@ public actor DeviceAccess {
 
     private func wait(_ reason: DeviceAccessError, now: Date) {
         phase = .waiting(reason)
-        nextRefresh = now + settings.waitingInterval
+        guard reason == .bucketNotReady else {
+            nextRefresh = now + settings.waitingInterval
+            return
+        }
+        let delay = settings.provisioningInterval * pow(2, Double(min(provisioningChecks, 16)))
+        provisioningChecks += 1
+        nextRefresh = now + min(settings.waitingInterval, delay)
     }
 
     private func renew(now: Date) async {
