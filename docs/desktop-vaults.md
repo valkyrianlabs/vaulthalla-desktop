@@ -15,7 +15,7 @@ The cloud's contract is vaulthalla-cloud `docs/design/account-model.md` ("As bui
 
 | Where | What |
 | --- | --- |
-| `tools/vaultfmt/` | `VLVaultfmt.xcframework` from the vendored vl-vaultfmt 0.4.0 source (pin, tarball, build script), built against VLKeykit's vl-keykit source; the archive holds vl-vaultfmt alone (vl-keykit and libcrypto are VLKeykit's). `live-s3.sh`: the live test |
+| `tools/vaultfmt/` | `VLVaultfmt.xcframework` from the vendored vl-vaultfmt 0.4.1 source (pin, tarball, build script), built against VLKeykit's vl-keykit source; the archive holds vl-vaultfmt alone (vl-keykit and libcrypto are VLKeykit's). `live-s3.sh`: the live test |
 | Modules | `VHVaultKeys` (keychain items: the app-only group and the group shared with the extension), `VHVaultEngine` (the engine, the S3 store, the Finder replica, the extension's host; **no cloud client**), `VHVault` (the lifecycle and `DeviceAccess`; re-exports `VHVaultEngine`). The File Provider extension links `VHVaultEngine` only |
 | `Sources/VHVaultEngine/Vault.swift`, `Bridge.swift` | the engine's C API (`vl_vaultfmt_engine.h`) in Swift: the store, keys and state tables, every call run off the cooperative pool, the state file `flock`ed to one process |
 | `SigV4.swift`, `S3Store.swift` | Signature Version 4 with CryptoKit; the bucket over `URLSession` (path-style, whole and ranged reads, streamed content PUTs through a file of sealed bytes, conditional PUT headers, version listings, deletes by version id), the key lent per request by `DeviceAccess`, a 401/403 reported through `providerRefusedKey()` |
@@ -63,8 +63,9 @@ landed first), never refused as `order_violation`; for 15 minutes after such a P
 instead of trusting one HEAD. `S3Store` bounds every request so a stalled PUT can't land much later
 (`S3Store.Bounds`, vaulthalla-server's values): the root PUT 60 s in all, a body's first byte within 30 s, no progress
 for 60 s fails any request, content uploads have no total deadline; a bound cancels the task (the connection closes)
-and a write cut short is "outcome unknown", never "failed". vl-vaultfmt 0.4.0 ends a root PUT of unknown outcome that
-no listing shows with a plain internal error; `Vault` reports it as unknown when the store said so.
+and a write cut short is "outcome unknown", never "failed". A root PUT of unknown outcome that no listing shows ends the
+publish as `store_outcome_unknown` (603) from the engine itself since vl-vaultfmt 0.4.1 (0.4.0 ended it as `internal`,
+which `Vault` used to remap); `LateRootTests` checks it.
 
 ## Finder
 

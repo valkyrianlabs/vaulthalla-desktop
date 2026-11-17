@@ -18,6 +18,7 @@ import VHRecovery
         return (v, file)
     }
 
+    /// The publish is "outcome unknown" (603) as vl-vaultfmt 0.4.1 reports it through its C API: `Vault` maps nothing.
     func loseTheRootPut(_ f: Fixture, _ v: Vault) {
         f.bucket.loseNextPut(keyPrefix: ".vaulthalla/root")
         #expect { try v.publish() } throws: { ($0 as? VaultError)?.status == VaultStatus.storeOutcomeUnknown }
