@@ -624,6 +624,10 @@ There is no device-scoped permission system.
     and carries the app's App Group too, so it reads the same registry without a cross-app data prompt. Unsigned
     and development builds use the file-keychain software key, whose access list names the app: the Keychain may
     ask whether `vaulthalla-mcp` may use it (an ad hoc signature changes with every build).
+  - **The logo.** To a client on MCP 2025-11-25 or later the bridge's `serverInfo` carries `icons` (the app icon at
+    64 and 128 pixels as PNG `data:` URIs, `Sources/VHMCP/BridgeIcon.swift`, checked against the asset files by a
+    test), a `description` and `websiteUrl`; a client that asked for an older revision gets none of the three. The
+    Claude desktop bundle carries the app icon as `icon.png`. Whether an AI app shows a server's icon is its choice.
   - **One server for every paired node.** `tools/list` returns `nodes_list` (id, name, host, port, pairing state,
     reachable now?) and each reachable node's tools from its `/mcp`, each with an added required `node` argument
     (the node id or display name). Annotations pass through unchanged. Tools are listed once per name; when nodes on
