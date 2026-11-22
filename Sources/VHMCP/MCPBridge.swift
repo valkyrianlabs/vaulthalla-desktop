@@ -231,12 +231,20 @@ public actor MCPBridge {
         } else {
             protocolVersion = RemoteNode.protocolVersions[0]
         }
+        var serverInfo: [String: JSONValue] = [
+            "name": .string(Self.serverName), "title": "Vaulthalla Desktop", "version": .string(settings.version),
+        ]
+        // The logo, a description and the website are `Implementation` fields of MCP 2025-11-25: sent from that
+        // revision on (revisions are dates, so they compare as text), never to a client that asked for an older one.
+        if protocolVersion >= "2025-11-25" {
+            serverInfo["description"] = "The Vaulthalla nodes this Mac is paired with, as tools."
+            serverInfo["websiteUrl"] = "https://vaulthalla.io"
+            serverInfo["icons"] = BridgeIcon.icons
+        }
         return [
             "protocolVersion": .string(protocolVersion),
             "capabilities": ["tools": ["listChanged": true]],
-            "serverInfo": [
-                "name": .string(Self.serverName), "title": "Vaulthalla Desktop", "version": .string(settings.version),
-            ],
+            "serverInfo": .object(serverInfo),
             "instructions": .string(Self.instructions),
         ]
     }

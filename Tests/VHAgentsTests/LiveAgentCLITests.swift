@@ -56,7 +56,10 @@ struct LiveAgentCLITests {
         let env = ProcessInfo.processInfo.environment
         let bridge = URL(fileURLWithPath: try #require(env["VH_LIVE_AGENT_BRIDGE"]))
         let out = URL(fileURLWithPath: try #require(env["VH_LIVE_AGENT_BUNDLE_DIR"]), isDirectory: true)
-        let bundle = try await MCPBundle(bridge: bridge, version: env["VH_LIVE_AGENT_BUNDLE_VERSION"] ?? "0.0.0").build(in: out)
+        // VH_LIVE_AGENT_BUNDLE_ICON: a PNG for the install sheet and Claude's extension list (the app passes its icon).
+        let icon = env["VH_LIVE_AGENT_BUNDLE_ICON"].flatMap { try? Data(contentsOf: URL(fileURLWithPath: $0)) }
+        let bundle = try await MCPBundle(bridge: bridge, version: env["VH_LIVE_AGENT_BUNDLE_VERSION"] ?? "0.0.0", iconPNG: icon)
+            .build(in: out)
         print("LIVE bundle:", bundle.path(percentEncoded: false))
         #expect(FileManager.default.fileExists(atPath: bundle.path(percentEncoded: false)))
     }
