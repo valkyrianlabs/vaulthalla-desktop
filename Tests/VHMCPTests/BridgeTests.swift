@@ -31,6 +31,25 @@ import VHCore
 
         let unknown = try await client.request("initialize", ["protocolVersion": "1999-01-01"])
         #expect(unknown["result"]?["protocolVersion"] == "2025-11-25")
+
+        // The logo is declared the way MCP 2025-11-25 defines it, and only from that revision on: PNG data URIs that
+        // are the app icon's own files, so a client shows it without fetching anything.
+        #expect(reply["result"]?["serverInfo"]?["icons"] == nil)
+        let info = unknown["result"]?["serverInfo"]
+        #expect(info?["websiteUrl"] == "https://vaulthalla.io")
+        let icons = try #require(info?["icons"]?.arrayValue)
+        let assets = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appending(path: "App/Vaulthalla/Assets.xcassets/AppIcon.appiconset")
+        let expected = [("64x64", "icon_32x32@2x.png"), ("128x128", "icon_128x128.png")]
+        #expect(icons.count == expected.count)
+        for (icon, (size, file)) in zip(icons, expected) {
+            #expect(icon["mimeType"] == "image/png")
+            #expect(icon["sizes"] == [.string(size)])
+            let src = try #require(icon["src"]?.stringValue)
+            #expect(src.hasPrefix("data:image/png;base64,"))
+            let bytes = try #require(Data(base64Encoded: String(src.dropFirst("data:image/png;base64,".count))))
+            #expect(bytes == (try Data(contentsOf: assets.appending(path: file))))
+        }
         #expect(try await client.request("ping")["result"] == [:])
         #expect(try await client.request("resources/list")["error"]?["code"] == -32601)
     }

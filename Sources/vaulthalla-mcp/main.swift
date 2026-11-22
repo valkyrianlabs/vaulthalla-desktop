@@ -5,6 +5,11 @@
 // stdout carries only protocol messages; diagnostics go to stderr (VAULTHALLA_MCP_LOG=debug|info|warning|error) and
 // never include tool arguments or results.
 //
+// Arguments:
+//   --client <claude-code|claude-desktop|codex>   the AI app this bridge serves; nodes switched off for it in
+//                            Settings → Agents (agent-access.json beside the registry) are hidden and refused.
+//                            Without it, every paired node is served (a registration made by hand).
+//
 // Environment:
 //   VAULTHALLA_MCP_TIMEOUT   seconds a tool call may take (default 600, 0 = no limit)
 //   VAULTHALLA_MCP_REGISTRY  the node registry to read. Default: wherever the app keeps it (RegistryLocation): the
@@ -17,6 +22,14 @@ import VHMCP
 import VHNodes
 
 signal(SIGPIPE, SIG_IGN)
+
+let client: AgentClient?
+switch BridgeArguments.parse(CommandLine.arguments.dropFirst()) {
+case .success(let parsed): client = parsed
+case .failure(let refusal):
+    FileHandle.standardError.write(Data((refusal.description + "\n").utf8))
+    exit(64)  // EX_USAGE
+}
 
 let environment = ProcessInfo.processInfo.environment
 let level: BridgeLog.Level = switch environment["VAULTHALLA_MCP_LOG"]?.lowercased() {
@@ -37,6 +50,8 @@ if !settings.apply(environment: environment) {
 // migration left in Application Support leads there, so the bridge reads the registry the app owns either way.
 let registryURL = environment["VAULTHALLA_MCP_REGISTRY"].map { URL(fileURLWithPath: $0) }
     ?? RegistryLocation.resolve(in: .current()).registryURL
+settings.client = client
+settings.accessURL = AgentAccess.fileURL(besideRegistry: registryURL)
 // A credential consumer (docs/architecture.md §3): no lease, so the registry and the keys are read-only here.
 let registry = NodeStore(fileURL: registryURL)
 let writer = StandardIO.Writer()
@@ -47,7 +62,7 @@ let bridge = MCPBridge(
     log: log,
     output: { data in await writer.write(data) })
 
-log(.info, "serving \(registryURL.path) over stdio")
+log(.info, "serving \(registryURL.path) over stdio" + (client.map { " for \($0.rawValue)" } ?? ""))
 await bridge.run(lines: StandardIO.lines())
 exit(0)
 

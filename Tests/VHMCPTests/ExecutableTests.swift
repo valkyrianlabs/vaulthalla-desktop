@@ -66,6 +66,28 @@ import VHCore
         #expect(err.contains("vaulthalla-mcp:"))
         #expect(!err.contains(secret), "stderr never carries tool arguments")
     }
+
+    @Test(.enabled(if: executable != nil, "vaulthalla-mcp isn't built next to the tests"))
+    func refusesAnUnknownClientAtStartup() async throws {
+        guard let executable = Self.executable else { return }
+        for arguments in [["--client", "chatgpt"], ["--client"]] {
+            let process = Process()
+            process.executableURL = executable
+            process.arguments = arguments
+            let stdin = Pipe(), stdout = Pipe(), stderr = Pipe()
+            process.standardInput = stdin
+            process.standardOutput = stdout
+            process.standardError = stderr
+            try process.run()
+            try stdin.fileHandleForWriting.close()
+            let out = try stdout.fileHandleForReading.readToEnd() ?? Data()
+            let err = String(decoding: try stderr.fileHandleForReading.readToEnd() ?? Data(), as: UTF8.self)
+            process.waitUntilExit()
+            #expect(process.terminationStatus == 64)
+            #expect(out.isEmpty, "nothing on stdout")
+            #expect(err.hasPrefix("vaulthalla-mcp: ") && err.contains("--client"))
+        }
+    }
 }
 
 private final class BundleMarker {}
