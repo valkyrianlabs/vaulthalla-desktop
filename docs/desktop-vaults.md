@@ -20,7 +20,7 @@ and 20); the engine's is vl-vaultfmt `docs/engine.md`. Fields, statuses and reas
 | `tools/vaultfmt/` | `VLVaultfmt.xcframework` from the vendored vl-vaultfmt 0.4.1 source (pin, tarball, build script), built against VLKeykit's vl-keykit source; the archive holds vl-vaultfmt alone (vl-keykit and libcrypto are VLKeykit's). `live-s3.sh`: the live test |
 | Modules | `VHVaultKeys` (keychain items: the app-only group and the group shared with the extension), `VHVaultEngine` (the engine, the S3 store, the Finder replica, the extension's host; **no cloud client**), `VHVault` (the lifecycle and `DeviceAccess`; re-exports `VHVaultEngine`). The File Provider extension links `VHVaultEngine` only |
 | `Sources/VHVaultEngine/Vault.swift`, `Bridge.swift` | the engine's C API (`vl_vaultfmt_engine.h`) in Swift: the store, keys and state tables, every call run off the cooperative pool, the state file `flock`ed to one process |
-| `SigV4.swift`, `S3Store.swift` | Signature Version 4 with CryptoKit; the bucket over `URLSession` (path-style, whole and ranged reads, streamed content PUTs through a file of sealed bytes, conditional PUT headers, version listings, deletes by version id), the key lent per request by `DeviceAccess`, a 401/403 reported through `providerRefusedKey()` |
+| `SigV4.swift`, `S3Store.swift`, `S3Multipart.swift` | Signature Version 4 with CryptoKit; the bucket over `URLSession` (path-style, whole and ranged reads, streamed content PUTs through a file of sealed bytes, multipart uploads above 64 MiB, conditional PUT headers, version listings, deletes by version id), the key lent per request by `DeviceAccess`, a 401/403 reported through `providerRefusedKey()` |
 | `Sources/VHVaultKeys/` | `VaultKeyStore` (`vault-key.<uid>`, `vault-key.<uid>.<version>`) and `BucketKeyStore` (`storage-key.<uid>`, `storage-key.<uid>.<key id>`) in the shared group, `VaultItems` (the move from the app-only group), `KeyRefusalSignal`, `SharedKeyState`; `Sources/VHCloud/DesktopVaultRoutes.swift`: enrollment (`PUT /v1/recovery/vaults/{uid}`) and the envelope fetch (`GET /v1/keys/vaults/{uid}/envelopes`) |
 | `DesktopVaults.swift`, `DesktopVaultSession.swift` | the lifecycle and one session per open vault (its `DeviceAccess` loop and the sync), the sealed label, the person's own key after an ejection |
 | `Sources/VHVaultEngine/VaultBucketCheck.swift` | whether a key the person brings reaches this vault's bucket: one GET of the root, `vl_vaultfmt_root_open` with the vault's keys |
@@ -159,6 +159,55 @@ and a write cut short is "outcome unknown", never "failed". A root PUT of unknow
 publish as `store_outcome_unknown` (603) from the engine itself since vl-vaultfmt 0.4.1 (0.4.0 ended it as `internal`,
 which `Vault` used to remap); `LateRootTests` checks it.
 
+## Multipart uploads
+
+A single PUT can't exceed 5 GiB at S3, R2 or Backblaze B2, so a content object larger than `S3Store.Multipart.threshold`
+(64 MiB of sealed bytes) goes up as a multipart upload (`S3Multipart.swift`). The engine's contract allows it unchanged
+(vl-vaultfmt `engine/Store.hpp`, `vl_vaultfmt_engine.h` `content_*`): a content object is handed over as a stream of
+sealed bytes (`begin` with the sealed size when known, `write`, `finish`), always as a plain PUT (no condition: its name
+is its file's uid and the manifest names the version the upload produced), and `finish` answers the object's ETag
+(quoted, recorded as is, never compared with an MD5) and version id, or "outcome unknown" (the engine then records
+nothing). Reads go by that version id; integrity is the format's (each chunk authenticated, the sealed bytes' SHA-256
+in the manifest). Conditional PUTs are manifest objects (at most 256 MiB, the engine's whole-object limit, and never
+sent on a version_log bucket), so the root and every conditional write stay on the single PUT path.
+
+- **Sizes.** At or below the threshold, the one PUT as before, byte for byte. Above it, parts of `vl_vaultfmt_part_size`
+  (the format's own rule, as vaulthalla-server uploads: 5 MiB up to 48.8 GiB, then whatever keeps the count at 10,000),
+  equal but the last (R2 requires it), at most 5 GiB each; objects up to 5 TiB (S3's and R2's largest; B2 takes 10 TB).
+- **Memory and disk.** The sealed bytes are in the scratch file already (decision 6). Each part is copied from it
+  through one buffer of at most 1 MiB into a part file of its own, hashed on the way, sent with `uploadTask(fromFile:)`
+  and removed: four parts in flight, so at most 4 MiB of buffers and four part files beside the scratch file.
+- **Bounds and retries.** Every request has the store's bounds (no progress for 60 s, the first byte within 30 s; parts
+  and the completion, like content PUTs, no total deadline). A part, the creation, the abort and the check are tried up
+  to four times (after 2, 4 and 8 s) on a transport failure or bound, a 5xx, or S3's `RequestTimeout`, `BadDigest`,
+  `XAmzContentSHA256Mismatch`, `SlowDown`; the same part number sent again replaces the part.
+- **Integrity.** Each part's SHA-256 is its SigV4 payload hash, which the provider checks (what the single PUT relies
+  on; no Content-MD5). The completion names every part's ETag as the provider answered it (a wrong one is refused,
+  `InvalidPart`), and a HEAD of the version the completion named must have the size sent and the completion's ETag
+  before `finish` succeeds.
+- **Outcomes.** A failure before the completion is sent aborts the upload and is `failed` (no object can exist). A
+  completion refused (4xx) is `failed`. A completion whose answer is lost (transport, a bound, a 5xx, or S3's 200 that
+  carries an error) is `store_outcome_unknown`, as a lost PUT reply is: never sent again, never guessed. It is then
+  settled by the engine's rule for content writes: nothing is recorded, the file stays a local change and is written
+  again as a new upload; if the lost completion did land, its object is an unreferenced version of `o/<uid>`, as after
+  a lost single PUT reply. The store aborts the upload in either case (if it completed, the provider has no such upload
+  and the abort changes nothing; an abort can never remove an object). A check that can't be made is also unknown.
+- **Keys.** The key is taken per request, as before, so a renewal between parts is used at once and the parts already
+  sent stay valid (they belong to the upload, not the key). A 401/403 at any step goes to `providerRefused()`; the same
+  request is sent again only once another key is in force (the renewal `DeviceAccess` makes after a refusal), never
+  with the refused key; otherwise the upload fails.
+- **Uploads left behind.** Each upload is recorded in the vault's scratch folder (`desktop-<uid>.uploads/multipart/`, a
+  file per upload id, written durably after CreateMultipartUpload answers and before any part is sent) and forgotten
+  once completed or aborted. When the vault opens (`Vault.open`, its state now locked to this process, so no upload of
+  this installation for this vault is still being sent), a record older than 24 hours whose upload
+  ListMultipartUploads still shows under `o/`, for the same key and with an `Initiated` also older than 24 hours, is
+  aborted; a record whose upload isn't listed is forgotten. **This can't abort another writer's live upload:** the
+  provider mints an upload id for each CreateMultipartUpload, and only ids this Mac received and recorded qualify, so
+  anyone else's upload, of the same key or not, is never touched, nor is a fresh one or any object. A crash between the
+  creation's answer and the record leaves an upload with no part, which bills nothing.
+- **Progress.** Neither the engine's C API nor the File Provider path reports bytes of a write (the extension's
+  `Progress` has one unit), so there is nothing to feed.
+
 ## Finder
 
 `EngineReplica` serves a `desktop-<uid>` domain: enumeration of the working content, anchors from `vault_changes`
@@ -221,8 +270,8 @@ tested by `swift test`; **nothing is proven in Finder**: a File Provider extensi
    *Undo:* a vl-keykit call that copies an opened key into a caller's buffer.
 4. **Enroll before register.** Enrollment registers the vault; `POST /v1/vaults` follows as a no-op check. *Undo:* swap them.
 5. **The engine's node id is the cloud installation id.** *Undo:* any stable per-Mac id.
-6. **Uploads through a file of sealed bytes**, hashed as they arrive, one PUT up to 5 GiB; larger files are refused.
-   *Undo:* multipart uploads (`vl_vaultfmt_part_size`).
+6. **Uploads through a file of sealed bytes**, hashed as they arrive, one PUT up to the multipart threshold (decision
+   18). *Undo:* stream parts as the bytes arrive (needs the sealed size up front for the part size).
 7. **Deletes go to the vault's trash**, as a server vault's delete does; Finder never purges. *Undo:* `purge` in `delete`.
 8. **The app runs every held vault's `DeviceAccess`; the engine runs in the extension while Finder shows the vault.**
    *Undo:* `DesktopVaults.open(_:engine:)` with `engine: true` always, and no domain.
@@ -264,6 +313,22 @@ tested by `swift test`; **nothing is proven in Finder**: a File Provider extensi
     person's own key, or without a cloud key, asks for none. *Undo:* `renewWhileLeaving` and `renewalOver`; the key in
     hand is then the last from the moment the ejection is seen.
 
+18. **Multipart above 64 MiB of sealed bytes** (2026-11-17), parts of `vl_vaultfmt_part_size`, four in flight, four tries
+    each, up to 5 TiB ("Multipart uploads"). *Undo:* `Multipart.threshold = S3Store.maxSinglePut` and `maxObject` back
+    to 5 GiB: one PUT up to 5 GiB, larger files refused.
+19. **Part integrity is the SigV4 payload hash; the completed object is checked with one HEAD** (size, the completion's
+    ETag and version), not by recomputing S3's ETag of ETags here (providers don't all promise MD5 part ETags). *Undo:*
+    drop `verify` (trust the completion's answer), or add Content-MD5 per part.
+20. **A lost completion is "outcome unknown", not repeated, and the upload aborted**; the engine writes the file again,
+    and a completion that did land is an unreferenced version, as after a lost PUT. *Undo:* leave the upload for the
+    next open's cleanup (no abort in `multipartUpload`'s completion catch), or settle by listing the key's versions for
+    the completion's ETag (a store-side guess this design avoids).
+21. **Uploads left behind are aborted at open, only from this Mac's own record, after 24 hours** by both clocks. *Undo:*
+    `S3Store.cleanUpAbandonedUploads` back to the protocol's no-op (a bucket lifecycle rule
+    `AbortIncompleteMultipartUpload`, which this Mac doesn't set, would then be the only cleanup).
+22. **After a 401/403 a request is sent again only with another key**, waiting up to 14 s for one (`providerRefused()`
+    first, as on every path). *Undo:* `attempt` without the refusal case: a refusal fails the upload at once.
+
 ## Key provenance: this Mac attests the versions it creates (2026-11-17)
 
 A server takes a Mac's vault over canonically only if each key version is proven by its origin (vaulthalla-server
@@ -288,7 +353,14 @@ over its C API; no Swift copy of the formats):
 
 ## Not done, and what the contracts didn't give
 
-- Keep Downloaded, thumbnails, and multipart uploads.
+- Keep Downloaded and thumbnails.
+- Multipart uploads are checked against the in-memory model, moto, and once against Backblaze B2 (2026-11-17, one
+  6 GiB file with the app's settings: 1,230 parts of 5 MiB sent in 178 s; the completion answered in 0.41 s, far inside
+  the 60 s no-progress bound, with an S3-style ETag ending `-1230` and `x-amz-version-id`; read back at its ends and
+  middle, and by a fresh reader; nothing left open). Not against R2, and not at 10,000 parts (48.8 GiB and above); a
+  completion that answers no version id takes the HEAD's when its ETag is the completion's. A lost completion that landed leaves an unreferenced content version (as a lost single PUT does): the
+  engine's GC collects superseded segments and roots, not content objects. An upload's parts start only once the
+  whole file is sealed into the scratch file (a sealed copy of the file on disk while it is sent, plus four part files).
 - The cloud's contract on ejection: `managed-storage.md` "As built" 25 says a Mac "converts by using a key the customer
   makes in their own account", but the customer's account (and so the key) exists only after the ejection, which waits
   for the Mac's report; decision 11 settles it the server's way. Nothing tells the Mac when Backblaze hands the account
@@ -312,6 +384,18 @@ over its C API; no Swift copy of the formats):
 - `swift test --filter VHVaultTests`: SigV4 against AWS's SigV4 test suite cases; the engine through the C API on an
   in-memory B2-like bucket (the library's own C lifecycle, write conflicts, store failures, the state lock); the S3
   store's requests and answers; the engine-backed Finder replica.
+- `swift test --filter Multipart`: `MemoryBucket`'s multipart model written from S3's API reference (part numbers 1 to
+  10,000, MD5 part ETags, the ETag of ETags with the count, `EntityTooSmall` below the minimum part but the last,
+  `InvalidPart` for a wrong or missing ETag, `InvalidPartOrder`, `MalformedXML`, `NoSuchUpload` after a completion or
+  abort, ListMultipartUploads; a large file placed by its start as Backblaze orders it), with `S3Store` in front through
+  `S3Wire` (the REST API as a local URLProtocol checking the key and the payload hash): the threshold (at it one PUT
+  with the same request as before, above it parts, never a condition), the largest buffer and parts in flight, a part
+  retried, a part failing for good aborted, a bad part ETag refused at completion, a lost completion (landed, not
+  landed, a 503) unknown and aborted and never resent, a key renewed mid-upload (the parts sent kept) and refused
+  mid-upload (reported, left recorded), the limits; the cleanup at `Vault.open` (a stale upload of this Mac aborted, a
+  fresh one, a foreign one and a completed object untouched, a provider time too recent), and a refused upload
+  cleaned up once a key works; the engine writing a large file in parts, a lost completion reported as
+  `store_outcome_unknown` with nothing recorded, the file written again and read back after a re-anchor.
 - `swift test --filter SharedKeysTests`: the shared-group stores (the extension reads, can't write), the item
   attributes, the move (first use, a crash between write and delete, a failed read-back, an old item that differs),
   the extension unable to reach the cloud client, the refusal signal, and an expired key with the app not running.
@@ -347,9 +431,16 @@ over its C API; no Swift copy of the formats):
   decoding as managed, renewal while `ejecting` (a later end, a transient failure retried, the first 409 ending it for
   good across a relaunch), the key view's `renewable_during_ejection` false and the bucket `ejected` each ending it without a request, and no key asked once the
   person's own key is in use.
+- `LiveLargeUploadTests` (opt-in, `VH_LIVE_S3_LARGE_GIB`; never in CI, and against a real provider only on the
+  maintainer's go for that run): one file of that many GiB through the engine and the store's multipart path with the
+  app's settings; it prints the provider's completion time, its ETag and whether the completion named the version, and
+  reads back the file's ends and middle. Rehearsed against moto with
+  `VH_LIVE_FILTER=LiveLargeUploadTests VH_LIVE_S3_LARGE_GIB=1 tools/vaultfmt/live-s3.sh <vaulthalla-cloud checkout>`.
 - `tools/vaultfmt/live-s3.sh <vaulthalla-cloud checkout>`: opt-in, against moto on `ssh dev` (vaulthalla-cloud's
   `tests/live/s3dev-moto.sh`, credentials and signatures checked): a versioned bucket and a key scoped to it, a whole
-  vault lifecycle through VHVault, a wrong secret refused; and `LiveS3EjectionTests`: a second bucket with two scoped
+  vault lifecycle through VHVault, a wrong secret refused; a multipart upload through the engine in a second bucket (the
+  threshold lowered to 8 MiB, the library's 5 MiB parts, which moto's minimum part enforces: 26 MiB in six parts, the
+  ETag's part count, read back by version and after a re-anchor, nothing left open); and `LiveS3EjectionTests`: a second bucket with two scoped
   keys standing in for the cloud's key and the customer's own, the whole ejection through `DesktopVaults` with the real
   `S3Store`, a wrong secret and the first bucket's key refused, the switch, and a fresh reader with the customer's key. The administrator key never leaves dev's container; the Mac
   reaches moto through an SSH tunnel to dev's loopback for the run only.
