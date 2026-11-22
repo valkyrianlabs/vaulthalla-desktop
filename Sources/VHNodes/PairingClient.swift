@@ -125,6 +125,9 @@ public final class PairingClient: Sendable {
         public var deviceName: String
         public var appVersion: String
         public var platform = "macOS"
+        /// An approval key to register with the pairing (`approval_key`, its SPKI DER); nil: none. An AI app's own
+        /// pairing never carries one.
+        public var approvalKeySPKI: Data?
         /// Wait after an immediate `pending` before asking again (docs/pairing.md §3).
         public var statusPause: Duration = .seconds(2)
         /// A `pending` that came back faster than this was not held by the daemon (no long poll).
@@ -260,7 +263,8 @@ private struct Attempt {
                         Ws.Device.Pair.Request.self,
                         payload: .init(
                             name: String(configuration.deviceName.prefix(64)), platform: configuration.platform,
-                            appVersion: configuration.appVersion, commitment: Hex.encode(commitment)),
+                            appVersion: configuration.appVersion, commitment: Hex.encode(commitment),
+                            approvalKey: configuration.approvalKeySPKI.map { .value($0.base64EncodedString()) }),
                         timeout: configuration.requestTimeout)
                 }
                 guard let serverNonce = Hex.decode(request.nonceServer, length: PairingCode.nonceLength) else {

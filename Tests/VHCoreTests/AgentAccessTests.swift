@@ -29,8 +29,8 @@ import VHCore
         // A later client's key is ignored; a newer version or garbage is refused.
         try Data(#"{"version":1,"excluded":{"future-app":["a"]}}"#.utf8).write(to: url)
         #expect(try AgentAccess.load(from: url).excludedNodes(for: .codex).isEmpty)
-        try Data(#"{"version":2}"#.utf8).write(to: url)
-        #expect(throws: AgentAccess.Failure.unsupportedVersion(2)) { try AgentAccess.load(from: url) }
+        try Data(#"{"version":3}"#.utf8).write(to: url)
+        #expect(throws: AgentAccess.Failure.unsupportedVersion(3)) { try AgentAccess.load(from: url) }
         try Data("[]".utf8).write(to: url)
         #expect(throws: AgentAccess.Failure.self) { try AgentAccess.load(from: url) }
     }

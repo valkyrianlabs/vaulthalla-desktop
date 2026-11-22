@@ -26,11 +26,16 @@ public struct Node: Identifiable, Codable, Hashable, Sendable {
     public var lastGood: LastGoodEndpoint?
     /// When the advertised list last changed: the `device.endpoints` answer's `generated_at`, else when it was saved.
     public var lastAdvertisedAt: Date?
+    /// AI apps' own pairings with this node, by client (`AgentClient.rawValue`; ``AgentIdentity``).
+    public var agentIdentities: [String: AgentIdentity]
+    /// Revocations of AI apps' devices this node still owes (it was unreachable when they were removed).
+    public var pendingAgentRevocations: [PendingAgentRevocation]
 
     public init(
         id: NodeID, displayName: String, endpoint: NodeEndpoint, pairing: PairingState = .unpaired,
         isNamedByUser: Bool = false, serverNodeID: String? = nil, nextServerSPKISHA256: Data? = nil,
-        endpoints: [AdvertisedEndpoint] = [], lastGood: LastGoodEndpoint? = nil, lastAdvertisedAt: Date? = nil
+        endpoints: [AdvertisedEndpoint] = [], lastGood: LastGoodEndpoint? = nil, lastAdvertisedAt: Date? = nil,
+        agentIdentities: [String: AgentIdentity] = [:], pendingAgentRevocations: [PendingAgentRevocation] = []
     ) {
         self.id = id
         self.displayName = displayName
@@ -42,12 +47,14 @@ public struct Node: Identifiable, Codable, Hashable, Sendable {
         self.endpoints = endpoints
         self.lastGood = lastGood
         self.lastAdvertisedAt = lastAdvertisedAt
+        self.agentIdentities = agentIdentities
+        self.pendingAgentRevocations = pendingAgentRevocations
     }
 
     // Spelled out so records written before a member existed still load: the newer members are optional on disk.
     private enum CodingKeys: String, CodingKey {
         case id, displayName, endpoint, pairing, isNamedByUser, serverNodeID, nextServerSPKISHA256
-        case endpoints, lastGood, lastAdvertisedAt
+        case endpoints, lastGood, lastAdvertisedAt, agentIdentities, pendingAgentRevocations
     }
 
     public init(from decoder: any Decoder) throws {
@@ -64,6 +71,10 @@ public struct Node: Identifiable, Codable, Hashable, Sendable {
             .elements ?? []
         lastGood = try? container.decodeIfPresent(LastGoodEndpoint.self, forKey: .lastGood)
         lastAdvertisedAt = try? container.decodeIfPresent(Date.self, forKey: .lastAdvertisedAt)
+        // Credentials, unlike routing hints: a malformed entry fails the record rather than being dropped silently.
+        agentIdentities = try container.decodeIfPresent([String: AgentIdentity].self, forKey: .agentIdentities) ?? [:]
+        pendingAgentRevocations = try container.decodeIfPresent([PendingAgentRevocation].self,
+                                                                forKey: .pendingAgentRevocations) ?? []
     }
 
     public func encode(to encoder: any Encoder) throws {
@@ -79,6 +90,11 @@ public struct Node: Identifiable, Codable, Hashable, Sendable {
         if !endpoints.isEmpty { try container.encode(endpoints, forKey: .endpoints) }
         try container.encodeIfPresent(lastGood, forKey: .lastGood)
         try container.encodeIfPresent(lastAdvertisedAt, forKey: .lastAdvertisedAt)
+        // Left out while empty, so a record without AI app pairings is byte for byte what the previous version wrote.
+        if !agentIdentities.isEmpty { try container.encode(agentIdentities, forKey: .agentIdentities) }
+        if !pendingAgentRevocations.isEmpty {
+            try container.encode(pendingAgentRevocations, forKey: .pendingAgentRevocations)
+        }
     }
 }
 

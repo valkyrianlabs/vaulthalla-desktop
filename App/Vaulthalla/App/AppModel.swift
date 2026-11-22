@@ -30,6 +30,8 @@ final class AppModel {
     /// Vaulthalla Cloud (optional, hidden until it opens): nil in previews and while neither `cloud.enabled` is set nor
     /// this Mac is linked.
     @ObservationIgnored private(set) var cloud: CloudModel?
+    /// AI apps' own pairings and switches (Settings → Agents, a node's Devices page).
+    let agents = AgentPairingCoordinator()
     var selectedNodeID: NodeID?
     var selectedSection: NodeSection = .overview
     /// Which page of the Overview shows, and the panel and metric a followed warning points at.
@@ -135,6 +137,7 @@ final class AppModel {
         credentialRole = store.role
         loadNodes()
         recoveryKeys.app = self
+        agents.app = self
         if let keys {
             let cloud = CloudModel(lease: store.lease)
             if cloud.isVisible {
@@ -245,6 +248,12 @@ final class AppModel {
         nodes.first { $0.id == id }
     }
 
+    /// The record as the registry holds it now, for an edit: AI apps' own pairings are written beside the app's
+    /// edits (``AgentPairings``), and an edit made from a stale copy would drop them.
+    private func record(_ id: NodeID) -> Node? {
+        (try? store.reload())?.first { $0.id == id } ?? node(withID: id)
+    }
+
     // MARK: - Registry
 
     func loadNodes() {
@@ -293,7 +302,7 @@ final class AppModel {
 
     func rename(_ id: NodeID, to name: String) {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty, var node = node(withID: id), node.displayName != trimmed else { return }
+        guard !trimmed.isEmpty, var node = record(id), node.displayName != trimmed else { return }
         node.displayName = trimmed
         node.isNamedByUser = true
         edit { try store.update(node) }
@@ -301,7 +310,14 @@ final class AppModel {
 
     func remove(_ id: NodeID) {
         let index = nodes.firstIndex { $0.id == id }
-        let removed = node(withID: id)
+        let removed = record(id)
+        // AI apps' own devices on the node go with it: revoked (this Mac's session while it lasts, else each app's
+        // own), their keys deleted; any the node couldn't be told about are named for the person.
+        if let removed, !removed.agentIdentities.isEmpty || !removed.pendingAgentRevocations.isEmpty,
+           isCredentialOwner {
+            let session = sessions?.session(for: id)
+            Task { await agents.nodeRemoved(removed, macSession: session) }
+        }
         guard edit({ try store.remove(id) }) else { return }
         // Removing this Mac's own server is a choice: it isn't added back on its own.
         if let removed { LocalNodeSetup.recordRemoval(of: removed) }
@@ -347,7 +363,7 @@ final class AppModel {
 
     /// Records a pairing outcome. The pairing client (VHIdentity/VHTransport) calls this; the shell never invents one.
     func updatePairing(_ pairing: PairingState, for id: NodeID) {
-        guard var node = node(withID: id) else { return }
+        guard var node = record(id) else { return }
         node.pairing = pairing
         edit { try store.update(node) }
     }
@@ -372,7 +388,7 @@ final class AppModel {
     /// connect as a Device session.
     func pairingApproved(_ id: NodeID, serverNodeID: String, serverName: String, deviceID: String, serverSPKI: Data,
                          backend: KeyBackend) {
-        guard var node = node(withID: id) else { return }
+        guard var node = record(id) else { return }
         node.pairing = .paired(serverSPKISHA256: serverSPKI, deviceID: deviceID, since: .now)
         node.serverNodeID = serverNodeID
         node.nextServerSPKISHA256 = nil
@@ -469,8 +485,18 @@ final class AppModel {
                 nodesNeedingPairing.remove(id)
             }
             queryStores[id]?.connectionChanged(online: status == .online)
+            // Revocations of AI apps' devices this node still owes go out once it is back.
+            if status == .online, isCredentialOwner, let keys = deviceKeys,
+               record(id)?.pendingAgentRevocations.isEmpty == false {
+                let pairings = AgentPairings(store: store, keys: keys)
+                let transport = cloudTransport(for: id)
+                Task { [weak self] in
+                    await pairings.retryPending(on: id, macSession: transport)
+                    self?.loadNodes()
+                }
+            }
         case .recordChanged(let pairing, let next):
-            guard var node = node(withID: id) else { return }
+            guard var node = record(id) else { return }
             node.pairing = pairing
             node.nextServerSPKISHA256 = next
             edit { try store.update(node) }
@@ -487,7 +513,7 @@ final class AppModel {
             laneServices[id]?.transferMonitor?.setEndpointClass(TransferEndpointClass(route.transportClass))
         case .endpointsChanged(let endpoints, let advertisedAt, let lastGood):
             // Routing hints from an owner session: saving them doesn't restart it (they aren't part of its basis).
-            guard var node = node(withID: id),
+            guard var node = record(id),
                   node.endpoints != endpoints || node.lastAdvertisedAt != advertisedAt || node.lastGood != lastGood
             else { return }
             node.endpoints = endpoints

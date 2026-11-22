@@ -57,7 +57,8 @@ let registry = NodeStore(fileURL: registryURL)
 let writer = StandardIO.Writer()
 let bridge = MCPBridge(
     registry: registry,
-    connector: KeychainNodeConnector(keys: .standard(), registry: registry),
+    connector: KeychainNodeConnector(keys: .standard(), registry: registry, client: client,
+                                     access: { [accessURL = settings.accessURL!] in try AgentAccess.load(from: accessURL) }),
     settings: settings,
     log: log,
     output: { data in await writer.write(data) })
