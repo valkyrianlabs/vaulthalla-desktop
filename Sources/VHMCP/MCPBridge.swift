@@ -29,6 +29,11 @@ public actor MCPBridge {
         public var pollInterval: Duration? = .seconds(60)
         /// Reported as `serverInfo.version` and to the nodes.
         public var version: String = "dev"
+        /// The AI app this bridge serves (`--client`). nil: every paired node, no switches (a bridge registered by
+        /// hand, as before the app registered it).
+        public var client: AgentClient?
+        /// The per-node, per-app switches (``AgentAccess``), read on every registry refresh. Only used with a client.
+        public var accessURL: URL?
 
         public init() {}
 
@@ -54,8 +59,12 @@ public actor MCPBridge {
     private let log: BridgeLog
 
     private var remotes: [NodeID: RemoteNode] = [:]
-    /// The registry as last read, in the operator's order.
+    /// The registry as last read, in the operator's order, without the nodes switched off for this client.
     private var registryNodes: [Node] = []
+    /// Nodes switched off for this client (all of them while the switches can't be read).
+    private var withheld: [Node] = []
+    /// Why the switches couldn't be read; every node is withheld meanwhile (fail closed).
+    private var accessProblem: String?
     private var catalog = ToolCatalog()
     /// The catalog the client last saw (in a `tools/list` answer or announced by a notification).
     private var announced: ToolCatalog?
@@ -282,13 +291,16 @@ public actor MCPBridge {
             log(.error, "the node registry can't be read: \(error)")
             return
         }
-        registryNodes = nodes
-        let ids = Set(nodes.map(\.id))
+        let excluded = loadExclusions(nodes)
+        registryNodes = nodes.filter { !excluded.contains($0.id) }
+        withheld = nodes.filter { excluded.contains($0.id) }
+        // A withheld node is never contacted: its connection is closed and its tools are dropped with it.
+        let ids = Set(registryNodes.map(\.id))
         for (id, remote) in remotes where !ids.contains(id) {
             remotes[id] = nil
             await remote.close()
         }
-        for node in nodes {
+        for node in registryNodes {
             if let remote = remotes[node.id] {
                 await remote.update(node)
             } else {
@@ -296,6 +308,21 @@ public actor MCPBridge {
                                               idleTimeout: Self.idleTimeout(for: settings.callDeadline),
                                               clientVersion: settings.version)
             }
+        }
+    }
+
+    /// The nodes switched off for this client. Without a client, none; with one and unreadable switches, all of them.
+    private func loadExclusions(_ nodes: [Node]) -> Set<NodeID> {
+        guard let client = settings.client, let accessURL = settings.accessURL else { return [] }
+        do {
+            let access = try AgentAccess.load(from: accessURL)
+            if accessProblem != nil { log(.info, "the agent switches can be read again") }
+            accessProblem = nil
+            return access.excludedNodes(for: client)
+        } catch {
+            if accessProblem == nil { log(.error, "\(error); no node is available to \(client.displayName)") }
+            accessProblem = error.description
+            return Set(nodes.map(\.id))
         }
     }
 
@@ -355,6 +382,12 @@ public actor MCPBridge {
             return .success(await nodesList())
         }
         if catalog[name] == nil { await refresh(force: false) }
+        if let target = forwarded[ToolCatalog.nodeArgument]?.stringValue, resolvesToWithheld(target),
+           case .problem(let text) = resolve(target) {
+            // Refused before anything else, so a switched-off node is never contacted whatever the tool.
+            log(.info, "tools/call \(name) refused: the node is switched off for this client")
+            return .success(RPC.toolResult(text: text, isError: true))
+        }
         guard let entry = catalog[name] else {
             return .failure(.code(RPC.invalidParams, "Unknown tool: \(name). The node offering it may be offline "
                 + "(see nodes_list)."))
@@ -456,8 +489,32 @@ public actor MCPBridge {
         if named.count > 1 {
             return .problem("Several nodes are named \(wanted): use the id (\(describe(named.map(\.id)))).")
         }
+        if let off = withheldNode(wanted) { return .problem(withheldText(off)) }
         let known = registryNodes.isEmpty ? "none" : describe(registryNodes.map(\.id))
         return .problem("No node \(wanted). Known nodes: \(known).")
+    }
+
+    private func withheldNode(_ wanted: String) -> Node? {
+        withheld.first {
+            $0.id.rawValue == wanted || $0.serverNodeID == wanted
+                || $0.displayName.compare(wanted, options: .caseInsensitive) == .orderedSame
+        }
+    }
+
+    /// `text` names no available node but a withheld one.
+    private func resolvesToWithheld(_ text: String) -> Bool {
+        if case .problem = resolve(text) { return withheldNode(text.trimmingCharacters(in: .whitespaces)) != nil }
+        return false
+    }
+
+    private func withheldText(_ node: Node) -> String {
+        let app = settings.client?.displayName ?? "this app"
+        if let accessProblem {
+            return "\(node.displayName) isn't available to \(app): Vaulthalla can't read which nodes are (\(accessProblem)). "
+                + "Open Vaulthalla → Settings → Agents to fix it."
+        }
+        return "\(node.displayName) is turned off for \(app) in Vaulthalla (Settings → Agents), so nothing was run "
+            + "on it. It can be turned on there."
     }
 
     private func describe(_ ids: [NodeID]) -> String {
@@ -489,7 +546,12 @@ public actor MCPBridge {
             }
             rows.append(.object(row))
         }
-        let structured: JSONValue = ["nodes": .array(rows)]
+        var structured: JSONValue = ["nodes": .array(rows)]
+        if let accessProblem, let client = settings.client {
+            structured = ["nodes": .array(rows), "notice": .string(
+                "No node is available to \(client.displayName): Vaulthalla can't read which nodes are (\(accessProblem)). "
+                    + "Open Vaulthalla → Settings → Agents to fix it.")]
+        }
         return RPC.toolResult(text: RPC.prettyText(structured), structured: structured, isError: false)
     }
 
@@ -530,6 +592,7 @@ public actor MCPBridge {
                         "required": ["id", "name", "host", "port", "pairing", "reachable"],
                     ],
                 ],
+                "notice": ["type": "string"],
             ],
             "required": ["nodes"],
         ],

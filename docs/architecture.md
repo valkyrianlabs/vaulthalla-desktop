@@ -568,10 +568,55 @@ There is no device-scoped permission system.
     `modelcontextprotocol/swift-sdk`: results must pass through as raw JSON rather than be re-encoded through the
     SDK's typed models, and the SDK's package graph brings swift-nio, swift-log, swift-system, eventsource and a
     branch-pinned docc plugin into an app that otherwise depends on swift-certificates alone.
-  - **Registration** (Settings → Agents shows the app's actual path and copies these; Desktop never runs them):
-    `claude mcp add --scope user vaulthalla-desktop -- "/Applications/Vaulthalla.app/Contents/Helpers/vaulthalla-mcp"`
-    and `codex mcp add vaulthalla-desktop -- "/Applications/Vaulthalla.app/Contents/Helpers/vaulthalla-mcp"` (or
-    `[mcp_servers.vaulthalla-desktop]` with `command = "…"` and `tool_timeout_sec = 600` in `~/.codex/config.toml`).
+  - **Registration: the app adds it** (`Sources/VHAgents`, Settings → Agents). One row per AI app with its state and
+    one action (Add, Repair, Remove). Every external program runs with an argument array (`ProcessRunner`: never a
+    shell, stdin `/dev/null`, a deadline with SIGTERM then SIGKILL, output capped and treated as data, in an empty
+    working directory so no project's servers are involved). The CLIs are looked for in `~/.local/bin`,
+    `~/.claude/local`, `/opt/homebrew/bin`, `/usr/local/bin`, then the login shell's PATH, asked once per launch by
+    starting the user's shell (from the user database) as `-l -c` with a fixed program that prints `$PATH` behind a
+    marker; nothing is interpolated into it. A missing CLI, one too old for the subcommand (it refuses it as unknown),
+    one answering in an unknown form, or one that times out is a typed state (`AgentAppStatus`), and nothing is
+    changed. Add is blocked while the bridge's path won't last (`BridgeLocation`: a disk image, App Translocation,
+    the Trash, a temporary folder), with the existing "move it to Applications" advice for other places.
+    - **Claude Code** (CLI and the Code tab of the Claude app, one user configuration): status
+      `claude mcp get vaulthalla-desktop` (scope, Claude Code's own health check, command, arguments); add
+      `claude mcp add-json --scope user vaulthalla-desktop {"type":"stdio","command":<bridge>,"args":["--client","claude-code"]}`,
+      after `claude mcp remove --scope user` when the user scope has a stale or hand-made one; remove
+      `claude mcp remove --scope user`. Local and project scopes are never touched. Desktop never writes
+      `~/.claude.json`.
+    - **Codex** (CLI, Codex in ChatGPT, the IDE extension, one `config.toml`): status `codex mcp get … --json`; add
+      `codex mcp add vaulthalla-desktop -- <bridge> --client codex` (replaces an entry of that name); remove
+      `codex mcp remove`. The CLI can't set `tool_timeout_sec`, so `CodexConfigEdit` inserts that one line into the
+      server's own `[mcp_servers.vaulthalla-desktop]` table (or rewrites its existing line), atomically beside the
+      file (through a symlink, beside its target; the old mode kept; nothing replaced if Codex wrote the file
+      meanwhile; no backup left). Any other shape (no single such table, an inline table, dotted keys, an unclosed
+      multi-line string) is refused, the timeout stays at Codex's 60 s, and the row says so.
+    - **Claude (the desktop app's chat)**: Add builds an MCP Bundle (`MCPBundle`, MCPB manifest 0.3) in a new
+      temporary folder and opens it with Claude (`NSWorkspace.open(_:withApplicationAt:)`); Claude's own install
+      sheet finishes the job and the row offers Check Again. The bundle holds `manifest.json` (`name`
+      `vaulthalla-desktop`, `server.type` `binary`, `entry_point` and `mcp_config.command`
+      `${__dirname}/server/vaulthalla-mcp`, `tools_generated`, `compatibility.platforms` `darwin`, author Valkyrian
+      Labs LLC, AGPL-3.0-or-later, the app icon) and a three-line sh launcher that execs the bridge inside the app
+      at its single-quoted path with `--client claude-desktop`. MANIFEST.md describes the server as bundled and says
+      nothing about a command outside the bundle, hence the launcher; the bridge itself stays in the app, signed and
+      with the keychain group, and the launcher holds nothing secret. Whether it is installed is read, read-only and
+      best effort, from Claude's undocumented `Claude Extensions/<id>/` folders (a `manifest.json` named
+      `vaulthalla-desktop` whose launcher is the one this app would write); removal happens in Claude (Settings →
+      Extensions).
+  - **`--client` and the per-node switch.** Every registration starts the bridge with `--client claude-code`,
+    `claude-desktop` or `codex` (`AgentClient`); an unknown value or any other argument is refused at startup
+    (stderr, exit 64), and a bridge started without one serves every paired node as before, so registrations made by
+    hand keep working (the row calls them "added by hand" and offers Repair). Settings → Agents shows each paired node
+    with an "available to" switch per AI app, stored as exclusions only in `agent-access.json` beside `nodes.json`
+    (`AgentAccess`, `{"version":1,"excluded":{"<client>":["<node id>"]}}`, written atomically by the app), so every
+    node, including one paired later, is available until switched off. The bridge re-reads it with the registry on
+    every refresh: a switched-off node is left out of `nodes_list` and `tools/list`, never contacted, and a
+    `tools/call` naming it (id, server id or name) is refused with a plain message before anything else. If the file
+    can't be read, or a newer version wrote it, a bridge with a client fails closed: no node, and `nodes_list` says
+    why. The bridge stays read-only. The value names the app, not an identity: a per-app device identity, if one is
+    added later, would be found by the same value, so registrations wouldn't change.
+  - **Manual setup** (a disclosure in Settings → Agents): the same commands with `--client`, and the Codex TOML stanza
+    with `args` and `tool_timeout_sec = 600`.
   - Desktop's own future agent uses the same library (`VHMCP`) in process.
 - **Agent skills.** `vh skill install --agent <claude|codex> [--scope user|project]` runs on the client side and
   needs no daemon.

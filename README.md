@@ -24,7 +24,7 @@ vault's row into Finder).
 
 | Path | What |
 |---|---|
-| `Package.swift`, `Sources/`, `Tests/` | VaulthallaKit: `VHCore` (models, secret handling), `VHContract` (generated daemon contract), `VHTransport` (ws client, mTLS), `VHIdentity` (device keys and certificates), `VHOnePassword` (1Password helper client, backup status), `VHRecovery` (KEV1 envelopes, the recovery seed, uids and the recovery kit, against the shared golden vectors), `VHKeykit` (vl-keykit's account key formats through its C API: statements, chains, KAK1, holder proofs, labels, policies, comparison codes, sealed storage credentials; tested against the library's vectors), `VHCloud` (optional Vaulthalla Cloud link: VHC1-signed requests, linking, delivering a cloud restore from a recovery kit, a Desktop-only vault's short-lived bucket key), `VHMCP` (the MCP bridge), `VHFinder` (File Provider domains and the replica: items, versions, errors, conflicts, the per-domain database), `VHVault` (Desktop-only vaults through vl-vaultfmt's engine: SigV4 and the S3 store, the lifecycle, the engine-backed Finder replica; off by default, [`docs/desktop-vaults.md`](docs/desktop-vaults.md)) |
+| `Package.swift`, `Sources/`, `Tests/` | VaulthallaKit: `VHCore` (models, secret handling), `VHContract` (generated daemon contract), `VHTransport` (ws client, mTLS), `VHIdentity` (device keys and certificates), `VHOnePassword` (1Password helper client, backup status), `VHRecovery` (KEV1 envelopes, the recovery seed, uids and the recovery kit, against the shared golden vectors), `VHKeykit` (vl-keykit's account key formats through its C API: statements, chains, KAK1, holder proofs, labels, policies, comparison codes, sealed storage credentials; tested against the library's vectors), `VHCloud` (optional Vaulthalla Cloud link: VHC1-signed requests, linking, delivering a cloud restore from a recovery kit, a Desktop-only vault's short-lived bucket key), `VHMCP` (the MCP bridge), `VHAgents` (adding the bridge to Claude Code, Codex and Claude), `VHFinder` (File Provider domains and the replica: items, versions, errors, conflicts, the per-domain database), `VHVault` (Desktop-only vaults through vl-vaultfmt's engine: SigV4 and the S3 store, the lifecycle, the engine-backed Finder replica; off by default, [`docs/desktop-vaults.md`](docs/desktop-vaults.md)) |
 | `Sources/vaulthalla-mcp/` | the stdio MCP bridge the app embeds at `Contents/Helpers/vaulthalla-mcp` (see "AI agents" below) |
 | `Helpers/vaulthalla-1password/` | the Go helper that backs vault keys up to 1Password (desktop-app authorization); `./build.sh`, see its README |
 | `App/` | the Xcode project: SwiftUI app, design system, features. Source folders are synchronized: add files on disk, no project edits |
@@ -165,15 +165,23 @@ and "Connection panel".
 
 ## AI agents (MCP)
 
-Vaulthalla Desktop bundles `vaulthalla-mcp`, a stdio MCP server that gives an agent (Claude Code, Codex) the tools of
-every node this Mac is paired with, through the same pairing the app uses. Each tool takes a `node` argument (the
-node's id or name; the `nodes_list` tool lists them). On each node the agent acts as the Vaulthalla account the Mac
-was paired by; destructive commands still wait for your approval, and vault keys are never reachable over MCP.
-Settings → Agents shows the path of your copy and copies these commands; register it yourself:
+Vaulthalla Desktop bundles `vaulthalla-mcp`, a stdio MCP server that gives an AI app the tools of every node this
+Mac is paired with, through the same pairing the app uses. Each tool takes a `node` argument (the node's id or name;
+the `nodes_list` tool lists them). On each node the app acts as the Vaulthalla account the Mac was paired by;
+destructive commands still wait for your approval, and vault keys are never reachable over MCP.
+
+Settings → Agents adds it in one click to **Claude Code** (the CLI and the Code tab in Claude, through `claude mcp`),
+**Codex** (the CLI, Codex in ChatGPT and the IDE extension, through `codex mcp`, with a 600-second tool timeout) and
+**Claude** (the desktop app's chat: Vaulthalla opens an MCP Bundle with Claude, and you click Install in Claude's
+window). It shows whether each is added, repairs a registration left behind when the app moved, and removes it
+(Claude's in Claude → Settings → Extensions). Move Vaulthalla to Applications first. Under "Available to", any paired
+node can be turned off for any of the three apps; nodes are available until you do, including ones paired later.
+
+"Manual setup" there has the commands to run yourself:
 
 ```sh
-claude mcp add --scope user vaulthalla-desktop -- "/Applications/Vaulthalla.app/Contents/Helpers/vaulthalla-mcp"
-codex mcp add vaulthalla-desktop -- "/Applications/Vaulthalla.app/Contents/Helpers/vaulthalla-mcp"
+claude mcp add --scope user vaulthalla-desktop -- "/Applications/Vaulthalla.app/Contents/Helpers/vaulthalla-mcp" --client claude-code
+codex mcp add vaulthalla-desktop -- "/Applications/Vaulthalla.app/Contents/Helpers/vaulthalla-mcp" --client codex
 ```
 
 or, for Codex by hand, in `~/.codex/config.toml`:
@@ -181,9 +189,11 @@ or, for Codex by hand, in `~/.codex/config.toml`:
 ```toml
 [mcp_servers.vaulthalla-desktop]
 command = "/Applications/Vaulthalla.app/Contents/Helpers/vaulthalla-mcp"
+args = ["--client", "codex"]
 tool_timeout_sec = 600
 ```
 
+Without `--client` the bridge serves every paired node and the switches don't apply.
 A call may take up to 10 minutes (`VAULTHALLA_MCP_TIMEOUT` in seconds, `0` for no limit). A development build keeps
 its device keys in the login keychain, so macOS may ask whether `vaulthalla-mcp` may use them. Design:
 [`docs/architecture.md`](docs/architecture.md) §5.

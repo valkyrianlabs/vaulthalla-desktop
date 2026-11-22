@@ -25,6 +25,7 @@ let package = Package(
         .library(name: "VHKeykit", targets: ["VHKeykit"]),
         .library(name: "VHCloud", targets: ["VHCloud"]),
         .library(name: "VHMCP", targets: ["VHMCP"]),
+        .library(name: "VHAgents", targets: ["VHAgents"]),
         .library(name: "VHFinder", targets: ["VHFinder"]),
         .library(name: "VHVaultKeys", targets: ["VHVaultKeys"]),
         .library(name: "VHVaultEngine", targets: ["VHVaultEngine"]),
@@ -75,6 +76,9 @@ let package = Package(
             dependencies: ["VHCore", "VHContract", "VHTransport", "VHIdentity", "VHNodes"],
             swiftSettings: strict
         ),
+        // Adding the MCP bridge to AI apps (docs/architecture.md §5, "Registration"): Claude Code and Codex through their
+        // CLIs (argument arrays, never a shell), the Claude desktop app through an MCP Bundle.
+        .target(name: "VHAgents", dependencies: ["VHCore"], swiftSettings: strict),
         // Finder integration (docs/architecture.md §7, File Provider): domain identity, naming and management, the
         // extension's readiness, and the replica (items, versions, errors, conflicts, anchors, the per-domain database,
         // enumeration, fetches and writes) without the FileProvider framework, so `swift test` covers them.
@@ -140,6 +144,7 @@ let package = Package(
             dependencies: ["VHMCP", "VHNodes", "VHCore", "VHContract", "VHTransport", "VHIdentity"],
             swiftSettings: strict
         ),
+        .testTarget(name: "VHAgentsTests", dependencies: ["VHAgents", "VHCore"], swiftSettings: strict),
         .testTarget(
             name: "VHFinderTests",
             dependencies: ["VHFinder", "VHCore", "VHContract", "VHTransport", "VHIdentity", "VHNodes"],
