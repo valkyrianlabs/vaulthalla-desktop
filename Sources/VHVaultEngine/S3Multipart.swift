@@ -11,7 +11,8 @@ import VLVaultfmt
 //   1. CreateMultipartUpload; its upload id recorded on this Mac (`MultipartJournal`) before any part is sent;
 //   2. the parts, `vl_vaultfmt_part_size` each (the format's own rule, as servers use it), each read from the scratch
 //      file through a buffer of `Multipart.chunk` bytes into a part file, signed with its SHA-256 as the SigV4 payload
-//      hash (which the provider checks), `Multipart.concurrency` at a time, each retried up to `Multipart.attempts`;
+//      hash (which the provider checks), `Multipart.concurrency` at a time (a thread each), each retried up to
+//      `Multipart.attempts`;
 //   3. CompleteMultipartUpload naming every part's ETag as the provider answered it (a wrong one is refused);
 //   4. a HEAD of the version the completion named: its size and ETag must be what was sent and answered;
 //   5. the record removed.
@@ -110,9 +111,11 @@ extension S3Store {
     {
         let state = PartQueue(count: count)
         let group = DispatchGroup()
+        // A thread per part in flight, not GCD's global queues: each blocks for a whole part, and the store's callers
+        // may already hold every thread of GCD's capped constrained pool (see `BlockingExecutor`).
         for _ in 0 ..< max(1, min(multipart.concurrency, count)) {
             group.enter()
-            DispatchQueue.global(qos: .utility).async {
+            let worker = Thread {
                 defer { group.leave() }
                 while let n = state.next() {
                     let offset = UInt64(n) * part
@@ -125,6 +128,9 @@ extension S3Store {
                     }
                 }
             }
+            worker.name = "sh.vaulthalla.vault.s3.part"
+            worker.qualityOfService = .utility
+            worker.start()
         }
         group.wait()
         return try state.result()

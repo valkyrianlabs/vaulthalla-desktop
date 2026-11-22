@@ -202,11 +202,11 @@ public final class S3Store: VaultStore, @unchecked Sendable {
         }
         task.delegate = watch
         if case .none = body {} else {
-            DispatchQueue.global().asyncAfter(deadline: .now() + bounds.connect) {
+            Self.boundTimers.asyncAfter(deadline: .now() + bounds.connect) {
                 if !watch.sentAny { watch.cut("connect", task) }
             }
         }
-        if let total { DispatchQueue.global().asyncAfter(deadline: .now() + total) { watch.cut("total", task) } }
+        if let total { Self.boundTimers.asyncAfter(deadline: .now() + total) { watch.cut("total", task) } }
         task.resume()
         done.wait()
         let (data, response, error, bound) = watch.result()
@@ -224,6 +224,10 @@ public final class S3Store: VaultStore, @unchecked Sendable {
     }
 
     static let rootKey = ".vaulthalla/root"
+
+    /// Where the bounds fire: a serial queue of the store's own, so a bound is never late for want of a thread of GCD's
+    /// shared (constrained) pool, which the store's callers may hold blocked (see ``BlockingExecutor``).
+    static let boundTimers = DispatchQueue(label: "sh.vaulthalla.vault.s3.bounds", qos: .utility)
 
     struct Signed: Sendable {
         var request: URLRequest
@@ -509,13 +513,23 @@ final class NoRedirects: NSObject, URLSessionTaskDelegate, Sendable {
 /// cooperative thread: with every pool thread waiting here, a task left to the pool would never run).
 package final class BlockingBox<T>: @unchecked Sendable { package var value: T?; package init() {} }
 
-/// Where ``blocking(_:)``'s tasks run: a concurrent queue of its own.
-final class BlockingExecutor: TaskExecutor {
+/// Where ``blocking(_:)``'s tasks run: a few serial queues of its own, in turn. Serial queues, not a concurrent one:
+/// GCD runs a concurrent queue (as it runs the global ones) on its constrained pool, capped per process at five
+/// threads per CPU (`kern.wq_max_constrained_threads`: 15 on a 3-core CI Mac). The store's callers block in that pool
+/// (the engine's queue; parts in flight), and with all of it waiting here a task left to it would never run. A serial
+/// queue's work runs on a thread outside that cap. The jobs are short (a request signed, a key read).
+final class BlockingExecutor: TaskExecutor, @unchecked Sendable {
     static let shared = BlockingExecutor()
-    private let queue = DispatchQueue(label: "sh.vaulthalla.vault.blocking", qos: .utility, attributes: .concurrent)
+    private let queues = (0 ..< 4).map { DispatchQueue(label: "sh.vaulthalla.vault.blocking.\($0)", qos: .utility) }
+    private let lock = NSLock()
+    private var turn = 0
 
     func enqueue(_ job: consuming ExecutorJob) {
         let job = UnownedJob(job)
+        let queue = lock.withLock {
+            turn = (turn + 1) % queues.count
+            return queues[turn]
+        }
         queue.async { job.runSynchronously(on: self.asUnownedTaskExecutor()) }
     }
 }

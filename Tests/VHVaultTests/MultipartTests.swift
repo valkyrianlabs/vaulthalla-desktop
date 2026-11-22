@@ -397,3 +397,77 @@ final class Flag: @unchecked Sendable {
     private var set = false
     func setOnce() -> Bool { lock.withLock { defer { set = true }; return !set } }
 }
+
+/// Holds every thread GCD will run constrained (non-overcommit) work on, the pool that global queues, concurrent queues
+/// and their timers share. It is capped per process (`kern.wq_max_constrained_threads`: five per CPU, so 15 on a
+/// 3-core hosted CI Mac and 100 on a 20-core one). The store's callers block in it (the engine's queue, a test's thread): a wait
+/// of the store's that needs another thread from that pool to finish can starve once the pool is spent, so none may.
+final class ConstrainedPoolHog: @unchecked Sendable {
+    private let condition = NSCondition()
+    private var count = 0
+    private var released = false
+
+    static var limit: Int {
+        var value: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        return sysctlbyname("kern.wq_max_constrained_threads", &value, &size, nil, 0) == 0 ? Int(value) : 512
+    }
+
+    var parked: Int { condition.withLock { count } }
+
+    /// Takes the pool's threads until GCD gives no more (the cap, or what other tests left of it).
+    func park() {
+        let limit = Self.limit
+        for i in 0 ..< limit {
+            DispatchQueue.global(qos: i.isMultiple(of: 2) ? .utility : .default).async { [self] in
+                condition.lock()
+                defer { condition.unlock() }
+                guard !released else { return }
+                count += 1
+                condition.broadcast()
+                while !released { condition.wait() }
+            }
+        }
+        condition.lock()
+        defer { condition.unlock() }
+        while count < limit, condition.wait(until: Date().addingTimeInterval(0.5)) {}
+    }
+
+    func release() {
+        condition.withLock {
+            released = true
+            condition.broadcast()
+        }
+    }
+}
+
+@Suite struct MultipartThreadTests {
+    /// An upload completes with no thread to spare in GCD's constrained pool: a 3-core CI Mac has 15, and parallel
+    /// tests (or the app's engine) can hold them all blocked in the store. Before the store ran its own waits off that
+    /// pool, the parts' workers held all 15 waiting for `blocking`'s tasks, which needed a 16th: the suite hung.
+    @Test func anUploadNeedsNoThreadFromTheConstrainedPool() throws {
+        let f = WireFixture()
+        defer { f.cleanUp() }
+        f.endpoint.partDelay = 0.005
+        let s = f.store()
+        let data = content(9000, seed: 21)
+        final class Outcome: @unchecked Sendable { var value: Result<StoredObject, any Error>? }
+        let outcome = Outcome()
+        let done = DispatchSemaphore(value: 0)
+        let hog = ConstrainedPoolHog()
+        hog.park()
+        let parked = hog.parked
+        let sender = Thread {
+            outcome.value = Result { try f.send(data, to: s) }
+            done.signal()
+        }
+        sender.start()
+        let finished = done.wait(timeout: .now() + 20) == .success
+        hog.release()
+        if !finished { done.wait() }
+        #expect(parked > 0)
+        #expect(finished, "the upload waited on a thread of the pool it was starved of (\(parked) of \(ConstrainedPoolHog.limit) parked)")
+        let o = try #require(outcome.value).get()
+        #expect(try f.bucket.get("o/AAAAAAAAAAAAAAAAAAAAAAAAAA", versionID: o.versionID).bytes == data)
+    }
+}

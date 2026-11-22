@@ -73,9 +73,13 @@ final class S3Wire: URLProtocol, @unchecked Sendable {
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func stopLoading() {}
 
+    /// On a thread of its own per request, as a provider answers on its own: never GCD's constrained pool, which the
+    /// store's callers may hold (``ConstrainedPoolHog``), so the harness can't starve what it tests.
     override func startLoading() {
         let request = request
-        DispatchQueue.global().async { [self] in handle(request) }
+        let t = Thread { [self] in handle(request) }
+        t.name = "S3Wire"
+        t.start()
     }
 
     private func respond(_ status: Int, _ headers: [String: String] = [:], _ body: Data = Data()) {
