@@ -415,11 +415,13 @@ final class ConstrainedPoolHog: @unchecked Sendable {
 
     var parked: Int { condition.withLock { count } }
 
-    /// Takes the pool's threads until GCD gives no more (the cap, or what other tests left of it).
+    /// Takes the pool's threads until GCD gives no more (the cap, or what other tests left of it): it has given its
+    /// last once a second passes without another. At `userInitiated`, so a busy few-core Mac still admits them
+    /// promptly (the cap counts every QoS alike); the first may take a while all the same.
     func park() {
         let limit = Self.limit
-        for i in 0 ..< limit {
-            DispatchQueue.global(qos: i.isMultiple(of: 2) ? .utility : .default).async { [self] in
+        for _ in 0 ..< limit {
+            DispatchQueue.global(qos: .userInitiated).async { [self] in
                 condition.lock()
                 defer { condition.unlock() }
                 guard !released else { return }
@@ -430,7 +432,9 @@ final class ConstrainedPoolHog: @unchecked Sendable {
         }
         condition.lock()
         defer { condition.unlock() }
-        while count < limit, condition.wait(until: Date().addingTimeInterval(0.5)) {}
+        let first = Date().addingTimeInterval(15)
+        while count == 0, condition.wait(until: first) {}
+        while count > 0, count < limit, condition.wait(until: Date().addingTimeInterval(1)) {}
     }
 
     func release() {
