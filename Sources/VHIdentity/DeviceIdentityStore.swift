@@ -180,7 +180,16 @@ public actor DeviceIdentityStore {
             let der = try DeviceCertificate.make(
                 privateKey: key, commonName: DeviceCertificate.commonName(deviceName: deviceName), now: now)
             try addCertificate(DeviceCertificate.secCertificate(der: der))
-            guard let secIdentity = try copyIdentity(name) else {
+            // The Keychain pairs a certificate with its key on its own schedule: straight after the certificate is
+            // added the identity is sometimes not there yet (seen under load, several keys made at once). It is asked
+            // again for up to two seconds before the creation is given up.
+            var secIdentity = try copyIdentity(name)
+            let deadline = Date().addingTimeInterval(2)
+            while secIdentity == nil, Date() < deadline {
+                Thread.sleep(forTimeInterval: 0.05)
+                secIdentity = try copyIdentity(name)
+            }
+            guard let secIdentity else {
                 throw IdentityError.certificate("the Keychain didn't pair the certificate with its key")
             }
             return try DeviceIdentity(nodeTag: nodeTag, secIdentity: secIdentity)
