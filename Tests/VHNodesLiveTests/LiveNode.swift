@@ -112,7 +112,8 @@ enum LiveNode {
 /// Keychain hygiene as in VHIdentityTests/TestSupport.swift: a namespace unique to the run, only the node tags
 /// below, everything deleted afterwards (also on failure), and the keychain lock shared with the other test targets.
 enum LiveKeychain {
-    static let nodeTags = ["live-node", "live-denied"]
+    static let nodeTags = ["live-node", "live-denied", "live-agent-mac", "live-agent-plain",
+                           "live-agent-mac.agent.claude-code", "live-agent-plain.agent.claude-code"]
 
     static func withKeys<R: Sendable>(_ body: (DeviceKeys) async throws -> R) async throws -> R {
         try await withKeys(reopenable: { keys, _ in try await body(keys) })

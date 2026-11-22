@@ -399,6 +399,90 @@ docs/                   this plan, the pairing protocol, release notes
     (`localNode.autopairDeclined`), and never with Keep me signed in off. The `vaulthalla` meta cask opens Desktop
     once on its first install (Homebrew sandboxes install steps away from the home folder, so the app does this
     itself), which is how `brew install --cask valkyrianlabs/tap/vaulthalla` ends with the server already in Desktop.
+- **AI apps' own pairings** (desktop#69 follow-up). Each AI app the bridge is added to (Claude Code, Claude, Codex)
+  can have its own pairing with each node: a device of its own, listed by name ("Claude Code on Cooper's Mac Studio")
+  and revocable alone. It is a device of the **same account** this Mac was paired by, with the same permissions: it
+  separates and names, it restricts nothing. It carries no approval key, so it can never answer a step-up, and the
+  node's MCP refuses device management anyway (`device approve`, `remote enable`).
+  - **The exchange** (`VHNodes.AgentPairing`, the server as released, docs/reference/device-approvals.md "Approving a
+    new device from a paired one"): on this Mac's Device session `device.pairing.open`; a new key (under the lease,
+    `DeviceKeys.identityForPairing`) runs the device side with `PairingClient` over a pairing-only connection pinned
+    from the first byte to the node's known key (`expectedServerSPKI`), with no approval key; `device.pairing.pending`
+    on this Mac's session must list a request with the new key's device id and no approval key, and the code the new
+    key computed must be one of the node's three choices (a relay on either leg gives another code: the request is
+    denied); `device.pairing.approve {request_id, code}` answers `step_up_required` (`device.trust`, bound to the
+    request, key and code), which this Mac's approval key answers (`device.approval.challenge`/`submit`: one Touch ID
+    or the Mac's password, nothing typed); the new key's `device.pair.status` must then report that key, that node
+    id and that pin; the window is closed. It needs an approval key registered for this Mac on the node (once, a web
+    console approval, as for cloud keys); without one the node answers `console_approval_required` or
+    `approval_key_unavailable` and the attempt stops with "set up approvals first". The whole exchange has a 180 s
+    deadline. Any failure leaves nothing: a pending request is denied, a device the node already approved is
+    revoked, the window is closed, the new key is deleted.
+  - **Where it lives.** The key: a device key like this Mac's, in the same keychain group (Secure Enclave in signed
+    builds, the bridge reads it), tag `<node id>.agent.<client>` (`AgentIdentity.keyTag`). The record: the node's
+    `agentIdentities[<client>]` in `nodes.json` (`deviceID`, `deviceName`, `certificate`, the `serverSPKISHA256` it
+    paired under, `pairedAt`, `refusedAt`), and `pendingAgentRevocations`. Both members are left out while empty, so
+    a record without AI app pairings is byte for byte what the previous version wrote, and records it wrote decode
+    unchanged. Only the credential owner creates, deletes and records them (`VHNodes.AgentPairings`); the bridge reads.
+  - **Which identity an app presents** (`VHCore.AgentIdentityChoice`, used by the bridge and by
+    `CredentialReader(client:access:)`): its own pairing where it has one; else this Mac's only where the person
+    chose it, which is the state every registration was in before (no `pairing` entry in `agent-access.json` for the
+    app); else none, and the node is unavailable to the app with the reason in `nodes_list`. Never this Mac's because
+    the app's own was refused or revoked: a refused own pairing (`refusedAt`, or a 403/`device_unknown` that survives
+    the consumer's reload) makes the node unavailable to the app until the person pairs it again.
+  - **Choosing.** Adding an AI app offers "Give it its own pairing on each node", on by default; with it on, Add
+    walks the paired nodes one by one (one approval each) and reports per node; a node that can't (no approval key,
+    an older server, a refusal, offline) shows the reason with Try Again and Use This Mac's Pairing. A node paired
+    later shows the same on its Devices page and in Settings → Agents. Existing registrations show "This Mac's
+    pairing" with Give It Its Own.
+  - **Removing.** Removing an AI app, or switching a node off for it, revokes its device (`device.revoke` on this
+    Mac's session, else on the app's own one-shot session: a device may revoke itself) and deletes its key now; if the
+    node can't be reached the revocation is queued in the record and retried when the node's session comes online and
+    whenever Settings → Agents opens, and the UI says it is pending. Removing a node revokes its apps' devices the same
+    way first; any the node couldn't be told about are named, to be revoked in the node's web console.
+  - **This Mac's identity and the apps'.** They are separate device rows on the node:
+    - this Mac's key rotation changes nothing for them;
+    - this Mac revoked on the node: the apps' pairings keep their own pins and keys and keep working; the app can no
+      longer revoke them on this Mac's session, so it revokes each on its own key; a revocation queued after its key
+      was deleted can then only be done in the node's web console, and the pending note says so;
+    - this Mac paired again after that: a new device for this Mac; the apps' pairings are untouched;
+    - this Mac's keys lost (the keychain reset): the apps' keys go with them; each app's node is unavailable to it
+      ("its key is missing"), never this Mac's instead; the old devices stay on the node until revoked there (they are
+      listed by name);
+    - the node's server key changes: everything pairs again, as for this Mac.
+  - **Noticing a revocation on the node.** The owner asks each node about each app's key whenever Settings → Agents
+    opens (one connection per key, `CredentialReader.check`) and records a refusal as `refusedAt`; the bridge, which
+    writes nothing, fails closed on its own (refused, reloaded, refused again).
+  - **Not in this change.** Apps' keys aren't rotated (the Mac's own 90-day rotation doesn't apply to them). A pairing
+    with fewer permissions than the account would need the server to carry a per-device scope; Desktop doesn't offer
+    one.
+  - **Decisions** (each with its undo):
+    1. Key tag `<node id>.agent.<client>`. Undo: change `AgentIdentity.keyTag` (keys under the old tag are orphaned;
+       pair again).
+    2. The identity lives in the node's record, certificate included. Undo: drop `agentIdentities` (identities are
+       forgotten; pair again).
+    3. Each identity keeps its own pin, so it doesn't depend on this Mac's record staying paired. Undo: read the pin
+       from `node.pairing` in `CredentialReader.presented`.
+    4. No `pairing` entry means this Mac's pairing, so existing registrations keep working. Undo: treat a missing
+       entry as own (existing registrations then need pairing first).
+    5. `agent-access.json` is version 2 whenever it carries a choice, so an older bridge refuses it rather than
+       presenting this Mac's key. Undo: always write version 1.
+    6. The approval key is required; a console approval isn't offered as a fallback. Undo: on
+       `consoleApprovalRequired` in `AgentPairing`, send `device.approval.request` and poll `device.approval.status`.
+    7. A request that carries an approval key is refused. Undo: drop that guard in `AgentPairing.exchange`.
+    8. A 180 s deadline for the whole exchange, cleanup after it. Undo: change `AgentPairing.timeout`.
+    9. Revoke on this Mac's session, then on the app's own. Undo: drop `ownSession` in `AgentRevocation.revoke`.
+    10. Queued revocations retry on the node's session coming online and on opening Settings → Agents; no timer.
+        Undo: add a timer in `AppModel`.
+    11. Node refusals are noticed by the owner's check on opening Settings → Agents. Undo: remove
+        `AgentPairingCoordinator.check()` from the view's task.
+    12. Apps' keys aren't rotated. Undo: none needed; rotation would add a one-shot Device session with
+        `device.identity.rotate`.
+    13. "Give it its own pairing" is on by default for a new Add. Undo: start `ownPairingOnAdd` empty.
+    14. `AppModel` edits start from the registry's current record, so an edit can't drop identities written beside
+        it. Undo: use `node(withID:)` again in `AppModel.record`.
+    15. `PairingClient.Configuration.approvalKeySPKI` (the live test pairs its Mac with one). Undo: remove it.
+    16. `nodes_list` adds `identity` (`own`/`mac`) and `available`. Undo: drop both fields.
 - **Signing and the shared container** (desktop#4; evidence from the desktop#2 spike). The File Provider extension
   is sandboxed and must read the same registry and device keys as the app, so signed builds share an App Group and a
   keychain access group.
@@ -617,8 +701,10 @@ There is no device-scoped permission system.
     every refresh: a switched-off node is left out of `nodes_list` and `tools/list`, never contacted, and a
     `tools/call` naming it (id, server id or name) is refused with a plain message before anything else. If the file
     can't be read, or a newer version wrote it, a bridge with a client fails closed: no node, and `nodes_list` says
-    why. The bridge stays read-only. The value names the app, not an identity: a per-app device identity, if one is
-    added later, would be found by the same value, so registrations wouldn't change.
+    why. The bridge stays read-only. The value names the app, and through it the identity: the app's own pairing with
+    a node where it has one (§3, "AI apps' own pairings"), this Mac's only where the person chose it (every
+    registration made before), otherwise none: `nodes_list` lists such a node with `available: false` and the reason,
+    and a call naming it is refused. Each listed node says which identity is in use (`identity`: `own` or `mac`).
   - **Manual setup** (a disclosure in Settings → Agents): the same commands with `--client`, and the Codex TOML stanza
     with `args` and `tool_timeout_sec = 600`.
   - Desktop's own future agent uses the same library (`VHMCP`) in process.

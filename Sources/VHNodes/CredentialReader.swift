@@ -55,6 +55,9 @@ public enum CredentialFailure: Error, Hashable, Sendable, CustomStringConvertibl
     case keychain(String)
     /// The registry can't be read.
     case registry(String)
+    /// The AI app this reader serves may not use the node: no pairing of its own and not this Mac's by choice, its
+    /// own pairing refused, or its switches unreadable (``AgentIdentityChoice``). The reason, in plain words.
+    case unavailable(String)
 
     public var description: String {
         switch self {
@@ -64,6 +67,7 @@ public enum CredentialFailure: Error, Hashable, Sendable, CustomStringConvertibl
         case .missingKey: "This Mac's key for the node is missing. Pair it again in Vaulthalla."
         case .keychain(let detail): "This Mac's key for the node can't be read (\(detail))."
         case .registry(let detail): "The saved node list can't be read (\(detail))."
+        case .unavailable(let reason): reason
         }
     }
 }
@@ -95,10 +99,51 @@ public struct CredentialReader: Sendable {
     /// The registry the owner writes. nil: records come from the caller only (a session given its record).
     public let registry: NodeStore?
     public let keys: DeviceKeys
+    /// The AI app these credentials are for (the bridge's `--client`); nil: this Mac's own, as for every other
+    /// consumer.
+    public let client: AgentClient?
+    /// The app's switches and choices (`agent-access.json`), read on every load. Used only with a client.
+    public let access: @Sendable () throws -> AgentAccess
 
-    public init(registry: NodeStore?, keys: DeviceKeys) {
+    public init(registry: NodeStore?, keys: DeviceKeys, client: AgentClient? = nil,
+                access: @escaping @Sendable () throws -> AgentAccess = { AgentAccess() }) {
         self.registry = registry
         self.keys = keys
+        self.client = client
+        self.access = access
+    }
+
+    /// Which key to present to `node`, and the record to present it with: this Mac's (tag = the node's id), or the
+    /// app's own (``AgentIdentity/keyTag(node:client:)``), whose record carries the app's device id and the pin it
+    /// paired under. Never this Mac's because the app's own was refused: that is ``CredentialFailure/unavailable(_:)``.
+    func presented(_ node: Node) throws(CredentialFailure) -> (node: Node, tag: String) {
+        guard let client else {
+            try checkPaired(node)
+            return (node, node.id.rawValue)
+        }
+        let switches: AgentAccess
+        do {
+            switches = try access()
+        } catch {
+            throw .unavailable("Vaulthalla can't read which nodes are available to \(client.displayName) (\(error)).")
+        }
+        guard switches.isAvailable(node.id, to: client) else {
+            throw .unavailable("\(node.displayName) is turned off for \(client.displayName) in Vaulthalla.")
+        }
+        switch AgentIdentityChoice.choose(for: node, client: client, access: switches) {
+        case .mac:
+            try checkPaired(node)
+            return (node, node.id.rawValue)
+        case .own(let own):
+            var presented = node
+            presented.pairing = .paired(serverSPKISHA256: own.serverSPKISHA256, deviceID: own.deviceID,
+                                        since: own.pairedAt)
+            // The announced next server key belongs to this Mac's session; the app's pin is its own.
+            presented.nextServerSPKISHA256 = nil
+            return (presented, AgentIdentity.keyTag(node: node.id, client: client))
+        case .unavailable(let reason):
+            throw .unavailable(reason)
+        }
     }
 
     /// Which refusals mean "this key may no longer be accepted".
@@ -141,15 +186,15 @@ public struct CredentialReader: Sendable {
 
     /// `node` (as given) with its current identity.
     public func load(_ node: Node) async throws(CredentialFailure) -> NodeCredentials {
-        try checkPaired(node)
+        let (presented, tag) = try presented(node)
         let current: DeviceIdentity?
         do {
-            current = try await keys.identity(for: node.id.rawValue)
+            current = try await keys.identity(for: tag)
         } catch {
             throw .keychain(String(describing: error))
         }
         guard let current else { throw .missingKey }
-        return NodeCredentials(node: node, identity: current)
+        return NodeCredentials(node: presented, identity: current)
     }
 
     /// The credentials to retry with once after the node refused `refused`.
@@ -165,9 +210,7 @@ public struct CredentialReader: Sendable {
     public func reload(_ node: Node, refusing refusedDeviceID: String?) async throws(CredentialFailure)
         -> NodeCredentials
     {
-        let fresh = try record(node.id) ?? node
-        try checkPaired(fresh)
-        let tag = fresh.id.rawValue
+        let (fresh, tag) = try presented(try record(node.id) ?? node)
         let current: DeviceIdentity?
         let pending: DeviceIdentity?
         do {

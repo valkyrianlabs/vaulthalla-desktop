@@ -115,6 +115,51 @@ import VHCore
         #expect(try await listedNodes(client) == ["node-a", "node-b"])
     }
 
+    /// Which identity each node gets for a client: its own (listed "own"), this Mac's by default or by choice
+    /// ("mac"), or none: listed with the reason and refused, and never this Mac's because its own was refused.
+    @Test func nodesWithoutAnIdentityForTheClientAreListedWithTheReason() async throws {
+        defer { registry.remove() }
+        var access = AgentAccess()
+        access.setOwnPairing(true, for: .codex)
+        try FileManager.default.createDirectory(at: accessURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try access.save(to: accessURL)
+        let client = try client(.codex)
+        // Alpha: Codex's own pairing. Beta: none, and own pairing chosen: unavailable.
+        var alphaRecord = TempRegistry.paired("node-a", name: "Alpha")
+        alphaRecord.agentIdentities["codex"] = AgentIdentity(deviceID: "cd", deviceName: "Codex on Mac", certificate: Data(),
+                                                             serverSPKISHA256: Data(repeating: 7, count: 32), pairedAt: .now)
+        _ = try registry.writer.update(alphaRecord)
+
+        var rows = try await listed(client)
+        #expect(rows.map { $0["identity"] } == ["own", nil])
+        #expect(rows[1]["available"] == false)
+        #expect(rows[1]["problem"]?.stringValue?.contains("Codex has no pairing of its own with Beta") == true)
+        let refused = try await client.call("vh_read", ["node": "Beta", "command": "vault list"])
+        #expect(refused["result"]?.text.contains("no pairing of its own") == true)
+        #expect(beta.methods.isEmpty, "never contacted")
+
+        // This Mac's pairing chosen for Beta.
+        access.setMacPairing(true, on: NodeID(rawValue: "node-b"), for: .codex)
+        try access.save(to: accessURL)
+        rows = try await listed(client)
+        #expect(rows.map { $0["identity"] } == ["own", "mac"])
+
+        // The node revoked Codex's own pairing on Alpha: unavailable, though this Mac's pairing is fine there.
+        alphaRecord.agentIdentities["codex"]?.refusedAt = .now
+        access.setMacPairing(true, on: NodeID(rawValue: "node-a"), for: .codex)
+        try access.save(to: accessURL)
+        _ = try registry.writer.update(alphaRecord)
+        rows = try await listed(client)
+        #expect(rows[0]["available"] == false)
+        #expect(rows[0]["problem"]?.stringValue?.contains("no longer accepts") == true)
+        let blocked = try await client.call("vh_read", ["node": "Alpha", "command": "vault list"])
+        #expect(blocked["result"]?.text.contains("no longer accepts") == true)
+    }
+
+    private func listed(_ client: Client) async throws -> [JSONValue] {
+        try await client.call("nodes_list", [:])["result"]?["structuredContent"]?["nodes"]?.arrayValue ?? []
+    }
+
     @Test func argumentsNameAKnownClientOrNothing() throws {
         #expect(try BridgeArguments.parse([]).get() == nil)
         #expect(try BridgeArguments.parse(["--client", "claude-code"]).get() == .claudeCode)

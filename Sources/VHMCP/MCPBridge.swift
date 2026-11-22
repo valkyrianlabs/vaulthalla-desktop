@@ -65,6 +65,12 @@ public actor MCPBridge {
     private var withheld: [Node] = []
     /// Why the switches couldn't be read; every node is withheld meanwhile (fail closed).
     private var accessProblem: String?
+    /// Nodes this client has no identity for, with the reason (listed by `nodes_list`, refused by calls).
+    private var unavailableReasons: [NodeID: String] = [:]
+    /// Which identity this client presents to each node it may use: "own" (its own pairing) or "mac" (this Mac's).
+    private var identityInUse: [NodeID: String] = [:]
+    /// The registry without the switched-off nodes, in the operator's order: what `nodes_list` lists.
+    private var visibleNodes: [Node] = []
     private var catalog = ToolCatalog()
     /// The catalog the client last saw (in a `tools/list` answer or announced by a notification).
     private var announced: ToolCatalog?
@@ -299,9 +305,11 @@ public actor MCPBridge {
             log(.error, "the node registry can't be read: \(error)")
             return
         }
-        let excluded = loadExclusions(nodes)
-        registryNodes = nodes.filter { !excluded.contains($0.id) }
-        withheld = nodes.filter { excluded.contains($0.id) }
+        let (excluded, unavailable) = loadAccess(nodes)
+        unavailableReasons = unavailable
+        visibleNodes = nodes.filter { !excluded.contains($0.id) }
+        registryNodes = visibleNodes.filter { unavailable[$0.id] == nil }
+        withheld = nodes.filter { excluded.contains($0.id) || unavailable[$0.id] != nil }
         // A withheld node is never contacted: its connection is closed and its tools are dropped with it.
         let ids = Set(registryNodes.map(\.id))
         for (id, remote) in remotes where !ids.contains(id) {
@@ -319,19 +327,34 @@ public actor MCPBridge {
         }
     }
 
-    /// The nodes switched off for this client. Without a client, none; with one and unreadable switches, all of them.
-    private func loadExclusions(_ nodes: [Node]) -> Set<NodeID> {
-        guard let client = settings.client, let accessURL = settings.accessURL else { return [] }
+    /// The nodes switched off for this client, and those it can't use for want of an identity (with the reason,
+    /// listed by `nodes_list`): its own pairing, or this Mac's only where the person chose it (``AgentIdentityChoice``;
+    /// never this Mac's because its own was refused). Without a client, none; with one and unreadable switches, all
+    /// of them are switched off.
+    private func loadAccess(_ nodes: [Node]) -> (excluded: Set<NodeID>, unavailable: [NodeID: String]) {
+        guard let client = settings.client, let accessURL = settings.accessURL else { return ([], [:]) }
+        let access: AgentAccess
         do {
-            let access = try AgentAccess.load(from: accessURL)
+            access = try AgentAccess.load(from: accessURL)
             if accessProblem != nil { log(.info, "the agent switches can be read again") }
             accessProblem = nil
-            return access.excludedNodes(for: client)
         } catch {
             if accessProblem == nil { log(.error, "\(error); no node is available to \(client.displayName)") }
             accessProblem = error.description
-            return Set(nodes.map(\.id))
+            return (Set(nodes.map(\.id)), [:])
         }
+        let excluded = access.excludedNodes(for: client)
+        var unavailable: [NodeID: String] = [:]
+        var identities: [NodeID: String] = [:]
+        for node in nodes where !excluded.contains(node.id) {
+            switch AgentIdentityChoice.choose(for: node, client: client, access: access) {
+            case .unavailable(let reason): unavailable[node.id] = reason
+            case .own: identities[node.id] = "own"
+            case .mac: identities[node.id] = "mac"
+            }
+        }
+        identityInUse = identities
+        return (excluded, unavailable)
     }
 
     /// URLSession's per-request idle timeout: longer than any deadline, which the bridge enforces itself.
@@ -521,6 +544,7 @@ public actor MCPBridge {
             return "\(node.displayName) isn't available to \(app): Vaulthalla can't read which nodes are (\(accessProblem)). "
                 + "Open Vaulthalla → Settings → Agents to fix it."
         }
+        if let reason = unavailableReasons[node.id] { return reason }
         return "\(node.displayName) is turned off for \(app) in Vaulthalla (Settings → Agents), so nothing was run "
             + "on it. It can be turned on there."
     }
@@ -536,7 +560,7 @@ public actor MCPBridge {
         await refresh(force: true)
         await announceIfChanged()
         var rows: [JSONValue] = []
-        for node in registryNodes {
+        for node in (settings.client == nil ? registryNodes : visibleNodes) {
             var row: JSONObject = [
                 "id": .string(node.id.rawValue),
                 "name": .string(node.displayName),
@@ -545,7 +569,12 @@ public actor MCPBridge {
                 "pairing": .string(Self.pairingName(node.pairing)),
             ]
             if let server = node.serverNodeID { row["server_node_id"] = .string(server) }
-            if let remote = remotes[node.id], await remote.isPaired {
+            if let identity = identityInUse[node.id] { row["identity"] = .string(identity) }
+            if let reason = unavailableReasons[node.id] {
+                row["reachable"] = .null
+                row["available"] = false
+                row["problem"] = .string(reason)
+            } else if let remote = remotes[node.id], await remote.isPaired {
                 let reachable = await remote.reachable
                 row["reachable"] = reachable.map { .bool($0) } ?? .null
                 if reachable != true, let problem = await remote.problem { row["problem"] = .string(problem) }
@@ -595,6 +624,8 @@ public actor MCPBridge {
                             "pairing": ["type": "string", "enum": ["unpaired", "pending", "paired", "revoked"]],
                             "server_node_id": ["type": "string"],
                             "reachable": ["type": ["boolean", "null"]],
+                            "available": ["type": "boolean"],
+                            "identity": ["type": "string", "enum": ["own", "mac"]],
                             "problem": ["type": "string"],
                         ],
                         "required": ["id", "name", "host", "port", "pairing", "reachable"],

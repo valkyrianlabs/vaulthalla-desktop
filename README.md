@@ -174,8 +174,12 @@ Settings → Agents adds it in one click to **Claude Code** (the CLI and the Cod
 **Codex** (the CLI, Codex in ChatGPT and the IDE extension, through `codex mcp`, with a 600-second tool timeout) and
 **Claude** (the desktop app's chat: Vaulthalla opens an MCP Bundle with Claude, and you click Install in Claude's
 window). It shows whether each is added, repairs a registration left behind when the app moved, and removes it
-(Claude's in Claude → Settings → Extensions). Move Vaulthalla to Applications first. Under "Available to", any paired
+(Claude's in Claude → Settings → Extensions). Move Vaulthalla to Applications first. Under "Nodes", any paired
 node can be turned off for any of the three apps; nodes are available until you do, including ones paired later.
+Each app can also get its own pairing with each node ("Give it its own pairing on each node", on by default): it is
+then its own device on the node, named after the app and this Mac, and can be revoked alone. It still acts as the
+account this Mac was paired by, with the same permissions. It needs this Mac's approval key on the node (one Touch ID
+per node); registrations made before stay on this Mac's pairing until you give them their own.
 
 "Manual setup" there has the commands to run yourself:
 

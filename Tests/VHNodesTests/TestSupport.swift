@@ -12,6 +12,7 @@ import VHIdentity
 enum TestKeychain {
     /// Node tags tests may use; cleanup deletes all of them.
     static let nodeTags = ["node-a", "node-r", "daemon", "daemon-next"]
+        + AgentClient.allCases.map { AgentIdentity.keyTag(node: NodeID(rawValue: "node-a"), client: $0) }
 
     static func namespace() -> String { "sh.vaulthalla.app.test.\(UUID().uuidString.lowercased())" }
 

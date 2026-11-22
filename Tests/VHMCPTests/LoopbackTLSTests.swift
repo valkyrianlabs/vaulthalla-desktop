@@ -18,7 +18,7 @@ import VHNodes
 /// only the tags below, everything deleted afterwards (also on failure), and the keychain lock shared with the other
 /// targets that write keys.
 @Suite(.serialized, .timeLimit(.minutes(1))) struct LoopbackTLSTests {
-    static let tags = ["node-a", "node-b", "server-a", "server-b"]
+    static let tags = ["node-a", "node-b", "server-a", "server-b", "node-a.agent.codex"]
 
     @Test func aggregatesRoutesAndReportsOfflineOverMutualTLS() async throws {
         try await withKeychain { store in
@@ -181,6 +181,76 @@ import VHNodes
     }
 
     // MARK: - Keychain
+
+    /// An AI app's own pairing over real mutual TLS: the bridge for that client presents the app's own key, never
+    /// this Mac's; another client with own pairing chosen and none made gets nothing; and when the node refuses the
+    /// app's key, the node is unavailable instead of falling back to this Mac's key.
+    @Test func eachClientPresentsItsOwnIdentityAndNeverFallsBack() async throws {
+        try await withKeychain { store in
+            let keys = DeviceKeys(primary: store, development: nil)
+            let mac = try await store.createIdentity(for: "node-a", deviceName: "Test Mac", backend: .software)
+            let codexTag = AgentIdentity.keyTag(node: NodeID(rawValue: "node-a"), client: .codex)
+            let codex = try await store.createIdentity(for: codexTag, deviceName: "Codex on Test Mac", backend: .software)
+            let server = try await store.createIdentity(for: "server-a", deviceName: "Server A", backend: .software)
+            let daemon = FakeDaemon(name: "alpha", tools: Catalog.standard)
+            let listener = try await MCPListener.start(identity: server, device: codex.spkiSHA256, daemon: daemon)
+            defer { listener.stop() }
+
+            let registry = TempRegistry()
+            defer { registry.remove() }
+            var node = TempRegistry.paired("node-a", name: "Alpha", port: listener.port, pin: server.spkiSHA256)
+            node.pairing = .paired(serverSPKISHA256: server.spkiSHA256, deviceID: mac.deviceID, since: .now)
+            node.agentIdentities["codex"] = AgentIdentity(deviceID: codex.deviceID, deviceName: "Codex on Test Mac",
+                                                          certificate: codex.certificateDER,
+                                                          serverSPKISHA256: server.spkiSHA256, pairedAt: .now)
+            try registry.writer.add(node)
+            let accessURL = AgentAccess.fileURL(besideRegistry: registry.store.fileURL)
+            var access = AgentAccess()
+            access.setOwnPairing(true, for: .claudeCode)
+            try access.save(to: accessURL)
+
+            func bridge(_ client: AgentClient) -> Client {
+                var settings = Client.settings()
+                settings.client = client
+                settings.accessURL = accessURL
+                return Client(registry: registry.store,
+                              connector: KeychainNodeConnector(keys: keys, registry: registry.store, client: client,
+                                                               access: { try AgentAccess.load(from: accessURL) }),
+                              settings: settings)
+            }
+
+            let forCodex = bridge(.codex)
+            let ran = try await forCodex.call("vh_read", ["node": "Alpha", "command": "vault list"])
+            #expect(ran["result"]?.text == "alpha ran vh_read")
+            #expect(!listener.clientSPKIs.isEmpty && listener.clientSPKIs.allSatisfy { $0 == codex.spkiSHA256 },
+                    "Codex's own key, never this Mac's")
+            let codexRow = try #require(try await forCodex.call("nodes_list", [:])["result"]?["structuredContent"]?["nodes"]?
+                .arrayValue?.first)
+            #expect(codexRow["identity"] == "own" && codexRow["reachable"] == true)
+            await forCodex.bridge.shutdown()
+
+            // Claude Code: own pairing chosen, none made: listed as unavailable with the reason, never contacted.
+            let seen = listener.clientSPKIs.count
+            let forClaude = bridge(.claudeCode)
+            let claudeRow = try #require(try await forClaude.call("nodes_list", [:])["result"]?["structuredContent"]?["nodes"]?
+                .arrayValue?.first)
+            #expect(claudeRow["available"] == false)
+            #expect(claudeRow["problem"]?.stringValue?.contains("no pairing of its own") == true)
+            let refusedCall = try await forClaude.call("vh_read", ["node": "Alpha", "command": "vault list"])
+            #expect(refusedCall["result"]?.text.contains("no pairing of its own") == true)
+            #expect(listener.clientSPKIs.count == seen)
+            await forClaude.bridge.shutdown()
+
+            // The node revokes Codex's device (the listener accepts only this Mac's key now): Codex's calls fail, and
+            // this Mac's key is never offered instead.
+            listener.accept(mac.spkiSHA256)
+            let afterRevoke = bridge(.codex)
+            let failed = try await afterRevoke.call("vh_read", ["node": "Alpha", "command": "vault list"])
+            #expect(failed["error"] != nil || failed["result"]?["isError"] == true, "\(failed)")
+            #expect(!listener.clientSPKIs.contains(mac.spkiSHA256), "no fallback to this Mac's pairing")
+            await afterRevoke.bridge.shutdown()
+        }
+    }
 
     private func withKeychain(_ body: (DeviceIdentityStore) async throws -> Void) async throws {
         await KeychainLock.shared.acquire()

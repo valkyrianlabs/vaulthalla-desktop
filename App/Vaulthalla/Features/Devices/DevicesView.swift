@@ -76,6 +76,12 @@ private struct DevicesScreen: View {
                 ThisMacPanel(node: node, queries: queries)
                     .padding(.horizontal, Theme.pagePadding)
                     .padding(.bottom, 16)
+                Panel(title: "AI apps on this Mac",
+                      subtitle: "Each with its own pairing is its own device below, acting as the same account.") {
+                    AgentNodePairings(node: node)
+                }
+                .padding(.horizontal, Theme.pagePadding)
+                .padding(.bottom, 16)
             case .all:
                 RemoteConnectionsPanel(query: remote, queries: queries)
                     .padding(.horizontal, Theme.pagePadding)

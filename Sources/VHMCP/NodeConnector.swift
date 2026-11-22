@@ -34,6 +34,8 @@ public enum NodeConnectFailure: Error, Hashable, Sendable {
     case invalidAddress
     /// The node registry can't be read.
     case registry(String)
+    /// The AI app may not use the node (``CredentialFailure/unavailable(_:)``): the reason.
+    case unavailable(String)
 
     /// The consumer's failure in the bridge's terms.
     public init(_ failure: CredentialFailure) {
@@ -43,6 +45,7 @@ public enum NodeConnectFailure: Error, Hashable, Sendable {
         case .missingKey: self = .missingKey
         case .keychain(let detail): self = .keychain(detail)
         case .registry(let detail): self = .registry(detail)
+        case .unavailable(let reason): self = .unavailable(reason)
         }
     }
 
@@ -54,6 +57,7 @@ public enum NodeConnectFailure: Error, Hashable, Sendable {
         case .keychain(let detail): "This Mac's key for the node can't be read (\(detail))."
         case .invalidAddress: "The node's address can't be used."
         case .registry(let detail): "The saved node list can't be read (\(detail))."
+        case .unavailable(let reason): reason
         }
     }
 }
@@ -115,8 +119,11 @@ public struct KeychainNodeConnector: NodeMCPConnector {
     }
 
     /// `registry`: where a reconnect after a refusal re-reads the record (nil: the bridge's record is used as given).
-    public init(keys: DeviceKeys, registry: NodeStore? = nil, routes: RouteCache = RouteCache()) {
-        self.reader = CredentialReader(registry: registry, keys: keys)
+    /// `client` and `access`: the AI app served and its switches (``CredentialReader``): its own pairing where it has
+    /// one, this Mac's only where the person chose it, nothing otherwise.
+    public init(keys: DeviceKeys, registry: NodeStore? = nil, routes: RouteCache = RouteCache(),
+                client: AgentClient? = nil, access: @escaping @Sendable () throws -> AgentAccess = { AgentAccess() }) {
+        self.reader = CredentialReader(registry: registry, keys: keys, client: client, access: access)
         self.routes = routes
     }
 

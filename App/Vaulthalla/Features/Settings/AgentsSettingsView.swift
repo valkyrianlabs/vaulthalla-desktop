@@ -160,16 +160,13 @@ enum AgentBridge {
 struct AgentsSettingsView: View {
     @Environment(AppModel.self) private var model
     @State private var apps = AgentAppsModel()
-    @State private var access = AgentAccess()
-    @State private var accessProblem: String?
+    /// "Give it its own pairing on each node", for apps not added yet: on by default.
+    @State private var ownPairingOnAdd: Set<AgentClient> = Set(AgentClient.allCases)
 
     private let helper = AgentBridge.helperURL
     private var path: String { helper.path(percentEncoded: false) }
     private var location: BridgeLocation { BridgeLocation.check(helper) }
-    private var accessURL: URL { AgentAccess.fileURL(besideRegistry: model.registryURL) }
-    private var pairedNodes: [Node] {
-        model.nodes.filter { if case .paired = $0.pairing { true } else { false } }
-    }
+    private var agents: AgentPairingCoordinator { model.agents }
 
     var body: some View {
         Form {
@@ -207,46 +204,62 @@ struct AgentsSettingsView: View {
 
             Section("AI apps") {
                 ForEach(AgentClient.allCases) { client in
-                    AgentAppRow(client: client, status: apps.statuses[client], working: apps.working.contains(client),
-                                message: apps.messages[client], canAdd: location.allowsAdding,
-                                add: { Task { await apps.add(client, bridge: helper) } },
-                                remove: { Task { await apps.remove(client, bridge: helper) } },
-                                check: { Task { await apps.refresh(client, bridge: helper) } })
+                    VStack(alignment: .leading, spacing: 6) {
+                        AgentAppRow(client: client, status: apps.statuses[client],
+                                    working: apps.working.contains(client), message: apps.messages[client],
+                                    canAdd: location.allowsAdding,
+                                    add: { Task { await add(client) } },
+                                    remove: { Task { await remove(client) } },
+                                    check: { Task { await apps.refresh(client, bridge: helper) } })
+                        Toggle("Give it its own pairing on each node", isOn: ownPairing(client))
+                            .toggleStyle(.checkbox)
+                            .font(.callout)
+                            .disabled(!model.isCredentialOwner || agents.accessProblem != nil)
+                        if isAdded(client), !agents.prefersOwnPairing(client),
+                           agents.pairedNodes.contains(where: { agents.use($0, by: client) == .mac }) {
+                            HStack {
+                                Text("Uses this Mac's pairing.")
+                                    .font(.caption)
+                                    .foregroundStyle(.fgSubtle)
+                                Button("Give It Its Own") { Task { await upgrade(client) } }
+                                    .controlSize(.small)
+                            }
+                        }
+                    }
+                }
+            }
+
+            if let notice = agents.notice {
+                Section {
+                    Label(notice, systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(StatusTone.warn.color)
+                        .textSelection(.enabled)
+                    Button("Dismiss") { agents.notice = nil }
                 }
             }
 
             Section {
-                if let accessProblem {
-                    Label(accessProblem, systemImage: "exclamationmark.triangle")
+                if let problem = agents.accessProblem {
+                    Label(problem, systemImage: "exclamationmark.triangle")
                         .foregroundStyle(StatusTone.warn.color)
                 }
-                if pairedNodes.isEmpty {
+                if agents.pairedNodes.isEmpty {
                     Text("No paired nodes yet.")
                         .foregroundStyle(.fgSubtle)
                 }
-                ForEach(pairedNodes) { node in
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(node.displayName)
-                            .fontWeight(.medium)
-                        HStack(spacing: 16) {
-                            ForEach(AgentClient.allCases) { client in
-                                Toggle(client.displayName, isOn: binding(node.id, client))
-                                    .toggleStyle(.checkbox)
-                                    .disabled(accessProblem != nil)
-                            }
-                        }
-                        .font(.callout)
-                    }
-                    .accessibilityElement(children: .contain)
-                    .accessibilityLabel("\(node.displayName): available to")
-                    .padding(.vertical, 2)
+                ForEach(agents.pairedNodes) { node in
+                    AgentNodePairings(node: node)
+                        .padding(.vertical, 2)
                 }
             } header: {
-                Text("Available to")
+                Text("Nodes")
             } footer: {
-                Text("Every paired node, including ones you pair later, is available to every AI app until you turn "
-                    + "it off here. A node turned off for an app is hidden from it and its calls are refused. This "
-                    + "applies to apps added here; a registration made by hand without --client reaches every node.")
+                Text("Each AI app is its own device on a node when it has its own pairing: the node lists it by name "
+                    + "and it can be revoked alone. Either way it acts as the account this Mac was paired by, with "
+                    + "the same permissions. A node turned off for an app is hidden from it and its calls are "
+                    + "refused (for apps added here; a registration made by hand without --client reaches every "
+                    + "node with this Mac's pairing). Every paired node, including ones you pair later, is on for "
+                    + "every app until you turn it off.")
                     .font(.caption)
                     .foregroundStyle(.fgSubtle)
             }
@@ -277,34 +290,150 @@ struct AgentsSettingsView: View {
         .formStyle(.grouped)
         .frame(minHeight: 560)
         .task {
-            loadAccess()
+            agents.load()
             await apps.refreshAll(bridge: helper)
+            await agents.check()
         }
     }
 
-    private func loadAccess() {
-        do {
-            access = try AgentAccess.load(from: accessURL)
-            accessProblem = nil
-        } catch {
-            accessProblem = "\(error.description). Until it's fixed, AI apps added here can't use any node."
+    private func isAdded(_ client: AgentClient) -> Bool {
+        switch apps.statuses[client]?.registration {
+        case .current?, .handMade?, .stale?: true
+        default: false
         }
     }
 
-    private func binding(_ node: NodeID, _ client: AgentClient) -> Binding<Bool> {
+    private func ownPairing(_ client: AgentClient) -> Binding<Bool> {
         Binding(
-            get: { access.isAvailable(node, to: client) },
-            set: { available in
-                var changed = access
-                changed.set(node, available: available, to: client)
-                changed.prune(keeping: model.nodes.map(\.id))
-                do {
-                    try changed.save(to: accessURL)
-                    access = changed
-                } catch {
-                    accessProblem = "The switch couldn't be saved: \(error.localizedDescription)"
+            get: { isAdded(client) ? agents.prefersOwnPairing(client) : ownPairingOnAdd.contains(client) },
+            set: { on in
+                if isAdded(client) {
+                    agents.setPrefersOwnPairing(on, for: client)
+                    if on { Task { await agents.pairAll(client) } }
+                } else if on {
+                    ownPairingOnAdd.insert(client)
+                } else {
+                    ownPairingOnAdd.remove(client)
                 }
             })
+    }
+
+    /// Adds the bridge to the app; with its own pairing chosen, then walks the paired nodes one by one.
+    private func add(_ client: AgentClient) async {
+        let own = ownPairingOnAdd.contains(client) || agents.prefersOwnPairing(client)
+        await apps.add(client, bridge: helper)
+        guard isAdded(client) || client == .claudeDesktop else { return }
+        agents.setPrefersOwnPairing(own, for: client)
+        if own { await agents.pairAll(client) }
+    }
+
+    /// An existing registration on this Mac's pairing: its own pairing on each node, in one click.
+    private func upgrade(_ client: AgentClient) async {
+        if apps.statuses[client]?.registration == .handMade { await apps.add(client, bridge: helper) }
+        agents.setPrefersOwnPairing(true, for: client)
+        await agents.pairAll(client)
+    }
+
+    private func remove(_ client: AgentClient) async {
+        await apps.remove(client, bridge: helper)
+        await agents.removeClient(client)
+    }
+}
+
+/// Each AI app on one node: its switch, which pairing it uses, and what can be done about it.
+struct AgentNodePairings: View {
+    var node: Node
+    @Environment(AppModel.self) private var model
+
+    private var agents: AgentPairingCoordinator { model.agents }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(node.displayName)
+                .fontWeight(.medium)
+            ForEach(AgentClient.allCases) { client in
+                row(client)
+            }
+            ForEach(node.pendingAgentRevocations, id: \.deviceID) { pending in
+                Label("Revoking \(pending.deviceName) is pending" + (pending.lastProblem.map { " (\($0))" } ?? "")
+                      + ". Its key is already deleted on this Mac.", systemImage: "clock")
+                    .font(.caption)
+                    .foregroundStyle(StatusTone.warn.color)
+            }
+        }
+        .accessibilityElement(children: .contain)
+    }
+
+    @ViewBuilder private func row(_ client: AgentClient) -> some View {
+        let key = AgentPairingCoordinator.Key(node: node.id, client: client)
+        let use = agents.use(node, by: client)
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Toggle(client.displayName, isOn: Binding(
+                    get: { use != .off },
+                    set: { on in Task { await agents.setAvailable(on, node: node.id, for: client) } }))
+                    .toggleStyle(.checkbox)
+                    .disabled(!model.isCredentialOwner || agents.accessProblem != nil)
+                    .frame(minWidth: 110, alignment: .leading)
+                Text(label(use))
+                    .font(.callout)
+                    .foregroundStyle(tone(use).color)
+                    .lineLimit(2)
+                Spacer()
+                if agents.working.contains(key) {
+                    ProgressView().controlSize(.small)
+                } else {
+                    actions(use, client)
+                }
+            }
+            if let outcome = agents.outcomes[key] {
+                Text(outcome.text)
+                    .font(.caption)
+                    .foregroundStyle(outcome.tone.color)
+                    .textSelection(.enabled)
+                if outcome.offersChoice, use != .mac {
+                    HStack {
+                        Button("Try Again") { Task { await agents.pair(node.id, for: client) } }
+                        Button("Use This Mac's Pairing") { agents.useMacPairing(on: node.id, for: client) }
+                    }
+                    .controlSize(.small)
+                }
+            }
+        }
+        .font(.callout)
+    }
+
+    @ViewBuilder private func actions(_ use: AgentPairingCoordinator.Use, _ client: AgentClient) -> some View {
+        switch use {
+        case .off:
+            EmptyView()
+        case .own:
+            Button("Revoke", role: .destructive) { Task { await agents.removeOwn(on: node.id, for: client) } }
+                .controlSize(.small)
+        case .mac, .unavailable:
+            Button(use == .mac ? "Give It Its Own" : "Pair") { Task { await agents.pair(node.id, for: client) } }
+                .controlSize(.small)
+                .disabled(!model.isCredentialOwner)
+        }
+    }
+
+    private func label(_ use: AgentPairingCoordinator.Use) -> String {
+        switch use {
+        case .off: "Off"
+        case .own(let identity): identity.refusedAt == nil ? "Its own pairing" : "Revoked on the node"
+        case .mac: "This Mac's pairing"
+        case .unavailable(let reason):
+            reason.contains("no longer accepts") ? "Revoked on the node: pair it again" : "No pairing yet"
+        }
+    }
+
+    private func tone(_ use: AgentPairingCoordinator.Use) -> StatusTone {
+        switch use {
+        case .off: .unknown
+        case .own: .ok
+        case .mac: .info
+        case .unavailable: .warn
+        }
     }
 }
 

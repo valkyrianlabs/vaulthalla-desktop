@@ -24,6 +24,14 @@ opt-in: without `VH_LIVE_NODE` every test in it is skipped, so `swift test` and 
 |---|---|
 | `setsUpTheServerWithoutACodeAndOnlyOnce` | 1. One `run` on an empty registry: paired, the record at the port `vh device pair --json` named, pinned to the listener's key, with the server's install id; the window is closed and `vh device list` has the device. 2. A second `run` finds the node by its install id: `alreadyKnown`, nothing added, the window closed again. 3. A `NodeSession` from the record comes online without pairing; the device is revoked at the end |
 
+`LiveAgentPairingTests` covers AI apps' own pairings (docs/architecture.md §3; needs a server with approval keys,
+1.22 or later):
+
+| Test | Steps |
+|---|---|
+| `anAIAppGetsItsOwnDeviceWorksAloneAndIsRevokedAlone` | 1. This Mac pairs with a (software) approval key in its request, approved with `vh device approve`; its Device session comes online. 2. `AgentPairing` for Claude Code: window, the real `PairingClient` for the new key pinned to the listener's key, the code matched on this Mac, the `device.trust` step-up answered with the approval key: `vh device list` has "Claude Code on Interop Mac" as a live device of the same user, nothing pending. 3. The bridge's reader for `--client claude-code` presents the app's key, the node accepts it, the HTTP lanes serve the seeded file to it. 4. `device.revoke` on this Mac's session: the app's key is refused, this Mac's still accepted |
+| `withoutAnApprovalKeyNothingIsLeftBehind` | this Mac paired without an approval key: the attempt stops with "no approval key", the new key is deleted, no request pending, the window closed, no new device |
+
 `LiveTransferTests` covers direct transport (the server's docs/reference/transfer-protocol.md); each test pairs its own
 key and revokes it at the end:
 
