@@ -215,6 +215,21 @@ struct AgentsSettingsView: View {
                             .toggleStyle(.checkbox)
                             .font(.callout)
                             .disabled(!model.isCredentialOwner || agents.accessProblem != nil)
+                        if ownPairing(client).wrappedValue {
+                            Picker("Its own pairings can do", selection: Binding(
+                                get: { agents.preferredScope(client) },
+                                set: { agents.setPreferredScope($0, for: client) })) {
+                                ForEach(DeviceScope.allCases) { Text($0.displayName).tag($0) }
+                            }
+                            .pickerStyle(.segmented)
+                            .font(.callout)
+                            .disabled(!model.isCredentialOwner || agents.accessProblem != nil)
+                            Text(agents.preferredScope(client).explanation + " On the node it is still the account "
+                                + "this Mac was paired by; this only lowers what that account may do through it. "
+                                + "Nodes that can't limit it (older servers) say so below.")
+                                .font(.caption)
+                                .foregroundStyle(.fgSubtle)
+                        }
                         if isAdded(client), !agents.prefersOwnPairing(client),
                            agents.pairedNodes.contains(where: { agents.use($0, by: client) == .mac }) {
                             HStack {
@@ -386,6 +401,9 @@ struct AgentNodePairings: View {
                     actions(use, client)
                 }
             }
+            if case .own = use {
+                scopeLine(key, client)
+            }
             if let outcome = agents.outcomes[key] {
                 Text(outcome.text)
                     .font(.caption)
@@ -417,10 +435,54 @@ struct AgentNodePairings: View {
         }
     }
 
+    /// What the node says the app's own device may do, and changing it: narrower in one click, wider with this Mac's
+    /// approval key.
+    @ViewBuilder private func scopeLine(_ key: AgentPairingCoordinator.Key, _ client: AgentClient) -> some View {
+        HStack(spacing: 8) {
+            switch agents.scopeReports[key] {
+            case .scoped(let scope)?:
+                Text("Can do: \(scope.displayName)")
+                    .foregroundStyle(scope == .destructive ? StatusTone.warn.color : Color.fgMuted)
+                Menu("Change") {
+                    ForEach(DeviceScope.allCases.filter { $0 != scope }) { option in
+                        Button(option > scope ? "\(option.displayName) (asks for your approval)" : option.displayName) {
+                            Task { await agents.setScope(option, node: node.id, for: client) }
+                        }
+                    }
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .disabled(!model.isCredentialOwner)
+                let preferred = agents.preferredScope(client)
+                if preferred < scope {
+                    Button("Limit to \(preferred.displayName)") {
+                        Task { await agents.setScope(preferred, node: node.id, for: client) }
+                    }
+                    .controlSize(.small)
+                    .disabled(!model.isCredentialOwner)
+                }
+            case .cannotLimit?:
+                Text("Can do: everything the account can. This node can't limit it (update the node).")
+                    .foregroundStyle(StatusTone.warn.color)
+            case .notListed?:
+                Text("The node doesn't list this device any more.")
+                    .foregroundStyle(StatusTone.warn.color)
+            case .unknown(let why)?:
+                Text("What it can do isn't known right now (\(why)).")
+                    .foregroundStyle(.fgSubtle)
+            case nil:
+                Text("Checking what it can do…")
+                    .foregroundStyle(.fgSubtle)
+            }
+        }
+        .font(.caption)
+        .padding(.leading, 120)
+    }
+
     private func label(_ use: AgentPairingCoordinator.Use) -> String {
         switch use {
         case .off: "Off"
-        case .own(let identity): identity.refusedAt == nil ? "Its own pairing" : "Revoked on the node"
+        case .own: "Its own pairing"
         case .mac: "This Mac's pairing"
         case .unavailable(let reason):
             reason.contains("no longer accepts") ? "Revoked on the node: pair it again" : "No pairing yet"

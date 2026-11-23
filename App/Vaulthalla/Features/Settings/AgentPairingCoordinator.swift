@@ -33,6 +33,8 @@ import VHNodes
     private(set) var accessProblem: String?
     private(set) var working: Set<Key> = []
     private(set) var outcomes: [Key: Outcome] = [:]
+    /// The scope each node reports for each app's own device (`device.list`): what the rows show.
+    private(set) var scopeReports: [Key: AgentScopeReport] = [:]
     /// Something the person must do outside Vaulthalla (devices to revoke in a node's web console).
     var notice: String?
 
@@ -92,6 +94,13 @@ import VHNodes
 
     func prefersOwnPairing(_ client: AgentClient) -> Bool { access.prefersOwnPairing(client) }
 
+    /// The scope an app's own pairings ask for (Read only by default).
+    func preferredScope(_ client: AgentClient) -> DeviceScope { access.scope(for: client) }
+
+    func setPreferredScope(_ scope: DeviceScope, for client: AgentClient) {
+        save { $0.setScope(scope, for: client) }
+    }
+
     func setPrefersOwnPairing(_ on: Bool, for client: AgentClient) {
         save { $0.setOwnPairing(on, for: client) }
     }
@@ -136,8 +145,10 @@ import VHNodes
         outcomes[key] = nil
         let signer = try? app.cloud?.approvals.signer(for: id)
         let pairing = AgentPairing(keys: keys, session: session, signer: signer)
-        let result = await pairings.pair(id, client: client, using: pairing, macName: macName, appVersion: appVersion)
+        let result = await pairings.pair(id, client: client, using: pairing, macName: macName, appVersion: appVersion,
+                                         scope: preferredScope(client))
         app.loadNodes()
+        await refreshScopes(on: id)
         switch result {
         case .success:
             outcomes[key] = Outcome(text: "Paired: it's its own device on \(name(id)) now.", tone: .ok,
@@ -145,6 +156,55 @@ import VHNodes
         case .failure(let failure):
             outcomes[key] = Outcome(text: failure.description, tone: .warn, offersChoice: true)
         }
+    }
+
+    // MARK: - Scopes
+
+    /// Asks the node, on this Mac's session, what each app's own device may do.
+    func refreshScopes(on id: NodeID) async {
+        guard let app, let node = app.node(withID: id) else { return }
+        let owned = node.agentIdentities.compactMap { raw, own in AgentClient(rawValue: raw).map { ($0, own) } }
+        guard !owned.isEmpty else { return }
+        guard let session = app.cloudTransport(for: id) else {
+            for (client, _) in owned { scopeReports[Key(node: id, client: client)] = .unknown("not connected") }
+            return
+        }
+        let reports = await AgentScopes.report(deviceIDs: owned.map(\.1.deviceID), via: session)
+        for (client, own) in owned { scopeReports[Key(node: id, client: client)] = reports[own.deviceID] }
+    }
+
+    /// Changes the app's own device's scope on the node: narrowing at once, widening with this Mac's approval key.
+    func setScope(_ scope: DeviceScope, node id: NodeID, for client: AgentClient) async {
+        let key = Key(node: id, client: client)
+        guard let app, let node = app.node(withID: id), let own = node.agentIdentities[client.rawValue],
+              let session = app.cloudTransport(for: id), let pairings else {
+            outcomes[key] = Outcome(text: "\(name(id)) isn't connected right now.", tone: .warn, offersChoice: false)
+            return
+        }
+        var current: DeviceScope?
+        if case .scoped(let reported) = scopeReports[key] { current = reported }
+        working.insert(key)
+        defer { working.remove(key) }
+        let signer = try? app.cloud?.approvals.signer(for: id)
+        let change = await AgentScopes.set(scope, deviceID: own.deviceID, current: current, macSession: session,
+                                           signer: signer, context: ApprovalKeys.context(for: node))
+        switch change {
+        case .changed(let applied):
+            pairings.recordScope(applied, for: client, on: id)
+            app.loadNodes()
+            outcomes[key] = Outcome(text: "\(name(id)) now holds it to \(applied.displayName.lowercased()).",
+                                    tone: .ok, offersChoice: false)
+        case .unchanged:
+            outcomes[key] = nil
+        case .needsApprovalKey:
+            outcomes[key] = Outcome(text: "Allowing more needs this Mac's approval key on \(name(id)): set up approvals "
+                + "for it first (once, in the node's web console).", tone: .warn, offersChoice: false)
+        case .cannotLimit:
+            outcomes[key] = Outcome(text: "\(name(id)) can't limit it: update the node.", tone: .warn, offersChoice: false)
+        case .failed(let why):
+            outcomes[key] = Outcome(text: "The access wasn't changed: \(why)", tone: .warn, offersChoice: false)
+        }
+        await refreshScopes(on: id)
     }
 
     // MARK: - Removing
@@ -178,7 +238,10 @@ import VHNodes
     func check() async {
         guard let app, let pairings else { return }
         for node in pairedNodes {
-            if !node.agentIdentities.isEmpty { await pairings.checkAccepted(on: node.id) }
+            if !node.agentIdentities.isEmpty {
+                await pairings.checkAccepted(on: node.id)
+                await refreshScopes(on: node.id)
+            }
             if !node.pendingAgentRevocations.isEmpty, let session = app.cloudTransport(for: node.id) {
                 await pairings.retryPending(on: node.id, macSession: session)
             }

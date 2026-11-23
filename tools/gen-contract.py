@@ -131,7 +131,11 @@ def member_name(name: str) -> str:
     out = ws[0] + "".join(ACRONYMS.get(w, upper_first(w)) for w in ws[1:])
     if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", out):
         raise ContractError(f"{name!r} does not make a Swift identifier")
-    return out
+    # `self` can't be a stored member backticks would rescue (`self.self` in an initializer is the instance).
+    return out + "Value" if out in UNUSABLE_MEMBERS else out
+
+
+UNUSABLE_MEMBERS = {"self", "Self", "init", "Type"}
 
 
 def value_name(value: str) -> str:

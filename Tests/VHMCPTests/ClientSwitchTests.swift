@@ -160,6 +160,20 @@ import VHCore
         try await client.call("nodes_list", [:])["result"]?["structuredContent"]?["nodes"]?.arrayValue ?? []
     }
 
+    /// A node holding the app's own device to a scope refuses calls above it; the refusal reaches the app as the
+    /// node's plain tool error naming the scope, verbatim, once: nothing retries it, with this Mac's identity or any.
+    @Test func aScopeRefusalComesBackAsTheNodesToolError() async throws {
+        defer { registry.remove() }
+        alpha.set { $0.ceiling = "read" }
+        let client = try client(.codex)
+        let refused = try await client.call("vh_run", ["node": "Alpha", "command": "vault create notes"])
+        #expect(refused["result"] == FakeDaemon.ceilingRefused(tool: "vh_run", ceiling: "read"))
+        #expect(refused["result"]?.text.contains("is read-only") == true)
+        #expect(alpha.calls.count == 1, "not retried")
+        let read = try await client.call("vh_read", ["node": "Alpha", "command": "vault list"])
+        #expect(read["result"]?.text == "alpha ran vh_read")
+    }
+
     @Test func argumentsNameAKnownClientOrNothing() throws {
         #expect(try BridgeArguments.parse([]).get() == nil)
         #expect(try BridgeArguments.parse(["--client", "claude-code"]).get() == .claudeCode)

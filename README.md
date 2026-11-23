@@ -178,7 +178,11 @@ window). It shows whether each is added, repairs a registration left behind when
 node can be turned off for any of the three apps; nodes are available until you do, including ones paired later.
 Each app can also get its own pairing with each node ("Give it its own pairing on each node", on by default): it is
 then its own device on the node, named after the app and this Mac, and can be revoked alone. It still acts as the
-account this Mac was paired by, with the same permissions. It needs this Mac's approval key on the node (one Touch ID
+account this Mac was paired by. On nodes running Vaulthalla 1.23 or later its own pairing can also be limited: Read
+only (the default for a new app), Read and change, or Everything, chosen per app and changeable per node (narrowing at
+once, widening with one approval); destructive commands still ask for your approval within it. Older nodes can't limit
+it, and Settings → Agents says so. This Mac's own pairing is never limited.
+It needs this Mac's approval key on the node (one Touch ID
 per node); registrations made before stay on this Mac's pairing until you give them their own.
 
 "Manual setup" there has the commands to run yourself:

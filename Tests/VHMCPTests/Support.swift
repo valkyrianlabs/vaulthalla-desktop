@@ -24,6 +24,8 @@ final class FakeDaemon: Sendable {
         var callsStarted = 0
         /// Answer every POST with 404, as a daemon without `/mcp`.
         var missingEndpoint = false
+        /// The device's scope (server 1.23): a call above it gets the daemon's ceiling refusal (`Catalog.cpp`).
+        var ceiling: String?
     }
 
     let name: String
@@ -78,6 +80,9 @@ final class FakeDaemon: Sendable {
             return RPC.error(id: id, code: -32602, message: "Unknown tool: \(name)")
         }
         state.withLock { $0.calls.append((name, arguments)) }
+        if let ceiling = state.withLock({ $0.ceiling }), tool["annotations"]?["readOnlyHint"] != true {
+            return RPC.response(id: id, result: Self.ceilingRefused(tool: name, ceiling: ceiling))
+        }
         if tool["annotations"]?["destructiveHint"] == true, arguments["confirm"]?["destructive"] != true {
             return RPC.response(id: id, result: Self.needsConfirmation(tool: name))
         }
@@ -85,6 +90,18 @@ final class FakeDaemon: Sendable {
             "content": [["type": "text", "text": .string("\(self.name) ran \(name)")]],
             "isError": false,
         ])
+    }
+
+    /// The daemon's answer to a call above the device's scope: an error result, nothing run.
+    static func ceilingRefused(tool: String, ceiling: String) -> JSONValue {
+        let limit = ceiling == "write" ? "may read and change, but not run destructive commands" : "is read-only"
+        return [
+            "content": [["type": "text", "text": .string("This connection \(limit), and vh \(tool) is a write command: "
+                + "nothing was run. Whoever connected this app can reconnect it with wider access.")]],
+            "isError": true,
+            "_meta": ["vaulthalla/ceiling_refused": ["command": .string(tool), "effect": "write",
+                                                    "ceiling": .string(ceiling)]],
+        ]
     }
 
     static func needsConfirmation(tool: String) -> JSONValue {

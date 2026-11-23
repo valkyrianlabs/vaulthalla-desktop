@@ -61,12 +61,16 @@ public struct WsCapability: RawRepresentable, Hashable, Sendable, ExpressibleByS
     public static let transferLane: WsCapability = "device.lanes.transfer"
     /// `/upload/sessions`: resumable uploads in parts (§3), on both listeners.
     public static let resumableUpload: WsCapability = "http.upload.resumable"
+    /// Scoped devices (server 1.23): `scope` in `device.pair.request`/`device.pairing.approve`, `requested_scope` in
+    /// `device.pairing.pending`, `scope` in `device.list`, `device.scope.set`, and the `device_scope` refusal. A node
+    /// without it is sent none of these (an older daemon refuses members it doesn't know).
+    public static let deviceScope: WsCapability = "device.scope"
 
     /// The capabilities this build looks for (each one is in the vendored contract's `WsContract.capabilities`, except
     /// those in ``awaitingContract``).
     public static let used: [WsCapability] = [
         .unknownCommandCode, .fsEntryMetadataVersion, .previewLane, .downloadLane, .uploadLane, .deviceMCP,
-        .serverIdentity, .deviceEndpoints, .transferLane, .resumableUpload,
+        .serverIdentity, .deviceEndpoints, .transferLane, .resumableUpload, .deviceScope,
     ]
 
     /// Capabilities the normative spec (the server's `docs/reference/transfer-protocol.md`, server 1.20.0) defines

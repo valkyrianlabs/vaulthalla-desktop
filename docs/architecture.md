@@ -453,9 +453,35 @@ docs/                   this plan, the pairing protocol, release notes
   - **Noticing a revocation on the node.** The owner asks each node about each app's key whenever Settings → Agents
     opens (one connection per key, `CredentialReader.check`) and records a refusal as `refusedAt`; the bridge, which
     writes nothing, fails closed on its own (refused, reloaded, refused again).
-  - **Not in this change.** Apps' keys aren't rotated (the Mac's own 90-day rotation doesn't apply to them). A pairing
-    with fewer permissions than the account would need the server to carry a per-device scope; Desktop doesn't offer
-    one.
+  - **Scopes** (server 1.23, capability `device.scope`, vaulthalla-server#464). A node can hold a device to a scope,
+    `read` < `write` < `destructive`: a ceiling over its user's permissions, enforced on every ws command (each declares
+    an `effect`), the HTTP lanes and `/mcp`. It never adds a permission, and destructive commands still ask for
+    confirmation within it. `destructive` is what every pairing could do before. Desktop uses it for AI apps' own
+    pairings only: **this Mac's own pairing is never scoped** (it pairs as before, asking none).
+    - Asking (`AgentPairing.pair(…, scope:)`): only of a node that announced `device.scope`, the new key's
+      `device.pair.request` carries `scope`, the pending row's `requested_scope` must be it, and
+      `device.pairing.approve` carries the same scope, which the node binds into the `device.trust` step-up's target
+      (the approval key signs for exactly that scope). The approved device must report it, else the pairing is undone
+      ("the node didn't limit it as asked"). A node without the capability is sent nothing about scopes (an older
+      daemon refuses members it doesn't know): the pairing is unscoped and the row says the node can't limit it.
+    - The choice per app (Settings → Agents, "Its own pairings can do": Read only, Read and change, Everything) is
+      stored with the app's pairing choice in `agent-access.json` (`pairing.<client>.scope`); a new app asks for
+      Read only.
+    - Showing: each row shows what the node reports in `device.list` on this Mac's session (`AgentScopes.report`),
+      never what was asked; a scope this build doesn't know reads as Everything, so no limit is claimed that can't be
+      named. Existing unscoped pairings on a node with scopes show Everything with "Limit to …" in one click.
+    - Changing (`AgentScopes.set`, `device.scope.set` on this Mac's session only; the node refuses it from a scoped
+      device and from the device itself): narrowing needs nothing; widening answers the step-up (target
+      `device.scope.set:<row>:<scope>`) with this Mac's approval key, one Touch ID or password; without one the row
+      says to set up approvals. The node closes the device's sessions, so the bridge reconnects under the new scope.
+    - The bridge: a node's `/mcp` lists only the tools within the device's scope and answers a call above it with an
+      error result naming the limit ("This connection is read-only, … nothing was run"); the bridge passes it to the AI
+      app verbatim and never retries it, with this Mac's identity or any. On ws it is `device_scope {scope, effect}`.
+    - The vendored contract is the unmerged server commit 20097378 (`contract/SOURCE.json`); every scope member is
+      optional and gated on the capability, and the compatibility baseline (1.22.2) is unchanged, so older servers
+      keep working. Regenerating it surfaced a model member named `self` (`ManifestReplica`), which
+      `tools/gen-contract.py` now names `selfValue`.
+  - **Not in this change.** Apps' keys aren't rotated (the Mac's own 90-day rotation doesn't apply to them).
   - **Decisions** (each with its undo):
     1. Key tag `<node id>.agent.<client>`. Undo: change `AgentIdentity.keyTag` (keys under the old tag are orphaned;
        pair again).
@@ -483,6 +509,19 @@ docs/                   this plan, the pairing protocol, release notes
         it. Undo: use `node(withID:)` again in `AppModel.record`.
     15. `PairingClient.Configuration.approvalKeySPKI` (the live test pairs its Mac with one). Undo: remove it.
     16. `nodes_list` adds `identity` (`own`/`mac`) and `available`. Undo: drop both fields.
+    17. AI apps' own pairings ask for a scope, Read only by default. Undo: `AgentAccess.defaultScope = .destructive`.
+    18. Scopes are sent only to nodes announcing `device.scope`; others pair unscoped and say they can't limit it.
+        Undo: drop the capability check in `AgentPairing.pair` (older daemons then refuse the pairing outright).
+    19. A node that approves without applying the asked scope is undone. Undo: drop the `scopeNotApplied` check in
+        `AgentPairing.exchange`.
+    20. Rows show the node's `device.list` report, not the record's `scope` (kept only as what was confirmed at
+        pairing). Undo: show `AgentIdentity.scope` in `AgentNodePairings.scopeLine`.
+    21. Scope changes go only over this Mac's session; widening needs the approval key, with no console fallback.
+        Undo: add `device.approval.request` polling on `needsApprovalKey` in `AgentScopes.set`.
+    22. An unknown reported scope reads as Everything. Undo: map it to `.unknown` in `AgentScopes.report`.
+    23. This Mac's own pairing is never scoped. Undo: none intended; it would mean passing `scope` in `PairingFlow`.
+    24. The generator renames members Swift can't store (`self`, `Self`, `init`, `Type`) with a `Value` suffix. Undo:
+        drop `UNUSABLE_MEMBERS` in `tools/gen-contract.py` (the contract then doesn't compile).
 - **Signing and the shared container** (desktop#4; evidence from the desktop#2 spike). The File Provider extension
   is sandboxed and must read the same registry and device keys as the app, so signed builds share an App Group and a
   keychain access group.
