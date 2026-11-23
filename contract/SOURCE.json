@@ -1,10 +1,10 @@
 {
-  "server_version": "1.22.2",
-  "server_commit": "772d4bf7",
+  "server_version": "1.23.0",
+  "server_commit": "88b91d1d",
   "server_branch": "main",
   "source": "web/src/util/generated/wsContract.json",
   "contract_version": 3,
-  "ws_hash": "64a009cd00663c9efb771f113e6b6598bfa6e51facac18f1a9e49df1d7221032",
-  "models_hash": "2a7b8cbc9ae3209c308ea6fdd3dd8016c3c43fadbae82b5b6b3e6beac858a696",
-  "note": "server main 772d4bf7 (#448, managed remotes); the generated contract is byte for byte feat/managed-remotes-console be462754's"
+  "ws_hash": "1f51b7b7f54eb58af8b8e8946500a850d05cecf5bf28c78b4f00581cceef8038",
+  "models_hash": "c57d7e5de2e83617ae11ec95f742862de76f1fb52ba7c46baf711d2af31ee939",
+  "note": "server main 88b91d1d (#464, scoped devices); the generated contract is byte for byte what feat/scoped-devices 20097378 produced"
 }

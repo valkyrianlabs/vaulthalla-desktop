@@ -28,14 +28,14 @@ public struct AgentPairings: Sendable {
     /// Pairs the app with the node (``AgentPairing``) and saves the identity in its record. If the record can't be
     /// saved, the new device is revoked and its key deleted, so nothing is left half-made.
     public func pair(_ id: NodeID, client: AgentClient, using pairing: AgentPairing, macName: String,
-                     appVersion: String) async -> Result<AgentIdentity, AgentPairing.Failure> {
+                     appVersion: String, scope: DeviceScope? = nil) async -> Result<AgentIdentity, AgentPairing.Failure> {
         guard let node = record(id) else { return .failure(.macNotPaired) }
         // An identity this replaces (repairing after the node refused it) is revoked and dropped first.
         if node.agentIdentities[client.rawValue] != nil {
             _ = await remove(client, from: id, macSession: pairing.session)
         }
         guard let fresh = record(id) else { return .failure(.macNotPaired) }
-        let outcome = await pairing.pair(fresh, client: client, macName: macName, appVersion: appVersion)
+        let outcome = await pairing.pair(fresh, client: client, macName: macName, appVersion: appVersion, scope: scope)
         guard case .success(let identity) = outcome else { return outcome }
         do {
             guard var latest = record(id) else { throw NodeStore.Failure.notFound(id) }
@@ -85,6 +85,13 @@ public struct AgentPairings: Sendable {
         }
         _ = try? store.update(latest)
         return result
+    }
+
+    /// Records the scope the node now reports for the app's own device (after a change).
+    public func recordScope(_ scope: DeviceScope?, for client: AgentClient, on id: NodeID) {
+        guard var node = record(id), node.agentIdentities[client.rawValue] != nil else { return }
+        node.agentIdentities[client.rawValue]?.scope = scope
+        _ = try? store.update(node)
     }
 
     /// Retries the node's queued revocations on this Mac's session; returns those still owed.

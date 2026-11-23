@@ -131,4 +131,85 @@ struct LiveAgentPairingTests {
             try await LiveNode.vh(["device", "revoke", macDeviceID])
         }
     }
+
+    /// Scopes (server 1.23, `device.scope`): the app's own pairing asks for read and is approved for it, the node
+    /// reports it and holds the device to it (ws and /mcp), narrowing needs nothing, widening the approval key.
+    /// Recorded as skipped against a node without scopes.
+    @Test func anAIAppsOwnPairingIsHeldToItsScope() async throws {
+        let endpoint = try LiveNode.requireEndpoint()
+        let instance = try await LiveNode.instance()
+        try await LiveKeychain.withKeys { keys in
+            let approvalKey = SoftwareApprovalKey()
+            let (node, session) = try await Self.pairMac("live-agent-mac", keys: keys, endpoint: endpoint,
+                                                         approvalKey: approvalKey)
+            defer { Task { await session.stop() } }
+            guard case .paired(_, let macDeviceID, _) = node.pairing else { return }
+            guard await session.capabilitySupport(.deviceScope) == .yes else {
+                print("[live] this node has no device scopes: skipped")
+                try await LiveNode.vh(["device", "revoke", macDeviceID])
+                return
+            }
+
+            let pairing = AgentPairing(keys: keys, session: session, signer: approvalKey)
+            let own = try await pairing.pair(node, client: .codex, macName: Self.macName, appVersion: "0.0.0-interop",
+                                             scope: .read).get()
+            #expect(own.scope == .read)
+            #expect(await AgentScopes.report(deviceIDs: [own.deviceID], via: session)[own.deviceID] == .scoped(.read))
+            #expect(try await Self.device(own.deviceID)?["scope"] == "read")
+            #expect(try await Self.device(macDeviceID)?["scope"] != "read", "this Mac's own pairing isn't scoped")
+
+            // Held to it: a write over its own ws session is device_scope; over /mcp the write is the node's plain
+            // tool error naming the limit, while a read runs.
+            var record = node
+            record.agentIdentities["codex"] = own
+            let credentials = try await CredentialReader(registry: nil, keys: keys, client: .codex,
+                                                         access: { AgentAccess() }).load(record)
+            do {
+                _ = try await OneShotDeviceTransport(credentials: credentials)
+                    .send(Ws.Device.Rename.self, payload: .init(deviceID: own.deviceID, name: "renamed"))
+                Issue.record("a write ran under read")
+            } catch {
+                #expect((error as? WsError)?.code == "device_scope", "\(error)")
+            }
+            let http = try DeviceHTTPClient(configuration: credentials.laneConfiguration())
+            defer { http.invalidate() }
+            let version = "2025-11-25"
+            _ = try await http.mcp(["jsonrpc": "2.0", "id": 1, "method": "initialize",
+                                    "params": ["protocolVersion": .string(version), "capabilities": [:],
+                                               "clientInfo": ["name": "interop", "version": "0"]]])
+            let refused = try await http.mcp(["jsonrpc": "2.0", "id": 2, "method": "tools/call",
+                                              "params": ["name": "vh_run",
+                                                         "arguments": ["command": "vault create live-scope-probe"]]],
+                                             protocolVersion: version)
+            let refusedResult = refused.body?["result"]
+            #expect(refusedResult?["isError"] == true, "\(String(describing: refused.body))")
+            let refusedText = refusedResult?["content"]?.arrayValue?.first?["text"]?.stringValue ?? ""
+            #expect(refusedText.contains("read-only"), "\(refusedText)")
+            let read = try await http.mcp(["jsonrpc": "2.0", "id": 3, "method": "tools/call",
+                                           "params": ["name": "vh_read",
+                                                      "arguments": ["command": .string("fs ls \(instance.vaultID) /")]]],
+                                          protocolVersion: version)
+            #expect(read.body?["result"]?["isError"] != true, "\(String(describing: read.body))")
+
+            // Widening asks for the approval key's step-up; narrowing doesn't.
+            #expect(await AgentScopes.set(.write, deviceID: own.deviceID, current: .read, macSession: session,
+                                          signer: nil, context: nil) == .needsApprovalKey)
+            let context = try #require(Self.context(node))
+            #expect(await AgentScopes.set(.write, deviceID: own.deviceID, current: .read, macSession: session,
+                                          signer: approvalKey, context: context) == .changed(.write))
+            #expect(try await Self.device(own.deviceID)?["scope"] == "write")
+            #expect(await AgentScopes.set(.read, deviceID: own.deviceID, current: .write, macSession: session,
+                                          signer: nil, context: nil) == .changed(.read))
+            #expect(try await Self.device(own.deviceID)?["scope"] == "read")
+            print("[live] Codex paired read-only as \(own.deviceID.prefix(16)); widened to write and narrowed back")
+
+            #expect(await AgentRevocation.revoke(deviceID: own.deviceID, macSession: session) == .revoked)
+            try await LiveNode.vh(["device", "revoke", macDeviceID])
+        }
+    }
+
+    private static func context(_ node: Node) -> ApprovalContext? {
+        guard case .paired(let pin, let deviceID, _) = node.pairing, let nodeID = node.serverNodeID else { return nil }
+        return ApprovalContext(nodeID: nodeID, serverSPKISHA256: pin, deviceSPKISHA256: Data(hexString: deviceID))
+    }
 }

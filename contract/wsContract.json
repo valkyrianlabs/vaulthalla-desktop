@@ -11,6 +11,11 @@
       "since": "1.23.0"
     },
     {
+      "description": "A linked server can keep an outbound connection to the cloud relay, switched by a super admin (cloud.relay.status, .enable, .disable). Browsers reach it through relayed streams on the device listener, pair like a device (device.pairing.pending `via`, device.list `paired_via`) and are held to the read-only set (data.code relay_read_only).",
+      "name": "cloud.relay",
+      "since": "1.23.0"
+    },
+    {
       "description": "A linked server keeps vaults in managed storage: new vaults may be attached to it automatically (cloud.storage.status, .switch, .offer.accept, .offer.decline, .rotate, .new_vaults, .billing.handoff). Whether it is available is runtime state (cloud.storage.status `available`).",
       "name": "cloud.storage.managed_remotes",
       "since": "1.23.0"
@@ -44,6 +49,11 @@
       "description": "The device listener serves remote MCP (JSON-RPC over POST /mcp) as the device's user.",
       "name": "device.mcp",
       "since": "1.16.0"
+    },
+    {
+      "description": "A pairing may carry a scope (read, write or destructive; absent = destructive, as before): device.pair.request `scope` asks, device.pairing.approve `scope` decides (equal or narrower than what was asked), device.list shows it, device.scope.set changes it. A scoped device runs only commands within it (every ws command declares an `effect`) and answers device_scope otherwise; its /mcp and HTTP lanes are held to it too.",
+      "name": "device.scope",
+      "since": "1.23.0"
     },
     {
       "description": "A paired device can read the server key's pin (SPKI SHA-256) over its own session (device.server.identity).",
@@ -98,6 +108,10 @@
         "description": "RBAC or a business rule refused the actor."
       },
       {
+        "code": "device_scope",
+        "description": "A scoped device (paired with read or write access only) asked for a command above its scope, or one a scoped device never runs (pairing, approvals, key-backup grants, key export and import, remote connectors, another device's revocation). data: {scope, effect}."
+      },
+      {
         "code": "device_unknown",
         "description": "The device listener: this connection's key is not a paired device; it may only pair (device.pair.*) and say hello (meta.hello, meta.contract.get)."
       },
@@ -108,6 +122,10 @@
       {
         "code": "not_found",
         "description": "What the request names doesn't exist (or isn't visible to the actor)."
+      },
+      {
+        "code": "relay_read_only",
+        "description": "A device session through the cloud relay (or a device paired that way) asked for a command outside the read-only set: browsing, metadata, downloads, the change feed, device.list and meta.*."
       },
       {
         "code": "unknown_command",
@@ -1795,6 +1813,135 @@
       "name": "CloudLinkStatus"
     },
     {
+      "description": "The cloud relay (design/cloud/relay.md): ops::cloud_relay::toJson(RelayStatus).",
+      "fields": [
+        {
+          "description": "off: the local switch; listener_off: device_server.enabled is false; backoff: retrying after a failure; waiting: the cloud refused for a reason that may clear (off at the cloud, no plan, no relay), retried every 5 minutes; stopped: the cloud no longer knows this installation (toggle the switch to try again).",
+          "enum": [
+            "off",
+            "not_linked",
+            "listener_off",
+            "connecting",
+            "connected",
+            "backoff",
+            "waiting",
+            "stopped"
+          ],
+          "name": "state",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "The local switch, for this linked installation.",
+          "name": "enabled",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "name": "enabled_by",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "name": "enabled_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "From the latest ticket.",
+          "name": "relay_url",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "Since the relay admitted this server (WELCOME).",
+          "name": "connected_since",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "name": "renew_by",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "name": "last_ticket_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "name": "next_attempt_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "name": "last_error",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "Relayed streams open now.",
+          "minimum": 0,
+          "name": "streams",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Since the daemon started.",
+          "minimum": 0,
+          "name": "streams_accepted",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Since the daemon started: bad tickets, failed key proofs, limits.",
+          "minimum": 0,
+          "name": "streams_refused",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "name": "CloudRelayStatus"
+    },
+    {
       "description": "ops::cloud_storage::toJson(EndedConfirmation).",
       "fields": [
         {
@@ -2617,6 +2764,326 @@
         }
       ],
       "name": "ConnectionStats"
+    },
+    {
+      "description": "A remote connector client (migration 151): ops::connector::toJson(ClientRow).",
+      "fields": [
+        {
+          "description": "uuid",
+          "name": "id",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "client_id",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "enum": [
+            "cimd",
+            "registered",
+            "dcr"
+          ],
+          "name": "kind",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "name",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "items": "string",
+          "name": "redirect_uris",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "description": "The registering user's id.",
+          "minimum": 0,
+          "name": "created_by",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "name": "created_at",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "name": "last_used_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "name": "disabled_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        }
+      ],
+      "name": "ConnectorClient"
+    },
+    {
+      "description": "A remote connector grant, a connected app (migration 151): ops::connector::toJson(Grant).",
+      "fields": [
+        {
+          "description": "uuid",
+          "name": "id",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "user_id",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "A client-id metadata document URL, or vhc_… for a registered or dynamic client.",
+          "name": "client_id",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "As the client named itself (verified only for registered clients).",
+          "name": "client_name",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "The client id's host (empty for vhc_… ids).",
+          "name": "client_host",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Where the grant's authorization code went.",
+          "name": "redirect_host",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "The redirect goes to a program on the approver's computer.",
+          "name": "loopback",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "enum": [
+            "read",
+            "write",
+            "destructive"
+          ],
+          "name": "scope",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "label",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "name": "created_at",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "At most 90 days after created_at.",
+          "name": "expires_at",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "name": "last_used_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "name": "last_ip",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "name": "revoked_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "enum": [
+            "manual",
+            "user_inactive",
+            "grantor_policy",
+            "refresh_reuse",
+            "code_reuse",
+            "switch_off",
+            "expired",
+            "client_removed",
+            "sessions_revoked",
+            "mfa_recovery"
+          ],
+          "name": "revoked_reason",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        }
+      ],
+      "name": "ConnectorGrant"
+    },
+    {
+      "description": "Remote connectors (design/core/mcp-remote-signin.md): ops::connector::toJson(Status).",
+      "fields": [
+        {
+          "description": "The switch.",
+          "name": "enabled",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "https://<host>, where hosted AI clients reach this server.",
+          "name": "public_origin",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "The MCP endpoint grants are bound to: public_origin + /mcp.",
+          "name": "resource",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "The widest scope a grant may be given.",
+          "enum": [
+            "read",
+            "write",
+            "destructive"
+          ],
+          "name": "max_scope",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Dynamic client registration (off by default).",
+          "name": "dcr_enabled",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "The only hosts a client-id metadata document may come from; empty: any.",
+          "items": "string",
+          "name": "client_hosts",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "description": "The user id of the last change.",
+          "minimum": 0,
+          "name": "changed_by",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds; null: never changed.",
+          "name": "changed_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "live_grants",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Live clients.",
+          "minimum": 0,
+          "name": "clients",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "name": "ConnectorStatus"
     },
     {
       "description": "services.db_sweeper.* (Config.cpp to_json(DBSweeperConfig)).",
@@ -3661,6 +4128,31 @@
           "required": true,
           "types": [
             "boolean"
+          ]
+        },
+        {
+          "description": "listener: paired on the device listener (Desktop); relay: a web browser paired through the cloud relay, held to the read-only capability set (migration 144).",
+          "enum": [
+            "listener",
+            "relay"
+          ],
+          "name": "paired_via",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Scoped devices (migration 152): what the device may do at most, within its user's rights. destructive: no limit beyond the account's own (every pairing before scopes).",
+          "enum": [
+            "read",
+            "write",
+            "destructive"
+          ],
+          "name": "scope",
+          "required": true,
+          "types": [
+            "string"
           ]
         }
       ],
@@ -5098,6 +5590,241 @@
       "name": "LoggingConfig"
     },
     {
+      "description": "The last apply of another writer's root (manifest_apply_report, migration 147).",
+      "fields": [
+        {
+          "minimum": 0,
+          "name": "epoch",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "The node id that published the root.",
+          "name": "producer",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "The root became the recorded one; false: an operation was skipped (a local write since the collect) and the next pass applies it again.",
+          "name": "recorded",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "No usable base copy: merged without one (nothing deleted).",
+          "name": "union_base",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "applied",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "skipped",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "deferred",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Left to the planner, or kept for a local edit.",
+          "minimum": 0,
+          "name": "kept",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "conflicts_decided",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "conflicts_open",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "items": "string",
+          "name": "notes",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "description": "ISO-8601 UTC.",
+          "name": "at",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "The reason the last apply stopped at its root (the pass stalls; alerted once): manifest_key_missing, manifest_key_mismatch, manifest_head_incomplete, manifest_mirror_shared, manifest_writer_floor (the root was written by a newer Vaulthalla: upgrade this server; a refused publish records it too); null when it did not stop.",
+          "name": "stopped",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        }
+      ],
+      "name": "ManifestApplyReport"
+    },
+    {
+      "description": "A server the linked account lists for the vault that isn't one of its writers.",
+      "fields": [
+        {
+          "name": "deployment_id",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "name",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "node_id",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "The server that reported removing it from the manifest; null: none did.",
+          "name": "unlisted_by",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        }
+      ],
+      "name": "ManifestCloudOnly"
+    },
+    {
+      "description": "One writer of a vault's manifest (manifest_writer_root, migration 150).",
+      "fields": [
+        {
+          "name": "node_id",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "This server.",
+          "name": "self",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "Its last root this server recorded; null: none since this server held the vault.",
+          "minimum": 0,
+          "name": "last_epoch",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "name": "last_root_sha256",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "ISO-8601 UTC, as the root says.",
+          "name": "last_published_at",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "The linked account's replica set at the last poll: listed, listed but reported removed from the manifest (unlisted), removed there (former: the next publish drops it), or not listed; null: not linked or not polled yet.",
+          "enum": [
+            "listed",
+            "unlisted",
+            "former",
+            "not_listed"
+          ],
+          "name": "cloud",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        }
+      ],
+      "name": "ManifestReplica"
+    },
+    {
+      "description": "remote_manifest_state.writers_change (migration 150).",
+      "fields": [
+        {
+          "enum": [
+            "add",
+            "remove"
+          ],
+          "name": "kind",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "node",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "name": "ManifestWritersChange"
+    },
+    {
       "description": "auth.mfa.* (Config.cpp to_json(MfaConfig), #359, #360): multi-factor authentication settings. Changing policy, the admin flags or auth.webauthn.rp_id is audited (auth.mfa.policy.change); weakening them is mailed to operator_emails.recipients.security.",
       "fields": [
         {
@@ -5130,7 +5857,7 @@
           ]
         },
         {
-          "description": "After a recovery-code sign-in or an MFA reset, keys, device.trust, identity.admin, secrets and settings are refused (recovery_cooldown) for this long.",
+          "description": "After a recovery-code sign-in or an MFA reset, keys, device.trust, identity.admin, secrets, settings and connector.trust are refused (recovery_cooldown) for this long.",
           "maximum": 168,
           "minimum": 1,
           "name": "recovery_cooldown_hours",
@@ -9608,6 +10335,20 @@
       "name": "RemoteSyncPolicy"
     },
     {
+      "description": "sync.replicas.* (design/cloud/mirrors.md).",
+      "fields": [
+        {
+          "description": "Replicated vaults (vh vault join, leave, replica remove): experimental, off by default.",
+          "name": "experimental",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        }
+      ],
+      "name": "ReplicasConfig"
+    },
+    {
       "description": "email.resend.* (Config.cpp to_json(ResendEmailConfig)); the API key lives in the secrets manager.",
       "fields": [
         {
@@ -12725,6 +13466,15 @@
           "required": true,
           "types": [
             "integer"
+          ]
+        },
+        {
+          "description": "Absent from older clients' settings updates: unchanged.",
+          "model": "ReplicasConfig",
+          "name": "replicas",
+          "required": false,
+          "types": [
+            "object"
           ]
         }
       ],
@@ -16817,6 +17567,15 @@
           "types": [
             "object"
           ]
+        },
+        {
+          "description": "storage.vault.get of an opaque_v1 S3 vault: its encrypted manifest.",
+          "model": "VaultManifestStatus",
+          "name": "manifest",
+          "required": false,
+          "types": [
+            "object"
+          ]
         }
       ],
       "name": "Vault"
@@ -19378,6 +20137,108 @@
         }
       ],
       "name": "VaultLayoutUsage"
+    },
+    {
+      "description": "The encrypted manifest of an opaque_v1 vault (db::query::sync::ManifestApply::status): the recorded root, an apply in progress, the root's writers, entries waiting for an open file to close and the last apply of a root this server did not publish (design/sync/manifest-applier.md).",
+      "fields": [
+        {
+          "description": "The recorded root's epoch; null before the first.",
+          "minimum": 0,
+          "name": "epoch",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "The last root this server published itself.",
+          "minimum": 0,
+          "name": "own_epoch",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "An apply that has not finished: nothing is published meanwhile.",
+          "minimum": 0,
+          "name": "applying_epoch",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "The node ids the recorded root names as its writers.",
+          "items": "string",
+          "name": "writers",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "description": "Entries an apply deferred until their open file closes.",
+          "minimum": 0,
+          "name": "deferred",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "null: no root was applied here yet.",
+          "model": "ManifestApplyReport",
+          "name": "last_apply",
+          "required": true,
+          "types": [
+            "object",
+            "null"
+          ]
+        },
+        {
+          "description": "Each writer the recorded root names (a replicated vault has several; experimental, design/cloud/mirrors.md).",
+          "items": "object",
+          "model": "ManifestReplica",
+          "name": "replicas",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "description": "A join, leave or replica removal this server's publishes carry until a recorded root shows it.",
+          "model": "ManifestWritersChange",
+          "name": "writers_change",
+          "required": true,
+          "types": [
+            "object",
+            "null"
+          ]
+        },
+        {
+          "description": "This server has not taken in everything the bucket's head says: an apply in progress, skipped or stopped, entries waiting for an open file, or a writers change not published yet.",
+          "name": "behind",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "Servers the linked account's replica set lists as holding the vault that the recorded root doesn't name (joining, or removed here and not yet by the account holder); empty when unlinked.",
+          "items": "object",
+          "model": "ManifestCloudOnly",
+          "name": "cloud_only",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        }
+      ],
+      "name": "VaultManifestStatus"
     },
     {
       "description": "What `vh vault recover` / vault.recover read and did (#371, spec 03 §6): ops::vault_recover::toJson (core/src/ops/VaultRecover.cpp) over vault::recover::toJson(Plan). Public data only: key checks, attestation verdicts and counts, never key material.",
@@ -23192,7 +24053,7 @@
       "name": "WebsocketServerConfig"
     }
   ],
-  "models_hash": "2a7b8cbc9ae3209c308ea6fdd3dd8016c3c43fadbae82b5b6b3e6beac858a696",
+  "models_hash": "c57d7e5de2e83617ae11ec95f742862de76f1fb52ba7c46baf711d2af31ee939",
   "protocol": {
     "min": 1,
     "version": 1
@@ -23204,6 +24065,7 @@
       "command": "audit.export",
       "confirmations": [],
       "description": "The events in [since_us, until_us) as NDJSON (vh-audit-export-v1: a header line, the events with their hashes, then the signed heads that cover them), verifiable offline. Up to 32 MiB; use `vh audit export` for more. Needs admin.audits.view; recorded as audit.export.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -23263,6 +24125,7 @@
       "command": "audit.list",
       "confirmations": [],
       "description": "The tamper-evident audit trail, newest first, filtered. Needs admin.audits.view; the first page is itself recorded (audit.view).",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -23338,6 +24201,25 @@
           ]
         },
         {
+          "description": "Only one paired device (its row id): what it did, under whatever scope, and what was done to it.",
+          "minimum": 0,
+          "name": "device_id",
+          "required": false,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Only one connector grant (its uuid): its tool calls and its own events.",
+          "name": "grant_id",
+          "required": false,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
           "description": "1..1000 (default 100).",
           "minimum": 0,
           "name": "limit",
@@ -23350,12 +24232,14 @@
       "refusal_codes": [
         "unauthorized",
         "denied",
-        "invalid"
+        "invalid",
+        "not_found"
       ],
       "refusal_kinds": [
         "unauthorized",
         "denied",
-        "invalid"
+        "invalid",
+        "not_found"
       ],
       "response": [
         {
@@ -23388,6 +24272,7 @@
       "command": "audit.verify",
       "confirmations": [],
       "description": "Recomputes the whole retained hash chain and checks every signed head (signature, and that the chain still holds the hash it signed). Needs admin.audits.view; recorded as audit.verify (or audit.verify.failed).",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -23419,6 +24304,7 @@
       "command": "auth.activity",
       "confirmations": [],
       "description": "Report that the person at the console is using it (keyboard, pointer, scroll), at most about once a minute. It resets the session's idle sign-out clock (services.connection_lifecycle_manager.idle_timeout_minutes) with the server's own time; background requests never do. An idle session is refused like any other expired one.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -23435,6 +24321,7 @@
       "command": "auth.approval.approve",
       "confirmations": [],
       "description": "Approve a device's request with a passkey, nothing else: a TOTP code or a password is refused (invalid), and an account without a usable passkey gets passkey_required (do the action in the console instead). Without credential: answers webauthn.publicKey (a challenge bound to this session and this request, 120 s) for navigator.credentials.get(); with credential (a UV assertion over it): approves, and the device's next device.approval.status makes its grant. approval_failed {attempts_remaining}: the assertion didn't hold; the fifth failure within 15 minutes signs this session out. not_found: expired or already answered.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -23618,7 +24505,8 @@
                 "identity.admin",
                 "secrets",
                 "settings",
-                "data.destroy"
+                "data.destroy",
+                "connector.trust"
               ],
               "name": "family",
               "required": true,
@@ -23799,6 +24687,7 @@
       "command": "auth.approval.deny",
       "confirmations": [],
       "description": "Decline a device's request; its device.approval.status answers denied.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -23857,7 +24746,8 @@
                 "identity.admin",
                 "secrets",
                 "settings",
-                "data.destroy"
+                "data.destroy",
+                "connector.trust"
               ],
               "name": "family",
               "required": true,
@@ -23947,6 +24837,7 @@
       "command": "auth.approval.list",
       "confirmations": [],
       "description": "The signed-in account's open requests from its paired devices (device.approval.request), oldest first: what each asks for (family, target), the device's own summary, and when it expires. A new request also arrives as an unsolicited frame {\"command\": \"auth.approval.pending\", \"data\": {approval_id, device: {id, name}, family, target, summary, expires_at}} on every console session of the account. Web sessions only: a device is refused.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -23989,7 +24880,8 @@
                 "identity.admin",
                 "secrets",
                 "settings",
-                "data.destroy"
+                "data.destroy",
+                "connector.trust"
               ],
               "name": "family",
               "required": true,
@@ -24080,6 +24972,7 @@
       "command": "auth.isAuthenticated",
       "confirmations": [],
       "description": "Whether the envelope token is a valid session for this socket.",
+      "effect": "read",
       "input": "token",
       "operation": null,
       "payload": [],
@@ -24113,6 +25006,7 @@
       "command": "auth.login",
       "confirmations": [],
       "description": "Sign in with a username and password. The access token comes back in the response envelope (`token`), the refresh token as an HttpOnly cookie set at the handshake. A connection signs in once: one that already has a user (signed in, or restored from its cookie) is refused with data.code already_signed_in; sign in again on a new connection. A password alone signs in (aal 1, amr [\"pwd\"]) only an account with no factor that need not have MFA. Otherwise the right password answers ERROR mfa_required (a factor is enrolled: finish with auth.mfa.verify) or mfa_enrollment_required (the MFA policy requires one and there is none: set it up with the enrollment commands), and the connection is pending: not signed in, no access token, no session row, so auth.refresh, a reconnect, another tab and the HTTP lanes all refuse it. It may run only auth.mfa.verify, auth.mfa.cancel and auth.logout (plus the enrollment commands while enrolling) and ends after 5 minutes (10 enrolling), 5 failed factors or with the socket. mfa_unavailable: the account's factors can't be used on this server. data.pending is {kind: \"mfa\" | \"enrollment\", expires_at (Unix seconds), methods: [\"webauthn\" | \"totp\" | \"recovery_code\"], attempts_remaining, webauthn?: {publicKey: PublicKeyCredentialRequestOptionsJSON}}.",
+      "effect": "write",
       "input": "payload",
       "operation": "auth.login",
       "payload": [
@@ -24174,6 +25068,7 @@
       "command": "auth.logout",
       "confirmations": [],
       "description": "End the session (access and refresh tokens).",
+      "effect": "write",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -24190,6 +25085,7 @@
       "command": "auth.mfa.admin.require",
       "confirmations": [],
       "description": "Require MFA for one account whatever the policy level (or stop requiring it; the policy may still). Applies at the account's next request: a session signed in without a second factor is signed out. Answers its status. identity.admin step-up. Who: whoever may reset the account's password (admin.identities.users or .admins reset-password, within their own permissions); a super admin's MFA only another super admin; never your own account here (Account > Security, or `vh user mfa` on the server).",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -24335,6 +25231,7 @@
       "command": "auth.mfa.admin.reset",
       "confirmations": [],
       "description": "Reset an account that lost every factor: its passkeys and authenticator apps are disabled (kept for the audit trail), its recovery codes voided, every session signed out, the key-backup grants of its paired devices revoked (the devices stay paired), and it must set up a new factor at its next sign-in, inside the recovery cooldown. The account and the security recipients are notified; audited as auth.mfa.admin.reset. account.credentials step-up. Who: whoever may reset the account's password (admin.identities.users or .admins reset-password, within their own permissions); a super admin's MFA only another super admin; never your own account here (Account > Security, or `vh user mfa` on the server).",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -24437,6 +25334,7 @@
       "command": "auth.mfa.admin.status",
       "confirmations": [],
       "description": "Another account's MFA: whether it must have MFA and why, its factors (no secrets), recovery codes left, the recovery cooldown and the last reset. Who: whoever may reset the account's password (admin.identities.users or .admins reset-password, within their own permissions); a super admin's MFA only another super admin; never your own account here (Account > Security, or `vh user mfa` on the server).",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -24570,6 +25468,7 @@
       "command": "auth.mfa.cancel",
       "confirmations": [],
       "description": "End a pending sign-in now; the connection is anonymous again (sign in again with the password).",
+      "effect": "write",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -24592,6 +25491,7 @@
       "command": "auth.mfa.factor.remove",
       "confirmations": [],
       "description": "Remove one of the caller's factors (named by kind and id): it is disabled, kept for the audit trail and never usable again, and the account's other web sessions are signed out (one of them may hold it). mfa_last_factor: it is the last usable factor of an account that must have MFA (add another first). account.credentials step-up.",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -24657,6 +25557,7 @@
       "command": "auth.mfa.factor.rename",
       "confirmations": [],
       "description": "Rename one of the caller's factors (named by kind and id).",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -24732,6 +25633,7 @@
       "command": "auth.mfa.recovery.acknowledge",
       "confirmations": [],
       "description": "The person saved the codes of batch_id: they come into force and the previous batch stops working. On a pending enrollment this completes the sign-in (aal 2, amr [\"pwd\", the new factor's]) and answers the user, with the access token in the envelope.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -24803,6 +25705,7 @@
       "command": "auth.mfa.recovery.generate",
       "confirmations": [],
       "description": "Make ten new recovery codes, shown once. They replace the current ones only when acknowledged. The account needs a factor (invalid otherwise). Replacing codes that are in force is account.credentials step-up (except on the recovery-code session spending them).",
+      "effect": "write",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -24849,6 +25752,7 @@
       "command": "auth.mfa.status",
       "confirmations": [],
       "description": "The caller's MFA: whether the policy requires it and why (policy admins: the super admin and accounts whose admin role may add, edit or delete users or admins or reset their passwords, add, edit or delete admin or vault roles, edit any settings section, or export or rotate encryption keys; policy all: every account; user_required: set for this account), whether passkeys are configured, the factors, the recovery codes, and the recovery cooldown. Web sessions only (a paired device is denied).",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -24998,7 +25902,7 @@
           ]
         },
         {
-          "description": "Unix seconds: the recovery cooldown while it runs (keys, device.trust, identity.admin, secrets and settings answer recovery_cooldown until then), else null.",
+          "description": "Unix seconds: the recovery cooldown while it runs (keys, device.trust, identity.admin, secrets, settings and connector.trust answer recovery_cooldown until then), else null.",
           "name": "cooldown_until",
           "required": true,
           "types": [
@@ -25025,7 +25929,8 @@
                 "identity.admin",
                 "secrets",
                 "settings",
-                "data.destroy"
+                "data.destroy",
+                "connector.trust"
               ],
               "name": "family",
               "required": true,
@@ -25069,6 +25974,7 @@
       "command": "auth.mfa.totp.enroll.confirm",
       "confirmations": [],
       "description": "Finish the authenticator setup with its current code (one step of drift either way). The account's first factor answers its recovery codes too. invalid: the code didn't match; not_found: the setup expired or is finished.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -25164,6 +26070,7 @@
       "command": "auth.mfa.totp.enroll.start",
       "confirmations": [],
       "description": "Start setting up an authenticator app (RFC 6238, SHA-1, 6 digits, 30 s). The secret and otpauth URI are shown once (the console draws the QR code itself); the factor is unusable until auth.mfa.totp.enroll.confirm, within 10 minutes. Starting again replaces an unfinished setup.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -25244,6 +26151,7 @@
       "command": "auth.mfa.verify",
       "confirmations": [],
       "description": "Finish a pending sign-in with a second factor: {method: \"webauthn\", credential} (a UV assertion over the pending challenge), or {method: \"totp\" | \"recovery_code\", code}. Success signs the connection in: one session row at aal 2 with amr [\"pwd\", \"hwk\" | \"swk\" | \"otp\" | \"rec\"], the access token in the envelope. A recovery code signs every other web session of the account out (paired devices are not touched), starts the recovery cooldown, revokes the key-backup grants of the account's paired devices (they stay paired and are listed for the person to revoke) and answers `recovery`. Refusals: mfa_invalid {attempts_remaining, pending?} (the 5th ends the sign-in), mfa_expired (start again with the password), rate_limited {retry_after} (the account's 5th failed factor in a streak waits 1 minute, each further one doubles it up to 15; never a lock), mfa_required {pending} for {method: \"webauthn\"} without a credential: a fresh passkey challenge, not an attempt. data.pending is {kind: \"mfa\" | \"enrollment\", expires_at (Unix seconds), methods: [\"webauthn\" | \"totp\" | \"recovery_code\"], attempts_remaining, webauthn?: {publicKey: PublicKeyCredentialRequestOptionsJSON}}.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -25532,6 +26440,7 @@
       "command": "auth.mfa.webauthn.register.finish",
       "confirmations": [],
       "description": "Verify and store the passkey (attestation none or packed self; UV required). The account's first factor answers its recovery codes too; a pending enrollment then finishes with auth.mfa.recovery.acknowledge. invalid: the ceremony didn't verify; not_found: the registration expired (120 s) or was used.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -25758,6 +26667,7 @@
       "command": "auth.mfa.webauthn.register.options",
       "confirmations": [],
       "description": "Start registering a passkey (\"Passkey / Security key\": 1Password, the device's passkey manager, a security key) on the caller's account, or as the first factor of a pending enrollment. Pass publicKey to navigator.credentials.create() and the result to auth.mfa.webauthn.register.finish with registration_id. invalid when passkeys are not configured (auth.webauthn.rp_id).",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -26023,6 +26933,7 @@
       "command": "auth.passkey.login",
       "confirmations": [],
       "description": "Finish a passkey sign-in with the assertion over an auth.passkey.options challenge of this connection. The assertion must carry userHandle, equal to the account's own WebAuthn handle for that credential, and user verification. Success signs the connection in: one session row at aal 2 with amr [\"hwk\"] (a device-bound passkey or security key) or [\"swk\"] (a synced passkey), the access token in the envelope. Every failure (an unknown, suspended or foreign passkey, another server's, no user verification, a spent or expired challenge, an account that can't sign in) is the same error; the challenge is spent either way. already_signed_in on a signed-in connection.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -26185,6 +27096,7 @@
       "command": "auth.passkey.options",
       "confirmations": [],
       "description": "Start signing in with a passkey alone, no username or password first: a challenge for navigator.credentials.get() on this connection, with an empty allowCredentials (the browser or passkey manager offers the passkeys it holds for this server) and user verification required. It names no account, so the answer is the same for every caller but for its challenge. Anonymous web connections only: already_signed_in on a signed-in one; a paired device and a pending sign-in can't run it. invalid when passkeys are not configured (auth.webauthn.rp_id). Rate limited to 30 a minute per client address; rate_limited when 10,000 sign-in challenges are open.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -26303,6 +27215,7 @@
       "command": "auth.refresh",
       "confirmations": [],
       "description": "Issue a new access token from the envelope token or the refresh cookie.",
+      "effect": "write",
       "input": "token",
       "operation": null,
       "payload": [],
@@ -26332,6 +27245,7 @@
       "command": "auth.register",
       "confirmations": [],
       "description": "Create a user. role is an admin role name or id; the password is required (only the CLI generates one).",
+      "effect": "write",
       "input": "payload",
       "operation": "users.create",
       "payload": [
@@ -26432,6 +27346,7 @@
       "command": "auth.security.status",
       "confirmations": [],
       "description": "Security posture warning for the signed-in account: the super admin's initial password file while the generated password is still in use, else null.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -26461,6 +27376,7 @@
       "command": "auth.sessions.list",
       "confirmations": [],
       "description": "The caller's signed-in web sessions (one per browser: its tabs share one), most recent sign-in first: live, unexpired and not past the idle sign-out. Ids are opaque handles for auth.sessions.revoke, never the refresh token's id, and change when the daemon restarts.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -26499,6 +27415,7 @@
       "command": "auth.sessions.revoke",
       "confirmations": [],
       "description": "Sign out one of the caller's sessions (id from auth.sessions.list; the current one included) or every other one (all_others). Revoked sessions end at once: their sockets close and their cookies stop working for previews, downloads and uploads. Give exactly one of id and all_others (else invalid); an id that is not one of the caller's live sessions is not_found.",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -26563,7 +27480,8 @@
       "client_timeout_ms": 15000,
       "command": "auth.stepup.begin",
       "confirmations": [],
-      "description": "Start confirming a sensitive change that answered step_up_required: name its family and, for keys, device.trust and data.destroy, the target the refusal named. Answers the methods the account can use (webauthn: pass webauthn.publicKey to navigator.credentials.get(); password_totp: the password and an authenticator code together; password: only for an account that need not have MFA and has no factor, never for keys, device.trust or data.destroy) and a ceremony id valid for 120 s. A new begin replaces the open ceremony. step_up_unavailable: the account has nothing that can confirm this family (add a passkey or an authenticator app). Web sessions only: a paired device is denied.",
+      "description": "Start confirming a sensitive change that answered step_up_required: name its family and, for keys, device.trust, data.destroy and connector.trust, the target the refusal named. Answers the methods the account can use (webauthn: pass webauthn.publicKey to navigator.credentials.get(); password_totp: the password and an authenticator code together; password: only for an account that need not have MFA and has no factor, never for a target-bound family: keys, device.trust, data.destroy, connector.trust) and a ceremony id valid for 120 s. A new begin replaces the open ceremony. step_up_unavailable: the account has nothing that can confirm this family (add a passkey or an authenticator app). Web sessions only: a paired device is denied.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -26575,7 +27493,8 @@
             "identity.admin",
             "secrets",
             "settings",
-            "data.destroy"
+            "data.destroy",
+            "connector.trust"
           ],
           "name": "family",
           "required": true,
@@ -26584,7 +27503,7 @@
           ]
         },
         {
-          "description": "The refusal's target (keys, device.trust, data.destroy); ignored for the others.",
+          "description": "The refusal's target (keys, device.trust, data.destroy, connector.trust); ignored for the others.",
           "name": "target",
           "required": false,
           "types": [
@@ -26623,7 +27542,8 @@
             "identity.admin",
             "secrets",
             "settings",
-            "data.destroy"
+            "data.destroy",
+            "connector.trust"
           ],
           "name": "family",
           "required": true,
@@ -26767,6 +27687,7 @@
       "command": "auth.stepup.finish",
       "confirmations": [],
       "description": "Answer the ceremony: {method: webauthn, credential} (a UV assertion over its challenge), {method: password_totp, password, code} or {method: password, password}. On success this session holds a grant for the family (and target): family grants last max_age_seconds, target-bound ones are spent by one use. Then resend the refused request. step_up_failed {attempts_remaining}: the answer didn't hold; the fifth failure within 15 minutes signs this session out. not_found: the ceremony expired or was used (begin again). Recovery codes, refresh tokens and Desktop mTLS never satisfy a step-up.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -26955,7 +27876,8 @@
             "identity.admin",
             "secrets",
             "settings",
-            "data.destroy"
+            "data.destroy",
+            "connector.trust"
           ],
           "name": "family",
           "required": true,
@@ -27000,6 +27922,7 @@
       "command": "auth.user.change_password",
       "confirmations": [],
       "description": "Change (own, with old_password) or reset (another user's) a password.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -27082,6 +28005,7 @@
         }
       ],
       "description": "Delete a user. Without confirm the reply is a refusal with data.code 'user_delete' and the question to ask. The user's vaults are destroyed unless transfer_to names who gets them.",
+      "effect": "destructive",
       "input": "payload",
       "operation": "users.delete",
       "payload": [
@@ -27166,6 +28090,7 @@
       "command": "auth.user.get",
       "confirmations": [],
       "description": "One user with its full roles and permissions.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -27220,6 +28145,7 @@
       "command": "auth.user.get.byName",
       "confirmations": [],
       "description": "One user by name.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -27273,6 +28199,7 @@
       "command": "auth.user.update",
       "confirmations": [],
       "description": "Patch a user (the caller when id is absent). Role changes and deactivation end the account's sessions. linux_uid, updated_by, protected, is_protected, system_only and password are refused.",
+      "effect": "write",
       "input": "payload",
       "operation": "users.update",
       "payload": [
@@ -27381,6 +28308,7 @@
       "command": "auth.users.list",
       "confirmations": [],
       "description": "Users visible to the caller, slim projection (admin_role without permissions).",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -27419,6 +28347,7 @@
       "command": "cloud.key.confirm",
       "confirmations": [],
       "description": "Pin the waiting account recovery key: the first one after linking, or a replacement. The fingerprint must be the waiting generation's (a device derives it from the key it holds); a mismatch pins nothing (cloud_key_mismatch). Super admins; a paired device only (cloud_key_requires_device otherwise), with a keys step-up.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -27497,6 +28426,7 @@
       "command": "cloud.key.refresh",
       "confirmations": [],
       "description": "Ask for a check of the account recovery key and recovery policy now. The check runs in the background (this answers at once, with the status as it stands); a signed rotation is followed, anything else waits for a confirmation. Super admins.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [],
@@ -27769,6 +28699,7 @@
       "command": "cloud.key.status",
       "confirmations": [],
       "description": "The linked account's recovery key as this server pinned it: the pinned generation and fingerprint, a key waiting for confirmation, the accepted recovery policy, the vaults it covers and the last check. Reads the database only; public values only. Super admins or the encryption-key View permission.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [],
@@ -28039,6 +28970,7 @@
       "command": "cloud.link.status",
       "confirmations": [],
       "description": "Whether this server is linked to an account, and as what: installation, deployment, account public id and the pinned account recovery key. Reads the database only. Super admins and the encryption-key View permission see the identifiers; any other session sees linked alone.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [],
@@ -28114,9 +29046,458 @@
     {
       "auth": "human",
       "client_timeout_ms": 15000,
+      "command": "cloud.relay.disable",
+      "confirmations": [],
+      "description": "Switch the relay off: the connection and every relayed session close at once; paired browsers stay paired (device.revoke unpairs one). Super admins.",
+      "effect": "destructive",
+      "input": "none",
+      "operation": null,
+      "payload": [],
+      "refusal_codes": [
+        "denied",
+        "unauthorized"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "description": "off: the local switch; listener_off: device_server.enabled is false; backoff: retrying after a failure; waiting: the cloud refused for a reason that may clear (off at the cloud, no plan, no relay), retried every 5 minutes; stopped: the cloud no longer knows this installation (toggle the switch to try again).",
+          "enum": [
+            "off",
+            "not_linked",
+            "listener_off",
+            "connecting",
+            "connected",
+            "backoff",
+            "waiting",
+            "stopped"
+          ],
+          "name": "state",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "The local switch, for this linked installation.",
+          "name": "enabled",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "name": "enabled_by",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "name": "enabled_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "From the latest ticket.",
+          "name": "relay_url",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "Since the relay admitted this server (WELCOME).",
+          "name": "connected_since",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "name": "renew_by",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "name": "last_ticket_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "name": "next_attempt_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "name": "last_error",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "Relayed streams open now.",
+          "minimum": 0,
+          "name": "streams",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Since the daemon started.",
+          "minimum": 0,
+          "name": "streams_accepted",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Since the daemon started: bad tickets, failed key proofs, limits.",
+          "minimum": 0,
+          "name": "streams_refused",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "response_model": "CloudRelayStatus",
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "cloud.relay.enable",
+      "confirmations": [],
+      "description": "Switch the relay on for this linked server: browsers paired through the cloud relay reach it (read only), and relayed pairing requests can arrive while a pairing window is open. The account holder's switch at the cloud must be on too. Super admins; conflict when not linked.",
+      "effect": "write",
+      "input": "none",
+      "operation": null,
+      "payload": [],
+      "refusal_codes": [
+        "denied",
+        "conflict",
+        "unauthorized",
+        "step_up_required",
+        "recovery_cooldown"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "conflict",
+        "unauthorized",
+        "step_up_required",
+        "recovery_cooldown"
+      ],
+      "response": [
+        {
+          "description": "off: the local switch; listener_off: device_server.enabled is false; backoff: retrying after a failure; waiting: the cloud refused for a reason that may clear (off at the cloud, no plan, no relay), retried every 5 minutes; stopped: the cloud no longer knows this installation (toggle the switch to try again).",
+          "enum": [
+            "off",
+            "not_linked",
+            "listener_off",
+            "connecting",
+            "connected",
+            "backoff",
+            "waiting",
+            "stopped"
+          ],
+          "name": "state",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "The local switch, for this linked installation.",
+          "name": "enabled",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "name": "enabled_by",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "name": "enabled_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "From the latest ticket.",
+          "name": "relay_url",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "Since the relay admitted this server (WELCOME).",
+          "name": "connected_since",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "name": "renew_by",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "name": "last_ticket_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "name": "next_attempt_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "name": "last_error",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "Relayed streams open now.",
+          "minimum": 0,
+          "name": "streams",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Since the daemon started.",
+          "minimum": 0,
+          "name": "streams_accepted",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Since the daemon started: bad tickets, failed key proofs, limits.",
+          "minimum": 0,
+          "name": "streams_refused",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "response_model": "CloudRelayStatus",
+      "step_up": "device.trust",
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "cloud.relay.status",
+      "confirmations": [],
+      "description": "The relay's local switch and the outbound connection as the service last saw it (connected only after the relay admitted it), when it must renew, the last error and the relayed streams. Reads the database and the service's memory, no cloud call. Super admins or the admin cloud View permission.",
+      "effect": "read",
+      "input": "none",
+      "operation": null,
+      "payload": [],
+      "refusal_codes": [
+        "denied",
+        "unauthorized"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "description": "off: the local switch; listener_off: device_server.enabled is false; backoff: retrying after a failure; waiting: the cloud refused for a reason that may clear (off at the cloud, no plan, no relay), retried every 5 minutes; stopped: the cloud no longer knows this installation (toggle the switch to try again).",
+          "enum": [
+            "off",
+            "not_linked",
+            "listener_off",
+            "connecting",
+            "connected",
+            "backoff",
+            "waiting",
+            "stopped"
+          ],
+          "name": "state",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "The local switch, for this linked installation.",
+          "name": "enabled",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "name": "enabled_by",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "name": "enabled_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "From the latest ticket.",
+          "name": "relay_url",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "Since the relay admitted this server (WELCOME).",
+          "name": "connected_since",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "name": "renew_by",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "name": "last_ticket_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds.",
+          "name": "next_attempt_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "name": "last_error",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "Relayed streams open now.",
+          "minimum": 0,
+          "name": "streams",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Since the daemon started.",
+          "minimum": 0,
+          "name": "streams_accepted",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Since the daemon started: bad tickets, failed key proofs, limits.",
+          "minimum": 0,
+          "name": "streams_refused",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "response_model": "CloudRelayStatus",
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
       "command": "cloud.storage.billing.handoff",
       "confirmations": [],
       "description": "The address of the account's billing page (checkout: choose a plan; portal: manage it), to open in a browser; short-lived and never stored. The service polls the account's state fast for a few minutes afterwards. The admin cloud Billing permission.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -28201,6 +29582,7 @@
       "command": "cloud.storage.ended.confirm",
       "confirmations": [],
       "description": "Confirm that the account's plan ended: managed vaults become local in place now (files held only in their buckets are listed as lost; nothing local is deleted) instead of after cloud.storage.ended_grace_hours of continuous `ended` reports. Conflict unless the service reports `ended`. The admin cloud Storage permission.",
+      "effect": "destructive",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -28252,6 +29634,7 @@
       "command": "cloud.storage.new_vaults",
       "confirmations": [],
       "description": "Whether vaults created from now on use managed storage by default (on unless turned off). The admin cloud Storage permission.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -28296,6 +29679,7 @@
       "command": "cloud.storage.offer.accept",
       "confirmations": [],
       "description": "Accept the offer for vaults that existed when managed storage became available: the listed ones or, without vault_ids, every offered vault (their switches go on). Nothing is uploaded before this. The admin cloud Storage permission and each vault's admin Edit permission.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -28352,6 +29736,7 @@
       "command": "cloud.storage.offer.decline",
       "confirmations": [],
       "description": "Decline the offer for the listed vaults (or every one still offered): they stay local; each can be switched on later. The admin cloud Storage permission.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -28408,6 +29793,7 @@
       "command": "cloud.storage.rotate",
       "confirmations": [],
       "description": "Ask for a new bucket key for a vault in managed storage (the service exchanges, probes and acknowledges it; the old key is revoked then). The admin cloud Storage permission and the vault's admin Edit permission.",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -28738,6 +30124,7 @@
       "command": "cloud.storage.status",
       "confirmations": [],
       "description": "Managed storage on this server: whether it is available (linked, the account recovery key confirmed, the account entitled), the plan state, usage against the quota (the account's figure, with its date) beside this server's own, the offer for vaults that existed before it was available, and every vault's switch and state in words. Reads the database only. Super admins or the admin cloud View permission.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -28977,6 +30364,7 @@
       "command": "cloud.storage.switch",
       "confirmations": [],
       "description": "A vault's managed-storage switch. On: the vault is uploaded to a bucket of its own once it is ready (an empty vault waits for its first file); off: before a bucket exists the request stops, with one every file is fetched and verified locally and the vault becomes local again (the bucket is left in place; `confirm` with the vault's name is required then). Records the intent: the background service carries it out, and cloud.storage.status follows it. No step-up. The admin cloud Storage permission and the vault's admin Edit permission.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -29326,9 +30714,882 @@
     {
       "auth": "human",
       "client_timeout_ms": 15000,
+      "command": "connector.clients.add",
+      "confirmations": [],
+      "description": "Register a client for an app that can't publish a client-id metadata document: a name and 1-16 exact redirect URIs (https, or http to 127.0.0.1, [::1] or localhost, any port). A connector.trust step-up bound to them. Answers the client id the app is configured with. Super admins.",
+      "effect": "write",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "1-64 characters.",
+          "generator": {
+            "kind": "pattern",
+            "pattern": "Laptop {a}{a}{a}"
+          },
+          "name": "name",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "generator": {
+            "kind": "const",
+            "values": [
+              "http://127.0.0.1/callback"
+            ]
+          },
+          "items": "string",
+          "name": "redirect_uris",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "unauthorized",
+        "step_up_required",
+        "recovery_cooldown"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "invalid",
+        "unauthorized",
+        "step_up_required",
+        "recovery_cooldown"
+      ],
+      "response": [
+        {
+          "description": "uuid",
+          "name": "id",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "client_id",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "enum": [
+            "cimd",
+            "registered",
+            "dcr"
+          ],
+          "name": "kind",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "name",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "items": "string",
+          "name": "redirect_uris",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "description": "The registering user's id.",
+          "minimum": 0,
+          "name": "created_by",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "name": "created_at",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "name": "last_used_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "name": "disabled_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        }
+      ],
+      "response_model": "ConnectorClient",
+      "step_up": "connector.trust",
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "connector.clients.list",
+      "confirmations": [],
+      "description": "The clients this server knows (operator-registered, fetched client-id metadata documents, dynamic registrations), live first. Super admins.",
+      "effect": "read",
+      "input": "none",
+      "operation": null,
+      "payload": [],
+      "refusal_codes": [
+        "denied",
+        "unauthorized"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "items": "object",
+          "model": "ConnectorClient",
+          "name": "clients",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        }
+      ],
+      "response_model": null,
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "connector.clients.remove",
+      "confirmations": [],
+      "description": "Remove a client (by id or a unique 8+ character prefix): it can't sign in again, and its grants end at once (client_removed). Super admins.",
+      "effect": "destructive",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "A client id (uuid), or a unique 8+ character prefix.",
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "connector.client",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "name": "id",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "minimum": 0,
+          "name": "grants_revoked",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "response_model": null,
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "connector.disable",
+      "confirmations": [],
+      "description": "Switch remote connectors off: every grant ends at once (switch_off); turning it on again revives none. Super admins.",
+      "effect": "destructive",
+      "input": "none",
+      "operation": null,
+      "payload": [],
+      "refusal_codes": [
+        "denied",
+        "unauthorized"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "description": "The switch.",
+          "name": "enabled",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "https://<host>, where hosted AI clients reach this server.",
+          "name": "public_origin",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "The MCP endpoint grants are bound to: public_origin + /mcp.",
+          "name": "resource",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "The widest scope a grant may be given.",
+          "enum": [
+            "read",
+            "write",
+            "destructive"
+          ],
+          "name": "max_scope",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Dynamic client registration (off by default).",
+          "name": "dcr_enabled",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "The only hosts a client-id metadata document may come from; empty: any.",
+          "items": "string",
+          "name": "client_hosts",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "description": "The user id of the last change.",
+          "minimum": 0,
+          "name": "changed_by",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds; null: never changed.",
+          "name": "changed_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "live_grants",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Live clients.",
+          "minimum": 0,
+          "name": "clients",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "response_model": "ConnectorStatus",
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "connector.enable",
+      "confirmations": [],
+      "description": "Switch remote connectors on at a public https origin (a host name, port 443). A connector.trust step-up bound to the origin, unless it is already on there. Super admins.",
+      "effect": "write",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "https://<host>: the origin only.",
+          "generator": {
+            "kind": "pattern",
+            "pattern": "https://vh{a}{a}{a}.example"
+          },
+          "name": "url",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "unauthorized",
+        "step_up_required",
+        "recovery_cooldown"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "invalid",
+        "unauthorized",
+        "step_up_required",
+        "recovery_cooldown"
+      ],
+      "response": [
+        {
+          "description": "The switch.",
+          "name": "enabled",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "https://<host>, where hosted AI clients reach this server.",
+          "name": "public_origin",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "The MCP endpoint grants are bound to: public_origin + /mcp.",
+          "name": "resource",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "The widest scope a grant may be given.",
+          "enum": [
+            "read",
+            "write",
+            "destructive"
+          ],
+          "name": "max_scope",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Dynamic client registration (off by default).",
+          "name": "dcr_enabled",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "The only hosts a client-id metadata document may come from; empty: any.",
+          "items": "string",
+          "name": "client_hosts",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "description": "The user id of the last change.",
+          "minimum": 0,
+          "name": "changed_by",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds; null: never changed.",
+          "name": "changed_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "live_grants",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Live clients.",
+          "minimum": 0,
+          "name": "clients",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "response_model": "ConnectorStatus",
+      "step_up": "connector.trust",
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "connector.grants.list",
+      "confirmations": [],
+      "description": "The caller's grants (connected apps), live first; with all, every user's (super admins).",
+      "effect": "read",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "generator": {
+            "kind": "bool"
+          },
+          "name": "all",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "items": "object",
+          "model": "ConnectorGrant",
+          "name": "grants",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        }
+      ],
+      "response_model": null,
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "connector.grants.revoke",
+      "confirmations": [],
+      "description": "End a grant now (its user or a super admin), by id or a unique 8+ character prefix; or, with all, every live grant (super admins) or one user's (user_id: that user, or a super admin). Never asks for a step-up.",
+      "effect": "destructive",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "A grant id, or a unique 8+ character prefix.",
+          "name": "id",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "generator": {
+            "kind": "bool"
+          },
+          "name": "all",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "generator": {
+            "attrs": [
+              "id"
+            ],
+            "entity": "user",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "minimum": 0,
+          "name": "user_id",
+          "required": false,
+          "types": [
+            "integer",
+            "null"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "description": "How many grants ended.",
+          "minimum": 0,
+          "name": "revoked",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "response_model": null,
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "connector.policy.update",
+      "confirmations": [],
+      "description": "Change what grants may be given: the widest scope, dynamic client registration, and which hosts a client-id metadata document may come from (empty: any https host). A change that widens anything takes a connector.trust step-up; lowering the widest scope ends the grants above it. Super admins.",
+      "effect": "write",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "enum": [
+            "read",
+            "write",
+            "destructive"
+          ],
+          "name": "max_scope",
+          "required": false,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "generator": {
+            "kind": "bool"
+          },
+          "name": "dcr_enabled",
+          "required": false,
+          "types": [
+            "boolean",
+            "null"
+          ]
+        },
+        {
+          "description": "Host names; empty: any https host.",
+          "items": "string",
+          "name": "client_hosts",
+          "required": false,
+          "types": [
+            "array",
+            "null"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "unauthorized",
+        "step_up_required",
+        "recovery_cooldown"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "invalid",
+        "unauthorized",
+        "step_up_required",
+        "recovery_cooldown"
+      ],
+      "response": [
+        {
+          "description": "The switch.",
+          "name": "enabled",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "https://<host>, where hosted AI clients reach this server.",
+          "name": "public_origin",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "The MCP endpoint grants are bound to: public_origin + /mcp.",
+          "name": "resource",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "The widest scope a grant may be given.",
+          "enum": [
+            "read",
+            "write",
+            "destructive"
+          ],
+          "name": "max_scope",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Dynamic client registration (off by default).",
+          "name": "dcr_enabled",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "The only hosts a client-id metadata document may come from; empty: any.",
+          "items": "string",
+          "name": "client_hosts",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "description": "The user id of the last change.",
+          "minimum": 0,
+          "name": "changed_by",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds; null: never changed.",
+          "name": "changed_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "live_grants",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Live clients.",
+          "minimum": 0,
+          "name": "clients",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "response_model": "ConnectorStatus",
+      "step_up": "connector.trust",
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "connector.status",
+      "confirmations": [],
+      "description": "Remote connectors: the switch, the public origin hosted AI clients reach this server at, the policy (widest scope, dynamic registration, client hosts) and how many grants and clients are live. Super admins.",
+      "effect": "read",
+      "input": "none",
+      "operation": null,
+      "payload": [],
+      "refusal_codes": [
+        "denied",
+        "unauthorized"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "description": "The switch.",
+          "name": "enabled",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "https://<host>, where hosted AI clients reach this server.",
+          "name": "public_origin",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "The MCP endpoint grants are bound to: public_origin + /mcp.",
+          "name": "resource",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "The widest scope a grant may be given.",
+          "enum": [
+            "read",
+            "write",
+            "destructive"
+          ],
+          "name": "max_scope",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Dynamic client registration (off by default).",
+          "name": "dcr_enabled",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "The only hosts a client-id metadata document may come from; empty: any.",
+          "items": "string",
+          "name": "client_hosts",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "description": "The user id of the last change.",
+          "minimum": 0,
+          "name": "changed_by",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "Unix seconds; null: never changed.",
+          "name": "changed_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "live_grants",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Live clients.",
+          "minimum": 0,
+          "name": "clients",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        }
+      ],
+      "response_model": "ConnectorStatus",
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
       "command": "dashboard.preferences.get",
       "confirmations": [],
       "description": "The caller's saved dashboard layout for a key; exists is false (empty layout) when none is saved. A non-object payload reads the default key.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -29369,6 +31630,7 @@
       "command": "dashboard.preferences.reset",
       "confirmations": [],
       "description": "Delete the caller's saved layout for a key; deleted says whether one existed. A non-object payload resets the default key.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -29416,6 +31678,7 @@
       "command": "dashboard.preferences.update",
       "confirmations": [],
       "description": "Save the caller's dashboard layout for a key (insert or replace). The layout is validated (at most 64 KiB and 64 cards) and otherwise stored as sent.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -29525,6 +31788,7 @@
       "command": "device.approval.challenge",
       "confirmations": [],
       "description": "Start approving a step-up with this device's approval key: name the family and the target the step_up_required refusal named. Only keys and device.trust (console_approval_required otherwise: use device.approval.request); approval_key_unavailable without a live approval key. Answers a challenge (single use, 120 s, bound to this session, the family and the target) and payload_b64, the exact bytes to sign: \"vh-device-approval-v1\" 0x00 node_id 0x00 server_spki_sha256[32] approving_device_spki_sha256[32] challenge[32] family 0x00 target 0x00 UInt64BE(expires_at). The device checks them against what it knows before asking for Touch ID. At most 4 open per session (a new one replaces the oldest).",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -29632,6 +31896,7 @@
       "command": "device.approval.key.register",
       "confirmations": [],
       "description": "Register this already-paired device's approval key (once per device): a P-256 SubjectPublicKeyInfo, 91 bytes of DER, standard base64, not the connection's key. A person approves it in the web console: it answers step_up_required (device.trust, target device.approval.key.register:<device row>:<key SPKI SHA-256>) until a console approval (device.approval.request) for exactly that target. conflict: the device has (or had) a key, or the key is known here.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -29683,6 +31948,7 @@
       "command": "device.approval.request",
       "confirmations": [],
       "description": "Ask a person to approve a step-up in the web console (any family; the one way for families the approval key can't approve, and for a device without one). summary (1-160 characters) is shown with the family and target. The account's console sessions get auth.approval.pending; a person approves with a passkey (auth.approval.approve). Lives 5 minutes; at most 3 open and 10 per hour per device (rate_limited). Poll device.approval.status on this same session.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -29694,7 +31960,8 @@
             "identity.admin",
             "secrets",
             "settings",
-            "data.destroy"
+            "data.destroy",
+            "connector.trust"
           ],
           "name": "family",
           "required": true,
@@ -29839,6 +32106,7 @@
       "command": "device.approval.status",
       "confirmations": [],
       "description": "How a console approval stands (pending, approved, denied, expired). Answered at once: ask again in 2 s while pending. Once approved, the first answer leaves the grant on this session (the same binding as a web session's: target-bound grants are spent by one use); then resend the refused request. Only the session that asked: another is not_found.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -29968,6 +32236,7 @@
       "command": "device.approval.submit",
       "confirmations": [],
       "description": "Answer a challenge with the approval key's ECDSA P-256/SHA-256 signature (DER, standard base64) over its payload. The challenge is spent whatever the answer. On success this session holds a grant for the family and target (spent by one use, until expires_at); then resend the refused request. invalid: the signature doesn't verify (the payload as the server computes it now: a changed node or server key never verifies); not_found: expired, used or another session's; approval_key_unavailable: the key was revoked.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -30049,6 +32318,7 @@
       "command": "device.backup.grant.confirm",
       "confirmations": [],
       "description": "Confirm a live grant: a migrated one becomes approved, a suspended one exports again. device.trust approval for target device.backup.grant.confirm:<grant>.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -30106,6 +32376,7 @@
       "command": "device.backup.grant.create",
       "confirmations": [],
       "description": "Turn on key backup for vaults on one of the caller's devices: on its own session the device itself, on a console session device_id. Needs the export encryption keys permission (or super admin) and a device.trust approval for target device.backup.grant.create:<device row>:<vault ids> (step_up_required names it). conflict: the device already has a grant (extend it). During a recovery cooldown only the device re-creates the grant the recovery revoked, with its approval key registered before the recovery, for vaults that grant named (recovery_cooldown otherwise).",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -30185,6 +32456,7 @@
       "command": "device.backup.grant.extend",
       "confirmations": [],
       "description": "Add vaults to a live grant of the caller's (a new vault, one deliberate approval). device.trust approval for target device.backup.grant.extend:<grant>:<vault ids>. conflict: it names them all already, or it was revoked.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -30259,6 +32531,7 @@
       "command": "device.backup.grant.list",
       "confirmations": [],
       "description": "Key-backup grants: on a console session the caller's (every device, live first, revoked ones after); on a paired device's session that device's only. A grant lets its device export the keys of the vaults it names with no prompt (Desktop's background 1Password backup). A grant whose revocation trigger holds (device revoked or idle 90 days, account deactivated or without the Export permission) is revoked before it is listed.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -30291,6 +32564,7 @@
       "command": "device.backup.grant.revoke",
       "confirmations": [],
       "description": "Turn key backup off for a device: revokes the grant (its owner, the device itself, or a super admin). Needs no approval. Final: a new grant is a new create.",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -30343,6 +32617,7 @@
       "command": "device.endpoints",
       "confirmations": [],
       "description": "Where this node's device listener can be reached (docs/reference/transfer-protocol.md §1.1): interface addresses classified by range, <hostname>.local where an mDNS responder runs, and device_server.advertise's configured names. Computed per call; never answered before a device is paired.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -30472,6 +32747,7 @@
       "command": "device.identity.rotate",
       "confirmations": [],
       "description": "Replace this device's key: certificate is the new self-signed P-256 certificate (base64 DER), signature the old key's ECDSA-P256-SHA256 (base64 DER) over \"vh-device-rotate-v1\" ‖ new_spki_sha256 ‖ server_spki_sha256 ‖ UInt64BE(timestamp). The old key keeps working until the first connection with the new one. A retry from the old key naming the same new key succeeds again; another key is conflict.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -30554,6 +32830,7 @@
       "command": "device.list",
       "confirmations": [],
       "description": "The caller's devices, revoked ones included; with all, every user's (super admins only).",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -30603,6 +32880,7 @@
       "command": "device.pair.confirm",
       "confirmations": [],
       "description": "Reveal nonce_device. It must match the request's commitment (else the request is deleted: invalid); then the request is shown to the window's owner with its code. The daemon never sends the code to the device. Same key as the request only.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -30683,6 +32961,7 @@
       "command": "device.pair.request",
       "confirmations": [],
       "description": "Ask to pair this connection's key while a pairing window is open, committing to nonce_device (SHA-256(\"vh-pair-commit-v1\" ‖ device_spki_sha256 ‖ nonce_device)). Refused with no_pairing_window when none is open, rate_limited past 10 per minute per address or 5 per window, conflict for a key this node knows. One live request per key: a new one replaces it.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -30747,6 +33026,20 @@
             "string",
             "null"
           ]
+        },
+        {
+          "description": "Scoped devices: the access this pairing asks for (an app pairing an AI tool asks read). The approver decides, equal or narrower; absent: no limit beyond the account's own (destructive), as before.",
+          "enum": [
+            "read",
+            "write",
+            "destructive"
+          ],
+          "name": "scope",
+          "required": false,
+          "types": [
+            "string",
+            "null"
+          ]
         }
       ],
       "refusal_codes": [
@@ -30800,6 +33093,7 @@
       "command": "device.pair.status",
       "confirmations": [],
       "description": "How the request stands. Answered at once (no long poll): after pending, ask again in 2 s. Approved carries the node's id and name and the device id; the device then pins the server key and reconnects, which makes a Device session. Same key as the request only.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -30878,7 +33172,8 @@
       "client_timeout_ms": 15000,
       "command": "device.pairing.approve",
       "confirmations": [],
-      "description": "Approve a request with the code the device shows (number matching). Any other code denies the request (invalid). Creates the device for the caller's account, with the approval key the request carried. A device.trust step-up bound to the request, its key and the chosen code: in the console a passkey or password + TOTP; on an already-paired device its approval key (device.approval.challenge/submit) or a console approval; `vh device pair` on the node needs none.",
+      "description": "Approve a request with the code the device shows (number matching). Any other code denies the request (invalid). Creates the device for the caller's account, with the approval key the request carried. A device.trust step-up bound to the request, its key and the chosen code: in the console a passkey or password + TOTP; on an already-paired device its approval key (device.approval.challenge/submit) or a console approval; `vh device pair` on the node needs none. scope: what the device may do (default: what the request asked, else destructive); never wider than the request asked (invalid). A scope narrower than destructive is part of the step-up target, so an approval for one scope never pairs another.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -30912,6 +33207,19 @@
           "required": true,
           "types": [
             "string"
+          ]
+        },
+        {
+          "enum": [
+            "read",
+            "write",
+            "destructive"
+          ],
+          "name": "scope",
+          "required": false,
+          "types": [
+            "string",
+            "null"
           ]
         }
       ],
@@ -30954,6 +33262,7 @@
       "command": "device.pairing.close",
       "confirmations": [],
       "description": "Close the caller's own pairing window; its requests expire. any: whoever's window is open (super admins only).",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -31002,6 +33311,7 @@
       "command": "device.pairing.deny",
       "confirmations": [],
       "description": "Deny a pending request; the device is told it was declined.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -31055,6 +33365,7 @@
       "command": "device.pairing.open",
       "confirmations": [],
       "description": "Open a 10-minute pairing window owned by the caller (reopening extends it). One window per node: conflict while another user's is open. Also says what to type into Desktop: the listener's port and whether devices on other hosts can reach it (remote), and what the vaulthalla://pair link carries (node_id, server_spki_sha256, endpoints; transfer-protocol.md §1.2).",
+      "effect": "write",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -31269,6 +33580,7 @@
       "command": "device.pairing.pending",
       "confirmations": [],
       "description": "The caller's open window and its confirmed requests. Each offers three code_choices (random order): one is the code the device shows, two are decoys fixed for the request. The real code is never returned on its own. Also answered on a paired device's session (an already-paired Desktop approving a new one, design 8.4); approval_key_present says the request carries an approval key.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -31383,6 +33695,31 @@
               ]
             },
             {
+              "description": "relay: a web browser asking through the cloud relay (from the connection, never the platform it names); it is paired read-only.",
+              "enum": [
+                "listener",
+                "relay"
+              ],
+              "name": "via",
+              "required": true,
+              "types": [
+                "string"
+              ]
+            },
+            {
+              "description": "Scoped devices: the scope the request asked for; absent when it asked none.",
+              "enum": [
+                "read",
+                "write",
+                "destructive"
+              ],
+              "name": "requested_scope",
+              "required": false,
+              "types": [
+                "string"
+              ]
+            },
+            {
               "minimum": 0,
               "name": "created_at",
               "required": true,
@@ -31426,6 +33763,7 @@
       "command": "device.remote.disable",
       "confirmations": [],
       "description": "Back to loopback only: the listener rebinds now and device sessions from other hosts close.",
+      "effect": "destructive",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -31532,6 +33870,7 @@
       "command": "device.remote.enable",
       "confirmations": [],
       "description": "Let devices on other hosts connect: the listener rebinds to every interface now, and stays that way across restarts and upgrades (device_server.remote in config.yaml).",
+      "effect": "write",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -31643,6 +33982,7 @@
       "command": "device.remote.status",
       "confirmations": [],
       "description": "The device listener: loopback only or every interface, and whether it listens; diagnostics say where it is bound, what devices are told, what the host firewall looks like (read-only, null when unknown) and when a device last connected from a public address.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -31900,6 +34240,7 @@
       "command": "device.rename",
       "confirmations": [],
       "description": "Rename a device (its user, or a super admin).",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -31965,7 +34306,8 @@
       "client_timeout_ms": 15000,
       "command": "device.revoke",
       "confirmations": [],
-      "description": "Unpair a device (its user, a super admin, or the device itself). Final: its live sessions close at once and its key only ever gets pairing-only connections again.",
+      "description": "Unpair a device (its user, a super admin, or the device itself). Final: its live sessions close at once and its key only ever gets pairing-only connections again. A scoped device may unpair only itself (device_scope).",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -31991,14 +34333,16 @@
         "invalid",
         "not_found",
         "conflict",
-        "unauthorized"
+        "unauthorized",
+        "device_scope"
       ],
       "refusal_kinds": [
         "denied",
         "invalid",
         "not_found",
         "conflict",
-        "unauthorized"
+        "unauthorized",
+        "device_scope"
       ],
       "response": [
         {
@@ -32015,11 +34359,86 @@
       "variants": []
     },
     {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "device.scope.set",
+      "confirmations": [],
+      "description": "Change a device's scope (read, write or destructive). Narrowing: the device's user or a super admin, no step-up. Widening: the device's user only, with a device.trust step-up bound to the device and the new scope. Never from a scoped device, and never by the device for itself (device_scope). Its live sessions close, so it reconnects under the new scope. Audited device.scope.set.",
+      "effect": "write",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "The device id: the SHA-256 of its certificate's SubjectPublicKeyInfo (64 lowercase hex digits).",
+          "generator": {
+            "attrs": [
+              "device_id"
+            ],
+            "entity": "device",
+            "kind": "ref",
+            "scope": "any"
+          },
+          "name": "device_id",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "enum": [
+            "read",
+            "write",
+            "destructive"
+          ],
+          "name": "scope",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized",
+        "device_scope",
+        "step_up_required",
+        "recovery_cooldown"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized",
+        "device_scope",
+        "step_up_required",
+        "recovery_cooldown"
+      ],
+      "response": [
+        {
+          "model": "Device",
+          "name": "device",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "response_model": null,
+      "step_up": "device.trust",
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
       "auth": "device",
       "client_timeout_ms": 15000,
       "command": "device.server.identity",
       "confirmations": [],
       "description": "The server key's SPKI hash (the pin). A next key is never announced: a new server key means pairing again.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -32051,6 +34470,7 @@
       "command": "email.config.get",
       "confirmations": [],
       "description": "The email provider settings, the operator email policy and which provider secrets are stored.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -32128,6 +34548,7 @@
       "command": "email.config.update",
       "confirmations": [],
       "description": "Merge-patch the email and operator_emails settings sections (RFC 7386; other sections are ignored) and save them through the same validation as settings.update.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -32233,6 +34654,7 @@
       "command": "email.history",
       "confirmations": [],
       "description": "Operator email delivery history, newest first.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -32275,6 +34697,7 @@
       "command": "email.provider.secret.set",
       "confirmations": [],
       "description": "Store provider credentials in the secrets manager: resend needs api_key; ses takes access_key_id and/or secret_access_key (at least one). Values are write-only.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -32379,6 +34802,7 @@
       "command": "email.test.send",
       "confirmations": [],
       "description": "Send (or, with dry_run, only render and record) a test email. Without to, a dry run goes to the first alerts recipient. status says which happened. Email disabled or provider none is a 'conflict'; a failing provider answers without a code. Both are recorded in the history.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -32495,6 +34919,7 @@
       "command": "fs.changes.list",
       "confirmations": [],
       "description": "What changed in a vault since a revision (the change journal, #259), oldest first; for sync clients instead of re-listing folders. Needs List on the vault root (storage.vault.accessible.list's browse). Only changes to entries the caller can Lookup are returned: a rename or move into view reads as create, out of view as delete. Without `since`: the current revision and no changes, the anchor to take before enumerating. `expired`: the cursor can't be served (retention, an authorization change that can change what the caller sees, or a revision this server never handed out): enumerate the vault again and continue from `revision`.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -32611,6 +35036,7 @@
       "command": "fs.changes.subscribe",
       "confirmations": [],
       "description": "Follow vaults' changes by push (#260): after changes to a followed vault commit, the session gets an unsolicited frame {\"command\": \"fs.changed\", \"data\": {\"vault_id\", \"revision\"}} (no requestId), coalesced per vault, and calls fs.changes.list from its cursor. Accepted for vaults the caller can follow (fs.changes.list's rule), at most 256 per session; a vault it can no longer follow is dropped with one last event carrying \"subscribed\": false. Events wait while the session is slow to read, coalesced, never queued without bound. Subscriptions end with the session.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -32694,6 +35120,7 @@
       "command": "fs.changes.unsubscribe",
       "confirmations": [],
       "description": "Stop following vaults by push (fs.changes.subscribe); without vault_ids, all of them.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -32737,6 +35164,7 @@
       "command": "fs.dir.create",
       "confirmations": [],
       "description": "Create a directory (Touch on the path).",
+      "effect": "write",
       "input": "payload",
       "operation": "fs.mkdir",
       "payload": [
@@ -32803,6 +35231,7 @@
       "command": "fs.dir.list",
       "confirmations": [],
       "description": "List a directory (List on the path). Children the caller cannot Lookup are left out, as in FUSE readdir, and so is what they hold from child folders' size and counts and the folder's own size.",
+      "effect": "read",
       "input": "payload",
       "operation": "fs.list",
       "payload": [
@@ -32893,6 +35322,7 @@
       "command": "fs.download.cancel",
       "confirmations": [],
       "description": "Share sessions only: drop a transfer.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -32953,6 +35383,7 @@
       "command": "fs.download.chunk",
       "confirmations": [],
       "description": "Share sessions only: read the next chunk (base64).",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -33066,6 +35497,7 @@
       "command": "fs.download.start",
       "confirmations": [],
       "description": "Share sessions only: start a chunked download of a file inside the share.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -33167,6 +35599,7 @@
       "command": "fs.entry.copy",
       "confirmations": [],
       "description": "Copy an entry or tree: Copy on every source, Read on source files, Write (files) or Touch (directories) at each destination, all checked before anything is written.",
+      "effect": "write",
       "input": "payload",
       "operation": "fs.copy",
       "payload": [
@@ -33254,6 +35687,7 @@
       "command": "fs.entry.delete",
       "confirmations": [],
       "description": "Delete a file or directory tree (Delete on the path).",
+      "effect": "destructive",
       "input": "payload",
       "operation": "fs.delete",
       "payload": [
@@ -33318,6 +35752,7 @@
       "command": "fs.entry.move",
       "confirmations": [],
       "description": "Move an entry: Move on the source; into another folder also Write (files) or Touch (directories) at the destination, for the entry and everything it carries.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -33403,6 +35838,7 @@
       "command": "fs.entry.rename",
       "confirmations": [],
       "description": "Rename an entry: Rename on the source; into another folder also Write (files) or Touch (directories) at the destination, for the entry and everything it carries.",
+      "effect": "write",
       "input": "payload",
       "operation": "fs.rename",
       "payload": [
@@ -33488,6 +35924,7 @@
       "command": "fs.list",
       "confirmations": [],
       "description": "fs.dir.list for console sessions; in a share session the share's view of the directory.",
+      "effect": "read",
       "input": "payload",
       "operation": "fs.list",
       "payload": [
@@ -33639,6 +36076,7 @@
       "command": "fs.metadata",
       "confirmations": [],
       "description": "One entry's metadata (Lookup on the path). A folder's size covers only what the caller can Lookup, as in fs.dir.list.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -33772,6 +36210,7 @@
       "command": "fs.upload.cancel",
       "confirmations": [],
       "description": "Abort the session's active ws upload.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [],
@@ -33845,6 +36284,7 @@
       "command": "fs.upload.finish",
       "confirmations": [],
       "description": "Finish the session's active ws upload.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -33958,6 +36398,7 @@
       "command": "fs.upload.start",
       "confirmations": [],
       "description": "Start a chunked ws upload (Write on the path). The console uploads over HTTP instead (POST /upload/session); this is the native ws transfer.",
+      "effect": "write",
       "input": "payload",
       "operation": "fs.write",
       "payload": [
@@ -34164,6 +36605,7 @@
       "command": "group.add",
       "confirmations": [],
       "description": "Create a group.",
+      "effect": "write",
       "input": "payload",
       "operation": "groups.create",
       "payload": [
@@ -34248,6 +36690,7 @@
       "command": "group.get",
       "confirmations": [],
       "description": "One group by id.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -34302,6 +36745,7 @@
       "command": "group.get.byName",
       "confirmations": [],
       "description": "One group by name.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -34355,6 +36799,7 @@
       "command": "group.member.add",
       "confirmations": [],
       "description": "Add a user to a group.",
+      "effect": "write",
       "input": "payload",
       "operation": "groups.add_user",
       "payload": [
@@ -34449,6 +36894,7 @@
       "command": "group.member.remove",
       "confirmations": [],
       "description": "Remove a user from a group.",
+      "effect": "destructive",
       "input": "payload",
       "operation": "groups.remove_user",
       "payload": [
@@ -34543,6 +36989,7 @@
       "command": "group.remove",
       "confirmations": [],
       "description": "Delete a group.",
+      "effect": "destructive",
       "input": "payload",
       "operation": "groups.delete",
       "payload": [
@@ -34602,6 +37049,7 @@
       "command": "group.update",
       "confirmations": [],
       "description": "Patch a group: name, description and linux_gid are each optional.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -34712,6 +37160,7 @@
       "command": "groups.list",
       "confirmations": [],
       "description": "Every group for group viewers; otherwise only the caller's own groups.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -34750,6 +37199,7 @@
       "command": "groups.list.byUser",
       "confirmations": [],
       "description": "The groups a user belongs to.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -34805,6 +37255,7 @@
       "command": "meta.contract.get",
       "confirmations": [],
       "description": "The contract this daemon was built from: contract_version, contract_hash (the whole document vh_usage --json publishes), ws_hash (the ws command book, what the web console is generated from) and models_hash (the model shapes the book refers to). Read-only, no secrets; needs a signed-in session (no build fingerprinting before login).",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -34851,6 +37302,7 @@
       "command": "meta.hello",
       "confirmations": [],
       "description": "The protocol handshake, first thing after connecting (after sign-in on the web socket; allowed where meta.contract.get is: signed-in web, paired device and pairing-only sessions, never an unauthenticated or share session). The client says what it is and the protocol range it speaks; the daemon answers its own name and version, the protocol version this session now speaks (the newest both speak; kProtocolMin without a range, as for a session that never says hello), its own range, its capabilities, every command it registers and its contract identity. No overlap: ERROR protocol_unsupported with data {code, server_min, server_max, server_version}. A paired device's client.version refreshes its app_version.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -35045,6 +37497,7 @@
       "command": "permission.get",
       "confirmations": [],
       "description": "One permission of the catalog by id.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -35093,6 +37546,7 @@
       "command": "permission.get.byName",
       "confirmations": [],
       "description": "One permission of the catalog by its qualified name.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -35140,6 +37594,7 @@
       "command": "permissions.list",
       "confirmations": [],
       "description": "The whole permission catalog.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -35170,6 +37625,7 @@
       "command": "pricing.budget.ledger.list",
       "confirmations": [],
       "description": "Reservation ledger rows, newest first. Non super admins must name a vault they can view or a gateway credential they own.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -35252,6 +37708,7 @@
       "command": "pricing.budget.override.approve",
       "confirmations": [],
       "description": "Approve a pending override (super admins). A bare `id` is refused: send override_id.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -35304,6 +37761,7 @@
       "command": "pricing.budget.override.deny",
       "confirmations": [],
       "description": "Deny a pending override (super admins). A bare `id` is refused: send override_id.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -35364,6 +37822,7 @@
       "command": "pricing.budget.override.list",
       "confirmations": [],
       "description": "Overrides, newest first. Super admins see all (or one vault's); others must name a vault they can view.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -35433,6 +37892,7 @@
       "command": "pricing.budget.override.request",
       "confirmations": [],
       "description": "Ask for a one-time override of exceeded enforce policies on a vault (vault sync Trigger permission).",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -35543,6 +38003,7 @@
       "command": "pricing.budget.policy.disable",
       "confirmations": [],
       "description": "Disable the policy of a scope (same authority as upsert). disabled is false when there was nothing to disable.",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -35637,6 +38098,7 @@
       "command": "pricing.budget.policy.list",
       "confirmations": [],
       "description": "S3 price budget policies the caller may see: super admins every one; others the policies of vaults they can view and of gateway credentials they own. vault_id needs view access to that vault.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -35718,6 +38180,7 @@
       "command": "pricing.budget.policy.upsert",
       "confirmations": [],
       "description": "Create or replace the policy of a scope. global/provider: super admins; vault: vault Edit on an S3 vault; gateway scopes: admin.s3_gateway.manage_budgets. Costs are decimal strings (up to 8 fractional digits).",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -35890,6 +38353,7 @@
       "command": "pricing.budget.preflight",
       "confirmations": [],
       "description": "Dry-run budget decision for the next sync of an S3 vault: plans the sync from the remote index (refused when it is missing or stale) and prices it. Needs view access to the vault's budgets.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -36011,6 +38475,7 @@
       "command": "pricing.budget.status",
       "confirmations": [],
       "description": "Policies, ledger, trends, open notifications and overrides for a vault, a credential, or (super admins) the whole system.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -36137,6 +38602,7 @@
       "command": "pricing.notifications.ack",
       "confirmations": [],
       "description": "Acknowledge a cost alert. Non super admins must send the alert's vault_id and be able to view it. A bare `id` is refused: send notification_id.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -36206,6 +38672,7 @@
       "command": "pricing.notifications.list",
       "confirmations": [],
       "description": "Cost alerts (operator notifications) the caller can see, newest first. summary always covers every OPEN alert in the same scope, whatever limit and include_acknowledged are.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -36281,6 +38748,7 @@
       "command": "recovery.costs",
       "confirmations": [],
       "description": "The vault's recovery cost panel: versioning surcharge (separate from current object storage), recovery operations, what is not modelled, ranges, basis and catalog freshness. Unknown money is null.",
+      "effect": "read",
       "input": "payload",
       "operation": "recovery.costs",
       "payload": [
@@ -36336,6 +38804,7 @@
       "command": "recovery.inspect",
       "confirmations": [],
       "description": "One recovery point with its details; a snapshot lists its members (first page). A point the caller can't read is not_found.",
+      "effect": "read",
       "input": "payload",
       "operation": "recovery.inspect",
       "payload": [
@@ -36390,6 +38859,7 @@
       "command": "recovery.list",
       "confirmations": [],
       "description": "Recovery points of a vault, or of one path (a file's history or the points under a directory): local snapshots, local versions and provider versions. Points the caller can't read are omitted. refresh_provider lists the provider's versions first (metadata only, request-budgeted).",
+      "effect": "read",
       "input": "payload",
       "operation": "recovery.list",
       "payload": [
@@ -36494,6 +38964,7 @@
       "command": "recovery.plan",
       "confirmations": [],
       "description": "Plan a restore (read-only): recovery_id, or vault_id + path + at for a point-in-time reconstruction (never atomic; see consistency_note). Returns the per-item preview, estimate, warnings, blockers and the token recovery.restore takes (stored 30 minutes).",
+      "effect": "read",
       "input": "payload",
       "operation": "recovery.plan",
       "payload": [
@@ -36631,6 +39102,7 @@
       "command": "recovery.plan.get",
       "confirmations": [],
       "description": "A stored restore plan (its state, items and token).",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -36692,6 +39164,7 @@
         }
       ],
       "description": "Delete a snapshot or a local version (filesystem Delete on its path). A refusal with data.code 'recovery_point_delete' asks for confirmation: resend with confirm.",
+      "effect": "destructive",
       "input": "payload",
       "operation": "recovery.point.delete",
       "payload": [
@@ -36772,6 +39245,7 @@
         }
       ],
       "description": "Run a restore plan: every item is re-authorized and restored as a new current generation; a destination that changed since the plan is a 'conflict' outcome. Resumable. Refusals: 'recovery_restore' (token missing or expired: plan again), 'recovery_unverified_version' (resend with accept_unverified).",
+      "effect": "write",
       "input": "payload",
       "operation": "recovery.restore",
       "payload": [
@@ -36844,6 +39318,7 @@
       "command": "recovery.snapshot.create",
       "confirmations": [],
       "description": "Take a named local snapshot of a file or directory tree (vault mode local_snapshots). Needs Read + Copy on every file and List on every directory of the subtree.",
+      "effect": "write",
       "input": "payload",
       "operation": "recovery.snapshot.create",
       "payload": [
@@ -36918,6 +39393,7 @@
       "command": "role.admin.add",
       "confirmations": [],
       "description": "Create an admin role. Nobody grants an admin permission they do not hold.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -37010,6 +39486,7 @@
       "command": "role.admin.delete",
       "confirmations": [],
       "description": "Delete an admin role; the answer's role is the deleted role's id.",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -37070,6 +39547,7 @@
       "command": "role.admin.get",
       "confirmations": [],
       "description": "One admin role with its permissions.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -37124,6 +39602,7 @@
       "command": "role.admin.get.byName",
       "confirmations": [],
       "description": "One admin role by name.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -37177,6 +39656,7 @@
       "command": "role.admin.update",
       "confirmations": [],
       "description": "Patch an admin role (name, description; permissions as a complete snapshot). Core refuses edits to super_admin and to the caller's own role, and grants beyond the caller's own permissions.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -37283,6 +39763,7 @@
       "command": "role.vault.add",
       "confirmations": [],
       "description": "Create a vault role definition (assigning it is role.vault.assign).",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -37375,6 +39856,7 @@
       "command": "role.vault.assign",
       "confirmations": [],
       "description": "Assign a vault role to a user or group on a vault (one assignment per subject and vault).",
+      "effect": "write",
       "input": "payload",
       "operation": "roles.vault.assign",
       "payload": [
@@ -37480,6 +39962,7 @@
       "command": "role.vault.delete",
       "confirmations": [],
       "description": "Delete a vault role definition.",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -37539,6 +40022,7 @@
       "command": "role.vault.get",
       "confirmations": [],
       "description": "One vault role definition.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -37593,6 +40077,7 @@
       "command": "role.vault.get.byName",
       "confirmations": [],
       "description": "One vault role definition by name.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -37646,6 +40131,7 @@
       "command": "role.vault.overrides.add",
       "confirmations": [],
       "description": "Add allow/deny overrides for a pattern on one assignment (same ops as `vh vault role override add`).",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -37784,6 +40270,7 @@
       "command": "role.vault.overrides.list",
       "confirmations": [],
       "description": "The path-scoped allow/deny overrides on one assignment (a subject's role on a vault).",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -37868,6 +40355,7 @@
       "command": "role.vault.overrides.remove",
       "confirmations": [],
       "description": "Remove one override from an assignment.",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -37972,6 +40460,7 @@
       "command": "role.vault.overrides.update",
       "confirmations": [],
       "description": "Patch one override (effect, pattern, enabled; absent or null are unchanged).",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -38105,6 +40594,7 @@
       "command": "role.vault.unassign",
       "confirmations": [],
       "description": "Remove a subject's vault role assignment on a vault.",
+      "effect": "destructive",
       "input": "payload",
       "operation": "roles.vault.unassign",
       "payload": [
@@ -38192,6 +40682,7 @@
       "command": "role.vault.update",
       "confirmations": [],
       "description": "Patch a vault role definition (name, description; permissions as a complete snapshot).",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -38298,6 +40789,7 @@
       "command": "roles.admin.list",
       "confirmations": [],
       "description": "Every admin role the caller may view.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -38336,6 +40828,7 @@
       "command": "roles.vault.list",
       "confirmations": [],
       "description": "Every vault role definition.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -38374,6 +40867,7 @@
       "command": "roles.vault.list.assigned",
       "confirmations": [],
       "description": "The role assignments on one vault (id is the vault id).",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -38430,6 +40924,7 @@
       "command": "s3.gateway.buckets.bind",
       "confirmations": [],
       "description": "Bind a vault to a gateway bucket name (default: the vault's slug). Local vaults use mode local, S3/R2 vaults remote_cache or remote_proxy.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -38544,6 +41039,7 @@
       "command": "s3.gateway.buckets.createLocal",
       "confirmations": [],
       "description": "Create a local vault and bind it as a bucket (bucket name defaults to the vault's slug).",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -38637,6 +41133,7 @@
         }
       ],
       "description": "Create an S3 vault (cache strategy) over an upstream bucket and bind it as an API-exclusive bucket. The key needs Consume; a refusal with data.code 'encryption_waiver' means the upstream bucket already holds data: resend with accept_encryption_waiver once the person accepts.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -38769,6 +41266,7 @@
       "command": "s3.gateway.buckets.list",
       "confirmations": [],
       "description": "Bucket bindings the caller may manage.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -38807,6 +41305,7 @@
       "command": "s3.gateway.buckets.unbind",
       "confirmations": [],
       "description": "Remove a bucket binding (the vault stays).",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -38859,6 +41358,7 @@
       "command": "s3.gateway.budget.ledger.list",
       "confirmations": [],
       "description": "Gateway credential budget ledger entries (newest first).",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -38950,6 +41450,7 @@
       "command": "s3.gateway.budget.policy.disable",
       "confirmations": [],
       "description": "Disable a gateway credential (or credential + vault) budget policy.",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -39034,6 +41535,7 @@
       "command": "s3.gateway.budget.policy.list",
       "confirmations": [],
       "description": "Gateway credential budget policies the caller may see.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -39116,6 +41618,7 @@
       "command": "s3.gateway.budget.policy.upsert",
       "confirmations": [],
       "description": "Create or replace a gateway credential (or credential + vault) budget policy. Limits are decimal strings.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -39275,6 +41778,7 @@
       "command": "s3.gateway.budget.status",
       "confirmations": [],
       "description": "Gateway credential budget policies, recent ledger entries and spend trends.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -39384,6 +41888,7 @@
       "command": "s3.gateway.credentials.create",
       "confirmations": [],
       "description": "Create a gateway credential for a principal (the caller unless principal_user_id / user_id names another). The secret is returned once. scope_mode defaults to vault_allowlist when vaults are given, else user_access; global needs an admin principal and a default vault role.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -39787,6 +42292,7 @@
       "command": "s3.gateway.credentials.defaultRole.clear",
       "confirmations": [],
       "description": "Remove a credential's default vault role.",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -39895,6 +42401,7 @@
       "command": "s3.gateway.credentials.defaultRole.get",
       "confirmations": [],
       "description": "A credential's default vault role, or null.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -39999,6 +42506,7 @@
       "command": "s3.gateway.credentials.defaultRole.overrides.add",
       "confirmations": [],
       "description": "Add a permission override to a credential's default vault role (needs a default role).",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -40173,6 +42681,7 @@
       "command": "s3.gateway.credentials.defaultRole.overrides.list",
       "confirmations": [],
       "description": "Permission overrides on a credential's default vault role.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -40286,6 +42795,7 @@
       "command": "s3.gateway.credentials.defaultRole.overrides.remove",
       "confirmations": [],
       "description": "Remove a permission override from a credential's default vault role.",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -40410,6 +42920,7 @@
       "command": "s3.gateway.credentials.defaultRole.set",
       "confirmations": [],
       "description": "Set a credential's default vault role (refused for user-access credentials).",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -40576,6 +43087,7 @@
       "command": "s3.gateway.credentials.list",
       "confirmations": [],
       "description": "Every credential the caller may see (their own, or all with admin.s3_gateway.manage_credentials).",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -40623,6 +43135,7 @@
       "command": "s3.gateway.credentials.revoke",
       "confirmations": [],
       "description": "Revoke a credential by access key or name.",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -40675,6 +43188,7 @@
       "command": "s3.gateway.credentials.roles.assign",
       "confirmations": [],
       "description": "Assign a vault role to a credential on a vault (not for user-access credentials; the role may not exceed what the principal can do).",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -40893,6 +43407,7 @@
       "command": "s3.gateway.credentials.roles.list",
       "confirmations": [],
       "description": "A credential's per-vault role assignments the caller may see.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -41007,6 +43522,7 @@
       "command": "s3.gateway.credentials.roles.overrides.add",
       "confirmations": [],
       "description": "Add a permission override to a credential's grant on a vault (the vault must be selected and a default role set).",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -41232,6 +43748,7 @@
       "command": "s3.gateway.credentials.roles.overrides.list",
       "confirmations": [],
       "description": "Permission overrides on a credential's grant on one vault.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -41397,6 +43914,7 @@
       "command": "s3.gateway.credentials.roles.overrides.remove",
       "confirmations": [],
       "description": "Remove a permission override from a credential's vault grant.",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -41582,6 +44100,7 @@
       "command": "s3.gateway.credentials.roles.revoke",
       "confirmations": [],
       "description": "Remove a credential's role on a vault.",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -41750,6 +44269,7 @@
       "command": "s3.gateway.credentials.scope.update",
       "confirmations": [],
       "description": "Change a credential's scope and settings; absent members stay as they are. Nothing to change is 'invalid'.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -42167,6 +44687,7 @@
       "command": "s3.gateway.credentials.selectedVaults.add",
       "confirmations": [],
       "description": "Select one more vault for a vault-allowlist credential.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -42329,6 +44850,7 @@
       "command": "s3.gateway.credentials.selectedVaults.list",
       "confirmations": [],
       "description": "The vaults selected for a credential.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -42443,6 +44965,7 @@
       "command": "s3.gateway.credentials.selectedVaults.remove",
       "confirmations": [],
       "description": "Drop a vault from a credential: its selection and any per-vault role.",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -42606,6 +45129,7 @@
       "command": "s3.gateway.credentials.selectedVaults.replace",
       "confirmations": [],
       "description": "Replace a vault-allowlist credential's selected vaults (an empty or absent list clears them).",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -42846,6 +45370,7 @@
       "command": "s3.gateway.status",
       "confirmations": [],
       "description": "S3 gateway runtime status: running/configured/ready, the listen endpoint and request counters.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -42952,6 +45477,7 @@
       "command": "settings.get",
       "confirmations": [],
       "description": "The daemon's whole settings document (config.yaml as JSON, without secrets). Super admins only.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -42983,6 +45509,7 @@
       "command": "settings.policy.get",
       "confirmations": [],
       "description": "What any signed-in user may know of the server policy: the sharing switches and the vault defaults (vaults.s3.*).",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -43029,6 +45556,7 @@
       "command": "settings.update",
       "confirmations": [],
       "description": "Change settings with a JSON merge patch (RFC 7386) onto the current document: send only the members that change; null removes an optional key. The merged document is validated as a whole and saved (a s3_gateway.enabled change restarts the gateway). Super admins only; preview.derive.helper_dir can't be changed here.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -43268,6 +45796,7 @@
       "command": "share.download.cancel",
       "confirmations": [],
       "description": "Share sessions: drop a download transfer.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -43328,6 +45857,7 @@
       "command": "share.download.chunk",
       "confirmations": [],
       "description": "Share sessions: read the next chunk (base64). offset must be the previous next_offset; the target is re-authorized on every chunk and the transfer is dropped on any failure.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -43442,6 +45972,7 @@
       "command": "share.download.start",
       "confirmations": [],
       "description": "Share sessions: start a chunked download of a file inside the share (Download). At most 4 transfers per socket and 64 MiB per file.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -43546,6 +46077,7 @@
       "command": "share.email.challenge.confirm",
       "confirmations": [],
       "description": "Confirm an email code. When verified the socket switches to share mode (status ready); session_id and session_token default to the socket's pending session.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -43644,6 +46176,7 @@
       "command": "share.email.challenge.start",
       "confirmations": [],
       "description": "Email-validated links: send a one-time code to a recipient email. Identifies the link by public_token (opens a pending session) or by session_token (the socket's pending session when neither is given). Refused once the session is verified.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -43741,6 +46274,7 @@
       "command": "share.fs.list",
       "confirmations": [],
       "description": "Share sessions: list a directory inside the share (List); entries in the share view.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -43815,6 +46349,7 @@
       "command": "share.fs.metadata",
       "confirmations": [],
       "description": "Share sessions: one entry inside the share, reduced to the share view (Metadata).",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -43880,6 +46415,7 @@
       "command": "share.link.create",
       "confirmations": [],
       "description": "Create a share link on a file or directory. The public token is returned once.",
+      "effect": "write",
       "input": "payload",
       "operation": "shares.create",
       "payload": [
@@ -44583,6 +47119,7 @@
       "command": "share.link.get",
       "confirmations": [],
       "description": "One share link the caller may manage (no token material).",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -44635,6 +47172,7 @@
       "command": "share.link.list",
       "confirmations": [],
       "description": "Share links: of one vault (vault_id, needs the vault's share-management permission) or created by the caller. offset is turned into a page when limit is given.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -44746,6 +47284,7 @@
       "command": "share.link.revoke",
       "confirmations": [],
       "description": "Revoke a share link; its sessions end on their next request.",
+      "effect": "destructive",
       "input": "payload",
       "operation": "shares.revoke",
       "payload": [
@@ -44798,6 +47337,7 @@
       "command": "share.link.rotate_token",
       "confirmations": [],
       "description": "Issue a new public token (returned once); the old URL and every session of the link stop working.",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -44864,6 +47404,7 @@
       "command": "share.link.update",
       "confirmations": [],
       "description": "Patch a share link: absent members are left alone, null clears an optional one. recipient_role_assignments (when present) replaces the recipients. vault_id, root_entry_id, root_path, target_type, counters and timestamps are immutable (refused).",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -45505,6 +48046,7 @@
       "command": "share.preview.get",
       "confirmations": [],
       "description": "Share sessions: a JPEG preview of an image or PDF inside the share (Preview), base64. Sources over 16 MiB and remote-only bytes are refused; the console uses GET /preview?share=1.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -45600,6 +48142,7 @@
       "command": "share.session.open",
       "confirmations": [],
       "description": "Open a share session from a public link token. A public link is ready at once (the socket switches to share mode); an email-validated link answers email_required with a pending session to verify through share.email.challenge.*. Reopening the socket's own ready share returns its session.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -45681,6 +48224,7 @@
       "command": "share.upload.cancel",
       "confirmations": [],
       "description": "Share sessions: abort an upload.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -45741,6 +48285,7 @@
       "command": "share.upload.finish",
       "confirmations": [],
       "description": "Share sessions: finish an upload after its last binary frame; the target is re-authorized and the file created.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -45809,6 +48354,7 @@
       "command": "share.upload.start",
       "confirmations": [],
       "description": "Share sessions: start an upload of a new file into a directory of the share (Upload). The bytes follow as binary frames; an existing target is refused (duplicate policy reject).",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -45972,6 +48518,7 @@
       "command": "stats.dashboard.overview",
       "confirmations": [],
       "description": "The health dashboard: overall status, attention items, sections and the requested cards (all default cards when cards is empty). Needs admin.stats.view.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -46052,6 +48599,7 @@
       "command": "stats.dashboard.severity",
       "confirmations": [],
       "description": "The overall severity of the default overview cards without cards, sections or series (the console's health dot). Needs admin.stats.view.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -46083,6 +48631,7 @@
       "command": "stats.fs.cache",
       "confirmations": [],
       "description": "Filesystem metadata cache counters. Fails (no data.code) when the cache has no stats. Needs admin.stats.view.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -46114,6 +48663,7 @@
       "command": "stats.http.cache",
       "confirmations": [],
       "description": "HTTP preview cache counters. Needs admin.stats.view.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -46145,6 +48695,7 @@
       "command": "stats.pricing.budget",
       "confirmations": [],
       "description": "S3 price budget dashboard figures: system-wide without vault_id (needs admin.stats.view), one vault's with it (vault ownership or admin vault View/ViewStats). A non-object payload means system-wide.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -46195,6 +48746,7 @@
       "command": "stats.system.connections",
       "confirmations": [],
       "description": "Live websocket and share connections. Needs admin.stats.view.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -46226,6 +48778,7 @@
       "command": "stats.system.db",
       "confirmations": [],
       "description": "Database size, connections and largest tables. Needs admin.stats.view.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -46259,6 +48812,7 @@
       "command": "stats.system.fuse",
       "confirmations": [],
       "description": "FUSE operation counters, latencies and errno totals. Fails (no data.code) when the daemon has no FUSE stats. Needs admin.stats.view.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -46290,6 +48844,7 @@
       "command": "stats.system.health",
       "confirmations": [],
       "description": "Runtime services, protocols, dependencies and a live bounded database probe. Needs admin.stats.view.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -46321,6 +48876,7 @@
       "command": "stats.system.operations",
       "confirmations": [],
       "description": "Filesystem operation queue and recent errors, all vaults. Needs admin.stats.view.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -46354,6 +48910,7 @@
       "command": "stats.system.pricing",
       "confirmations": [],
       "description": "System-wide S3 price budget dashboard figures. Needs admin.stats.view.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -46385,6 +48942,7 @@
       "command": "stats.system.retention",
       "confirmations": [],
       "description": "Retention figures for every vault. Needs admin.stats.view.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -46418,6 +48976,7 @@
       "command": "stats.system.storage",
       "confirmations": [],
       "description": "Storage backend figures for every vault. Needs admin.stats.view.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -46449,6 +49008,7 @@
       "command": "stats.system.threadpools",
       "confirmations": [],
       "description": "Thread pool queue depth and worker pressure. Needs admin.stats.view.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -46480,6 +49040,7 @@
       "command": "stats.system.trends",
       "confirmations": [],
       "description": "System metric trend series from the stats rollups. Needs admin.stats.view.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -46528,6 +49089,7 @@
       "command": "stats.vault",
       "confirmations": [],
       "description": "A vault's capacity and usage figures (computed on the stats thread pool). Needs vault ownership or the admin vault View/ViewStats permission on the vault.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -46577,6 +49139,7 @@
       "command": "stats.vault.activity",
       "confirmations": [],
       "description": "A vault's recent activity: counts, top users and paths, recent events. Needs vault ownership or the admin vault View/ViewStats permission on the vault.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -46628,6 +49191,7 @@
       "command": "stats.vault.operations",
       "confirmations": [],
       "description": "A vault's filesystem operation queue and recent errors. Needs vault ownership or the admin vault View/ViewStats permission on the vault.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -46679,6 +49243,7 @@
       "command": "stats.vault.pricing",
       "confirmations": [],
       "description": "A vault's S3 price budget dashboard figures. Needs vault ownership or the admin vault View/ViewStats permission on the vault.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -46728,6 +49293,7 @@
       "command": "stats.vault.recovery",
       "confirmations": [],
       "description": "A vault's recovery posture (keys, versions, trash). Needs vault ownership or the admin vault View/ViewStats permission on the vault.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -46779,6 +49345,7 @@
       "command": "stats.vault.retention",
       "confirmations": [],
       "description": "A vault's retention (trash, versions, cleanup) figures. Needs vault ownership or the admin vault View/ViewStats permission on the vault.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -46830,6 +49397,7 @@
       "command": "stats.vault.security",
       "confirmations": [],
       "description": "A vault's security posture. Needs vault ownership or the admin vault View/ViewStats permission on the vault.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -46881,6 +49449,7 @@
       "command": "stats.vault.shares",
       "confirmations": [],
       "description": "A vault's share-link statistics. Needs vault ownership or the admin vault View/ViewStats permission on the vault.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -46932,6 +49501,7 @@
       "command": "stats.vault.storage",
       "confirmations": [],
       "description": "A vault's storage backend figures. Needs vault ownership or the admin vault View/ViewStats permission on the vault.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -46981,6 +49551,7 @@
       "command": "stats.vault.sync",
       "confirmations": [],
       "description": "A vault's sync health. Needs vault ownership or the admin vault View/ViewStats permission on the vault.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -47032,6 +49603,7 @@
       "command": "stats.vault.trends",
       "confirmations": [],
       "description": "A vault's metric trend series from the stats rollups. Needs vault ownership or the admin vault View/ViewStats permission on the vault.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -47097,6 +49669,7 @@
       "command": "storage.apiKey.add",
       "confirmations": [],
       "description": "Store an upstream S3 API key after checking the credentials against the provider (skipped in test mode). owner_id defaults to the caller; creating one for someone else needs the users/admins keys permission.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -47238,6 +49811,7 @@
       "command": "storage.apiKey.get",
       "confirmations": [],
       "description": "One API key's metadata.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -47294,6 +49868,7 @@
       "command": "storage.apiKey.list",
       "confirmations": [],
       "description": "The API keys the caller may view (metadata only).",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -47332,6 +49907,7 @@
       "command": "storage.apiKey.remove",
       "confirmations": [],
       "description": "Delete a key. Refused (invalid, naming the vaults) while a vault uses it, and (conflict) while it operates an event subscription. The answer carries no data.",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -47383,6 +49959,7 @@
       "command": "storage.apiKey.update",
       "confirmations": [],
       "description": "Edit a key in place (same id, so bound vaults keep their binding; their engines are rebuilt). Absent or null members keep their value; an empty secret_access_key keeps the sealed secret. The resulting credentials are re-checked like add.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -47503,6 +50080,7 @@
       "command": "storage.vault.accessible.list",
       "confirmations": [],
       "description": "Every live vault the caller reaches, by any path: as its owner, through a vault role of its own or of one of its groups, or through its admin role (admin.vaults.<scope>.view, or the global vault filesystem policy); a super admin reaches all of them. Each row is a vault summary plus what the enforcing resolvers grant: browse (filesystem List at the vault root, what fs.dir.list {path: \"/\"} needs), manage (admin vault View, what storage.vault.get needs) and via (owner, vault_role, group_role, admin_policy, super_admin; at least one). Unlike storage.vault.list it does not follow the admin role alone. A deactivated account gets an empty list. Read-only; also answers paired devices (`vh vault list --accessible`).",
+      "effect": "read",
       "input": "none",
       "operation": "vaults.accessible.list",
       "payload": [],
@@ -47547,6 +50125,7 @@
         }
       ],
       "description": "Create a vault. owner_id, description and quota (bytes, 0 = unlimited) are optional; the daemon picks the backing directory. S3 vaults also need api_key_id and bucket. A refusal with data.code 'encryption_waiver' means the bucket already holds data: resend with accept_encryption_waiver once the person accepts. With provision (#237) the daemon creates a managed bucket or adopts an existing one; 'upstream_adoption' asks for provision.accept_adoption. The bucket's write capability is probed first (design/encryption/06-publish-without-preconditions.md §7): a vault that encrypts upstream is refused with 'bucket_capability_insufficient' on a bucket that has neither conditional writes nor object versions.",
+      "effect": "write",
       "input": "payload",
       "operation": "vaults.create",
       "payload": [
@@ -48019,6 +50598,7 @@
       "command": "storage.vault.deleted.list",
       "confirmations": [],
       "description": "Deletions the caller could have made: pending, purging and purged tombstones, newest first.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -48057,6 +50637,7 @@
       "command": "storage.vault.get",
       "confirmations": [],
       "description": "One vault with its owner's name (and sync policy for S3 vaults).",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -48112,6 +50693,7 @@
       "command": "storage.vault.list",
       "confirmations": [],
       "description": "Vaults visible to the caller; each row carries the owner's name.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -48161,6 +50743,7 @@
         }
       ],
       "description": "Delete a vault: restorable until the retention window ends, or purged on the next pass with `now`. Refusals with data.code 'vault_upstream_key_loss' (resend with accept_key_loss) or 'vault_delete_now' (resend with confirm_now).",
+      "effect": "destructive",
       "input": "payload",
       "operation": "vaults.delete",
       "payload": [
@@ -48251,6 +50834,7 @@
       "command": "storage.vault.remove.plan",
       "confirmations": [],
       "description": "What deleting the vault would do (provider, bucket, key export state, the restore and key retention windows, the key export command). Changes nothing; needs vault Remove.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -48306,6 +50890,7 @@
       "command": "storage.vault.restore",
       "confirmations": [],
       "description": "Restore a vault whose deletion is still pending (conflict once its purge has started).",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -48361,6 +50946,7 @@
       "command": "storage.vault.sync",
       "confirmations": [],
       "description": "Run the vault's sync now, or queue a rerun when one is already running.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -48425,6 +51011,7 @@
         }
       ],
       "description": "Patch a vault (absent or null members are unchanged; a vault's type never changes). Owner reassignment also needs Create for the new owner, a key change needs Consume on the key, sync settings need vault sync.config.edit. A refusal with data.code 'encryption_waiver' means the bucket already holds data: resend with accept_encryption_waiver once the person accepts. A new bucket or key is probed first: an opaque_v1 vault is refused with 'bucket_capability_insufficient' as storage.vault.add says.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -48778,6 +51365,7 @@
       "command": "sync.conflicts.list",
       "confirmations": [],
       "description": "Open sync conflicts, newest first, in every vault where the caller may resolve them, or in one vault (vault_id: denied when the caller may not, not_found when it doesn't exist).",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -48834,6 +51422,7 @@
       "command": "sync.conflicts.resolve",
       "confirmations": [],
       "description": "Resolve conflicts by keeping the local or the bucket copy (also accepted: local, remote, keep-local, keep-remote). Per item: each id gets its own status and one failure never stops the rest. 1 to 500 ids per call.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -48968,6 +51557,7 @@
       "command": "sync.conflicts.summary",
       "confirmations": [],
       "description": "Open sync conflicts the caller can resolve: the total and a count per vault (vaults without conflicts are left out), sorted by vault name.",
+      "effect": "read",
       "input": "none",
       "operation": null,
       "payload": [],
@@ -49039,6 +51629,7 @@
       "command": "upstream.admin.disable",
       "confirmations": [],
       "description": "Turn provider administration off. Refused while an event subscription runs through the key.",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -49094,6 +51685,7 @@
       "command": "upstream.admin.enable",
       "confirmations": [],
       "description": "Turn on provider administration (AWS S3, Cloudflare R2) for an upstream API key after probing it, or store / clear the Cloudflare API token R2 events need. Idempotent. Needs admin.upstream.configure + key edit.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -49171,6 +51763,7 @@
       "command": "upstream.admin.status",
       "confirmations": [],
       "description": "Administration status and the last capability probe; probe=true re-checks the credential (configure).",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -49234,6 +51827,7 @@
       "command": "upstream.audit.list",
       "confirmations": [],
       "description": "Upstream control-plane audit log (newest first): locks, creations, adoptions, lifecycle, events, cleanup.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -49291,6 +51885,7 @@
       "command": "upstream.bucket.adopt.preflight",
       "confirmations": [],
       "description": "Read-only admission check of an existing bucket before adoption: object counts, encryption of a sample, versioning, object lock, Vaulthalla manifest, blockers.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -49382,6 +51977,7 @@
         }
       ],
       "description": "Delete every object version of a bucket Vaulthalla created and (delete_bucket, default) the bucket. Every check runs again first. A refusal with data.code 'upstream_cleanup' means the token is missing, expired or no longer matches the bucket: run the preflight again.",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -49472,6 +52068,7 @@
       "command": "upstream.bucket.cleanup.preflight",
       "confirmations": [],
       "description": "What cleanup would delete (objects, versions, delete markers, bytes) and anything that blocks it, with a confirm_token valid for 10 minutes. Nothing changes.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -49539,6 +52136,7 @@
       "command": "upstream.bucket.detach",
       "confirmations": [],
       "description": "Give a managed or adopted bucket that no vault uses back: Vaulthalla removes its own rules; data stays.",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -49606,6 +52204,7 @@
       "command": "upstream.bucket.inspect",
       "confirmations": [],
       "description": "Bucket configuration: region, versioning, object lock, lifecycle and notification rules (ours vs foreign).",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -49679,6 +52278,7 @@
         }
       ],
       "description": "Set or clear Vaulthalla's lifecycle rule on a managed or adopted bucket; foreign rules are preserved. Expiration is destructive: a refusal with data.code 'upstream_destructive_lifecycle' asks for accept_destructive.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -49805,6 +52405,7 @@
       "command": "upstream.bucket.list",
       "confirmations": [],
       "description": "One page of the account's buckets (ListBuckets) merged with what Vaulthalla knows: managed, adopted, unmanaged or protected. No bucket-level or object calls.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -49902,6 +52503,7 @@
       "command": "upstream.bucket.protect",
       "confirmations": [],
       "description": "Lock a bucket: Vaulthalla will not probe, adopt, bind, configure, sync, empty or delete it. Audited.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -49986,6 +52588,7 @@
         }
       ],
       "description": "Remove a bucket lock (admin.upstream.unprotect). A refusal with data.code 'upstream_unprotect' asks for confirmation: resend with confirm.",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -50065,6 +52668,7 @@
       "command": "upstream.events.disable",
       "confirmations": [],
       "description": "Remove the vault's event rule (and the queue when nothing else uses it and Vaulthalla created it).",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -50120,6 +52724,7 @@
       "command": "upstream.events.enable",
       "confirmations": [],
       "description": "Subscribe an S3 vault's bucket for event-driven sync (AWS S3 → SQS, Cloudflare R2 → Queues).",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -50196,6 +52801,7 @@
       "command": "upstream.events.repair",
       "confirmations": [],
       "description": "Re-create whatever is missing for the vault's subscription and re-arm it. Safe to repeat.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -50251,6 +52857,7 @@
       "command": "upstream.events.status",
       "confirmations": [],
       "description": "Event subscription, queue health and inbox counts for one vault (vault_id) or every S3 vault the caller may view. A vault without a subscription reports state 'none'.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -50308,6 +52915,7 @@
       "command": "vault.keys.export",
       "confirmations": [],
       "description": "The vault's keys in `vh vault keys export`'s JSON shape plus every needed version with its key_check. Paired devices only: any other session is refused with export_requires_device (D4). Needs the encryption-key Export permission. Not recorded as exported: confirm with vault.keys.export.confirm once the key is stored.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -50652,6 +53260,7 @@
       "command": "vault.keys.export.confirm",
       "confirmations": [],
       "description": "Record that the device stored key `version` of the vault. Succeeds only while that version is still current and key_check matches the daemon's key, else conflict (e.g. a rotation in between). Paired devices only (export_requires_device otherwise).",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -50778,6 +53387,7 @@
         }
       ],
       "description": "Recover the vault's keys from a backup (`keys`: an export, one vault object or an `all` array) when this host can't unseal or doesn't hold them. A recovery mechanism, never a way to set a key: a version is restored only when the vault's records reference it and its attestation by this node verifies (or it matches a key this host holds); a key this host can unseal is never replaced (conflict), identical bytes are unchanged, unreferenced versions are refused, the rest are needs_salvage. mode salvage additionally re-encrypts the files of the needs_salvage versions under a fresh daemon key (the supplied key is never stored) and returns the report. Writing needs confirm_name = the vault's name, else data.code vault_key_import (mode recover) or vault_key_salvage (mode salvage, even when nothing turns out to need salvage) with what would be done. Paired devices only (import_requires_device otherwise); the encryption-key Export permission.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -51074,6 +53684,7 @@
       "command": "vault.keys.recipients.add",
       "confirmations": [],
       "description": "Enroll a recovery recipient: an X25519 public key generated on the customer's own device (Vaulthalla Desktop, or the offline `vh-recovery kit create`); the server never receives the seed. Every key version the vault holds is wrapped to it now and every future version at rotation, into the vault's bucket only (a local vault: this server's database). Customer-controlled (class customer) is the only kind. With account_key: the linked account's pinned recovery key (conflict without a pin). Paired devices only (recipient_requires_device otherwise), with a keys step-up bound to the vault (#359); the encryption-key Export permission.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -51204,6 +53815,7 @@
       "command": "vault.keys.recipients.list",
       "confirmations": [],
       "description": "The vault's recovery recipients (spec 03 §5; #370): customer-held X25519 public keys every key version is wrapped to (KEV1 envelopes in the vault's own bucket), revoked ones included, with the vault's D2 recovery state. Public data only; the encryption-key View permission.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -51299,6 +53911,7 @@
       "command": "vault.keys.recipients.revoke",
       "confirmations": [],
       "description": "Revoke a recovery recipient: no new envelopes are written for it (a recipient the account's signed recovery policy added is refused recovery_policy_account_managed). Access it already has is not revoked (an envelope keeps unwrapping the versions it covers): recovery.rotation_needed says when a key rotation is needed to cut it off from new data. Paired devices only (recipient_requires_device otherwise), with a keys step-up bound to the vault (#359); the encryption-key Export permission.",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -51389,6 +54002,7 @@
       "command": "vault.keys.status",
       "confirmations": [],
       "description": "Key backup state of every vault the caller may inspect (the encryption-key View permission; deleted vaults within key retention for callers who may remove them), or of vault_id. Never key bytes: each key version is identified by its key_check. Read-only; safe for any session.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -51444,6 +54058,7 @@
       "command": "vault.layout.cleanup",
       "confirmations": [],
       "description": "After the cutover and its waiting period: the legacy (path-named) objects a cleanup would delete by version id, and those that stay (a dry run without confirm). With confirm set to the vault's name the cleanup is confirmed and runs in the background (a data.destroy step-up bound to the vault, #359). Never on a protected bucket, never a version under Object Lock retention or a legal hold. The encryption-key Rotate permission.",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -51614,6 +54229,7 @@
       "command": "vault.layout.migrate",
       "confirmations": [],
       "description": "Start (or resume after a failure) the vault's bucket layout migration path_v0 -> opaque_v1: it runs in the background (vault.layout.status follows it). Refused (conflict) when the vault can't migrate now (not an encrypting S3 vault on path_v0, a rotation or salvage, a key version not held, no recovery material, a protected bucket) or already migrates. With a keys step-up bound to the vault (#359); the encryption-key Rotate permission.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -51797,6 +54413,7 @@
       "command": "vault.layout.status",
       "confirmations": [],
       "description": "The vault's bucket layout and its migration path_v0 -> opaque_v1 (#373): state, the cost estimate and usage, inventory counts, and every legacy version that stays in the bucket with its reason. The encryption-key View permission.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -51973,6 +54590,7 @@
         }
       ],
       "description": "Rebuild a vault on this instance from its bucket and the customer's recovery material (#371, spec 03 §6): a recovery kit (its seed unwraps the vault's KEV1 envelopes) and/or a key export. A key version is restored only when its original node's attestation verifies against an attestation key the material pins (D1); otherwise the answer is salvage_required with the per-version verdicts, and salvage (confirmed with confirm_name) re-encrypts what the supplied keys decrypt under a fresh key, never storing them. dry_run reads and reports, writing nothing. The vault starts in the cache strategy: nothing beyond headers, the manifest and envelopes is downloaded until a file is read. Paired devices only (recover_requires_device otherwise), with a keys step-up bound to the bucket; the encryption-key Export permission and vault Create.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -52898,6 +55516,7 @@
       "command": "vault.recovery.disclosure",
       "confirmations": [],
       "description": "The cost disclosure a person must see before provider versioning is enabled, with the token vault.recovery.update needs (10 minutes). Read-only: at most one admin inspect, no object requests.",
+      "effect": "read",
       "input": "payload",
       "operation": "recovery.disclosure",
       "payload": [
@@ -53012,6 +55631,7 @@
       "command": "vault.recovery.status",
       "confirmations": [],
       "description": "A vault's recovery mode, local versioning, store usage, upstream backlog and provider versioning state; refresh_provider re-reads the bucket (one admin round trip).",
+      "effect": "read",
       "input": "payload",
       "operation": "recovery.status",
       "payload": [
@@ -53080,6 +55700,7 @@
         }
       ],
       "description": "Suspend versioning on the vault's bucket; existing versions are kept and nothing is deleted. A refusal with data.code 'recovery_versioning_suspend' asks for confirmation: resend with confirm.",
+      "effect": "destructive",
       "input": "payload",
       "operation": "recovery.suspend",
       "payload": [
@@ -53167,6 +55788,7 @@
         }
       ],
       "description": "Change a vault's recovery settings. mode provider_versioning needs disclosure_token from vault.recovery.disclosure ('recovery_versioning_disclosure'); unpriced costs need accept_unpriced ('recovery_versioning_unpriced'); a shorter retention needs accept_retention_shortening ('recovery_retention_shorten'); the vault's unmanaged bucket needs accept_adoption ('upstream_adoption').",
+      "effect": "write",
       "input": "payload",
       "operation": "recovery.update",
       "payload": [
@@ -53385,6 +56007,7 @@
       "command": "vault.remote.abort",
       "confirmations": [],
       "description": "Abort an attach or a detach before its cutover. An attach's abort deletes everything it uploaded from the bucket, each object by the version the attach recorded, in the background, and releases the bucket (state aborted); nothing the attach did not write is deleted, the vault itself was never changed, and a delete the provider refuses is retried and stays listed. A detach's abort leaves the vault an S3 vault; the local copies it fetched stay. confirm must be the vault's name. With a keys step-up bound to the vault (#359); the same permissions as vault.remote.attach, without the API key's.",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -53593,6 +56216,7 @@
       "command": "vault.remote.attach",
       "confirmations": [],
       "description": "Attach a bucket to a local vault (design/storage/attach-remote.md): the vault keeps its id, keys, permissions, shares and files and becomes an encrypting S3/R2 vault in place. Checks every precondition now (a local vault with its keys loaded, no key rotation or salvage, no content in a legacy format, every key version held and attested, recovery material independent of this host, an empty bucket no vault holds, a bucket that can publish the manifest) and probes the bucket; then the upload runs in the background and resumes after a restart (vault.remote.status follows it). Nothing of the vault changes before the cutover. A failed attach started again with the same API key and bucket resumes. With a keys step-up bound to the vault (#359). Needs the vault's admin Edit and sync config Edit permissions, the API key's Consume permission and the encryption-key Rotate permission.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -53853,6 +56477,7 @@
       "command": "vault.remote.detach",
       "confirmations": [],
       "description": "Detach the remote of an S3 vault (design/storage/attach-remote.md, \"The reverse\"): the vault keeps its id, keys, permissions, shares and files and becomes a local vault in place. Checks the preconditions now (an S3 vault with its keys loaded, no attach, layout migration, key rotation or salvage running, no content in a legacy format, every key version its files use held, no event-driven sync, no open sync conflict); then in the background every file without a local copy is fetched, every local copy is authenticated, and every recovery envelope is copied from the bucket into the database, before the vault switches in one transaction. The bucket and its objects are left in place. vault.remote.status follows it; a failed detach started again resumes. confirm must be the vault's name. With a keys step-up bound to the vault (#359); the vault's admin Edit and sync config Edit permissions and the encryption-key Rotate permission.",
+      "effect": "destructive",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -54077,6 +56702,7 @@
       "command": "vault.remote.status",
       "confirmations": [],
       "description": "Where attaching (or detaching) a remote stands for vault_id, or for every vault with an attach or detach the caller may view: state, bucket, publish mode, progress (files and bytes, rate, time left), the estimate and usage, the last error, and after an attach's cutover the first sync pass's result. The vault's admin View permission. Read-only; safe for any session.",
+      "effect": "read",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -54132,6 +56758,7 @@
       "command": "vault.storage.probe",
       "confirmations": [],
       "description": "Probe what the vault's bucket supports for writes that must never overwrite another writer's object (design/encryption/06-publish-without-preconditions.md §7): conditional PUT honoured, rejected or ignored, object versions, GET If-Match. About ten requests under .vaulthalla/probe/, whose versions are deleted by id afterwards. Records the verdict, which replaces a bucket_capability_changed mark. The vault's admin Edit permission; refused (denied) on a protected bucket, bucket_probe_failed when the bucket can't be reached.",
+      "effect": "write",
       "input": "payload",
       "operation": null,
       "payload": [
@@ -54355,5 +56982,5 @@
       "variants": []
     }
   ],
-  "ws_hash": "64a009cd00663c9efb771f113e6b6598bfa6e51facac18f1a9e49df1d7221032"
+  "ws_hash": "1f51b7b7f54eb58af8b8e8946500a850d05cecf5bf28c78b4f00581cceef8038"
 }

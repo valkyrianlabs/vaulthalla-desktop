@@ -19,6 +19,7 @@ final class FakePairingNode: Sendable {
         /// The code the node shows, from the node's own view of both keys.
         var code: String
         var approvalKey: Bool
+        var requestedScope: String?
         var state: String = "pending"
     }
 
@@ -26,6 +27,12 @@ final class FakePairingNode: Sendable {
         var window = false
         var requests: [Request] = []
         var devices: [String: Bool] = [:]  // device id → revoked
+        /// Scopes (server 1.23): announced, and each device's.
+        var scopes = false
+        var deviceScopes: [String: String] = [:]
+        /// The target of the last step-up asked for: the approval key must sign exactly it.
+        var stepUpTarget: String?
+        var grantedTarget: String?
         var granted = false
         /// A relay on the new key's leg: it sees another server key, so its code differs.
         var relay = false
@@ -36,6 +43,8 @@ final class FakePairingNode: Sendable {
         /// `device.revoke` can't reach the node.
         var offline = false
         var requestsCarryApprovalKey = false
+        /// A node that announces scopes but approves without applying the one asked.
+        var ignoresScope = false
     }
 
     let session = ScriptedNode()
@@ -71,6 +80,7 @@ final class FakePairingNode: Sendable {
                 return ["request_id": .string(request.id), "name": .string(request.name), "platform": "macOS",
                         "app_version": "test", "source_ip": "127.0.0.1", "device_id": .string(request.deviceID),
                         "code_choices": .array(choices), "approval_key_present": .bool(request.approvalKey),
+                        "requested_scope": request.requestedScope.map(JSONValue.string) ?? .null,
                         "created_at": 1_790_000_000, "expires_at": 1_790_000_600]
             }
             return .ok(["window": snapshot.window ? window : .null, "requests": .array(requests),
@@ -91,14 +101,14 @@ final class FakePairingNode: Sendable {
                         "target": .string(target), "expires_at": 1_790_000_120])
         }
         session.answer("device.approval.submit") { [self] json in
-            guard let target = snapshot.requests.last.map({ Self.target($0) }),
+            guard let target = snapshot.stepUpTarget,
                   let payload = DeviceApproval.payload(approvalContext, challenge: Self.challenge, family: "device.trust",
                                                        target: target, expiresAt: 1_790_000_120),
                   let der = json["signature_b64"]?.stringValue.flatMap({ Data(base64Encoded: $0) }),
                   let signature = try? P256.Signing.ECDSASignature(derRepresentation: der),
                   approvalKey.key.publicKey.isValidSignature(signature, for: payload)
             else { return .refuse("the signature doesn't verify", code: "invalid") }
-            set { $0.granted = true }
+            set { $0.granted = true; $0.grantedTarget = target }
             return .ok(["family": "device.trust", "target": .string(target), "expires_at": 1_790_000_420])
         }
         session.answer("device.pairing.approve") { [self] json in
@@ -107,12 +117,21 @@ final class FakePairingNode: Sendable {
                 return .refuse("no such request", code: "not_found")
             }
             let current = snapshot
-            guard current.granted else {
-                let methods: [String] = current.consoleOnly ? ["console_approval"] : ["device_approval", "console_approval"]
-                return .fail(.stepUpRequired(WsStepUp(family: "device.trust", target: Self.target(request),
-                                                      methods: methods), message: "approve"))
+            // The scope: what was asked by default, never wider; a narrower one is bound into the step-up's target.
+            let order = ["read", "write", "destructive"]
+            let asked = request.requestedScope ?? "destructive"
+            let scope = current.scopes ? (json["scope"]?.stringValue ?? asked) : nil
+            if let scope, (order.firstIndex(of: scope) ?? 9) > (order.firstIndex(of: asked) ?? 9) {
+                return .refuse("wider than asked", code: "invalid")
             }
-            set { $0.granted = false }  // a target-bound grant is spent by one use
+            let target = Self.target(request) + (scope.map { $0 == "destructive" ? "" : ":\($0)" } ?? "")
+            guard current.granted, current.grantedTarget == target else {
+                set { $0.stepUpTarget = target }
+                let methods: [String] = current.consoleOnly ? ["console_approval"] : ["device_approval", "console_approval"]
+                return .fail(.stepUpRequired(WsStepUp(family: "device.trust", target: target, methods: methods),
+                                             message: "approve"))
+            }
+            set { $0.granted = false; $0.grantedTarget = nil }  // a target-bound grant is spent by one use
             guard json["code"]?.stringValue == request.code else {
                 set { state in for i in state.requests.indices where state.requests[i].id == id { state.requests[i].state = "denied" } }
                 return .refuse("wrong code", code: "invalid")
@@ -120,15 +139,39 @@ final class FakePairingNode: Sendable {
             set { state in
                 for i in state.requests.indices where state.requests[i].id == id { state.requests[i].state = "approved" }
                 state.devices[request.deviceID] = false
+                if let scope { state.deviceScopes[request.deviceID] = state.ignoresScope ? "destructive" : scope }
             }
-            return .ok(["device": Self.device(request.deviceID, name: request.name)])
+            return .ok(["device": device(request.deviceID, name: request.name)])
+        }
+        session.answer("device.list") { [self] _ in
+            .ok(["devices": .array(snapshot.devices.map { id, revoked in device(id, name: "x", revoked: revoked) })])
+        }
+        session.answer("device.scope.set") { [self] json in
+            let id = json["device_id"]?.stringValue ?? "", scope = json["scope"]?.stringValue ?? ""
+            guard snapshot.scopes else { return .fail(.unknownCommand("device.scope.set")) }
+            guard snapshot.devices[id] == false, let current = snapshot.deviceScopes[id] else {
+                return .refuse("no such device", code: "not_found")
+            }
+            let order = ["read", "write", "destructive"]
+            if (order.firstIndex(of: scope) ?? 0) > (order.firstIndex(of: current) ?? 0) {
+                let target = "device.scope.set:7:\(scope)"
+                guard snapshot.granted, snapshot.grantedTarget == target else {
+                    set { $0.stepUpTarget = target }
+                    return .fail(.stepUpRequired(WsStepUp(family: "device.trust", target: target,
+                                                          methods: ["device_approval", "console_approval"]),
+                                                 message: "approve"))
+                }
+                set { $0.granted = false; $0.grantedTarget = nil }
+            }
+            set { $0.deviceScopes[id] = scope }
+            return .ok(["device": device(id, name: "x")])
         }
         session.answer("device.revoke") { [self] json in
             let id = json["device_id"]?.stringValue ?? ""
             if snapshot.offline { return .fail(.disconnected) }
             guard snapshot.devices[id] == false else { return .refuse("no such device", code: "not_found") }
             set { $0.devices[id] = true }
-            return .ok(["device": Self.device(id, name: "x", revoked: true)])
+            return .ok(["device": device(id, name: "x", revoked: true)])
         }
     }
 
@@ -140,18 +183,21 @@ final class FakePairingNode: Sendable {
     static let challenge = Data(repeating: 0x42, count: 32)
     static func target(_ request: Request) -> String { "device.pairing.approve:\(request.id):\(request.deviceID):digest" }
 
-    static func device(_ id: String, name: String, revoked: Bool = false) -> JSONValue {
-        ["id": 7, "device_id": .string(id), "user_id": 1, "user_name": "cooper", "name": .string(name),
-         "platform": "macOS", "app_version": "test", "previous_device_id": .null, "approved_by": 1,
-         "created_at": 1_790_000_000, "last_seen_at": .null, "last_ip": .null,
-         "revoked_at": revoked ? 1_790_000_100 : .null, "revoked": .bool(revoked)]
+    func device(_ id: String, name: String, revoked: Bool = false) -> JSONValue {
+        let scope = snapshot.deviceScopes[id]
+        return ["id": 7, "device_id": .string(id), "user_id": 1, "user_name": "cooper", "name": .string(name),
+                "platform": "macOS", "app_version": "test", "previous_device_id": .null, "approved_by": 1,
+                "created_at": 1_790_000_000, "last_seen_at": .null, "last_ip": .null,
+                "revoked_at": revoked ? 1_790_000_100 : .null, "revoked": .bool(revoked),
+                "scope": scope.map(JSONValue.string) ?? (snapshot.scopes ? "destructive" : .null)]
     }
 
     /// The new key's request, as `device.pair.request` + `device.pair.confirm` leave it.
-    func addRequest(deviceID: String, name: String, code: String) {
+    func addRequest(deviceID: String, name: String, code: String, scope: DeviceScope?) {
         set { state in
             state.requests.append(Request(id: "req-\(state.requests.count + 1)", deviceID: deviceID, name: name,
-                                          code: code, approvalKey: state.requestsCarryApprovalKey))
+                                          code: code, approvalKey: state.requestsCarryApprovalKey,
+                                          requestedScope: state.scopes ? scope?.rawValue : nil))
         }
     }
 
@@ -165,7 +211,7 @@ struct FakeDevice: AgentPairingDevice {
     let node: FakePairingNode
 
     func pair(identity: DeviceIdentity, endpoint: NodeEndpoint, serverPin: Data, deviceName: String,
-              appVersion: String) -> AsyncStream<PairingClient.State> {
+              appVersion: String, scope: DeviceScope?) -> AsyncStream<PairingClient.State> {
         AsyncStream { continuation in
             let task = Task {
                 continuation.yield(.connecting)
@@ -175,7 +221,7 @@ struct FakeDevice: AgentPairingDevice {
                                              deviceNonce: deviceNonce, serverNonce: serverNonce)
                 let nodes = try! PairingCode(serverSPKISHA256: node.serverPin, deviceSPKISHA256: identity.spkiSHA256,
                                              deviceNonce: deviceNonce, serverNonce: serverNonce)
-                node.addRequest(deviceID: identity.deviceID, name: deviceName, code: nodes.digits)
+                node.addRequest(deviceID: identity.deviceID, name: deviceName, code: nodes.digits, scope: scope)
                 continuation.yield(.awaitingApproval(code: shown))
                 while !Task.isCancelled {
                     switch node.requestState(identity.deviceID) {
@@ -205,6 +251,7 @@ extension KeychainSuite {
     var tag: String { AgentIdentity.keyTag(node: NodeID(rawValue: "node-a"), client: client) }
 
     private func run(_ setup: (FakePairingNode) -> Void = { _ in }, timeout: Duration = .seconds(20),
+                     scope: DeviceScope? = nil,
                      _ check: (FakePairingNode, TestRegistry, DeviceKeys, Result<AgentIdentity, AgentPairing.Failure>)
                          async throws -> Void) async throws {
         let shared = try KeychainFixture.require()
@@ -219,7 +266,8 @@ extension KeychainSuite {
             pairing.requestWait = .seconds(3)
             pairing.pollInterval = .milliseconds(20)
             let outcome = await AgentPairings(store: registry.owner, keys: keys)
-                .pair(fake.record.id, client: client, using: pairing, macName: "Cooper's Mac", appVersion: "test")
+                .pair(fake.record.id, client: client, using: pairing, macName: "Cooper's Mac", appVersion: "test",
+                      scope: scope)
             // Deleted before the next test makes a key under the same tag (the file keychain fails under overlap).
             do {
                 try await check(fake, registry, keys, outcome)
@@ -349,6 +397,74 @@ extension KeychainSuite {
             let left = await Self.pairings(registry, keys).revokeAll(of: last, macSession: fake.session)
             #expect(left == [identity.deviceName])
             #expect(try await keys.identity(for: tag) == nil)
+        }
+    }
+
+    // MARK: - Scopes
+
+    private static func scoped(_ fake: FakePairingNode) {
+        fake.set { $0.scopes = true }
+        fake.session.capabilities.withLock { $0["device.scope"] = .yes }
+    }
+
+    @Test func asksForTheScopeAndApprovesWithItBound() async throws {
+        try await run(Self.scoped, scope: .read) { fake, registry, keys, outcome in
+            let identity = try outcome.get()
+            #expect(identity.scope == .read)
+            #expect(fake.snapshot.requests.last?.requestedScope == "read", "the request asked for read")
+            #expect(fake.session.payloads(of: "device.pairing.approve").last?["scope"] == "read")
+            #expect(fake.snapshot.stepUpTarget?.hasSuffix(":read") == true, "the approval key signed the scoped target")
+            #expect(fake.snapshot.deviceScopes[identity.deviceID] == "read")
+            #expect(try registry.consumer.reload().first?.agentIdentities["claude-code"]?.scope == .read)
+            // The node's report is what counts.
+            let report = await AgentScopes.report(deviceIDs: [identity.deviceID], via: fake.session)
+            #expect(report[identity.deviceID] == .scoped(.read))
+            fake.set { $0.deviceScopes[identity.deviceID] = "write" }
+            #expect(await AgentScopes.report(deviceIDs: [identity.deviceID], via: fake.session)[identity.deviceID]
+                == .scoped(.write))
+        }
+    }
+
+    @Test func anOlderServerPairsUnscopedAndSaysItCantLimit() async throws {
+        try await run({ $0.session.capabilities.withLock { $0["device.scope"] = .no } }, scope: .read) { fake, _, _, outcome in
+            let identity = try outcome.get()
+            #expect(identity.scope == nil)
+            #expect(fake.snapshot.requests.last?.requestedScope == nil, "nothing about scopes is sent")
+            #expect(fake.session.payloads(of: "device.pairing.approve").allSatisfy { $0["scope"] == nil })
+            #expect(await AgentScopes.report(deviceIDs: [identity.deviceID], via: fake.session)[identity.deviceID]
+                == .cannotLimit)
+            #expect(await AgentScopes.set(.read, deviceID: identity.deviceID, current: nil, macSession: fake.session,
+                                          signer: fake.approvalKey, context: fake.approvalContext) == .cannotLimit)
+            #expect(fake.session.count(of: "device.scope.set") == 0)
+        }
+    }
+
+    @Test func aNodeThatDoesntApplyTheScopeIsUndone() async throws {
+        try await run({ Self.scoped($0); $0.set { $0.ignoresScope = true } }, scope: .read) { fake, registry, keys, outcome in
+            guard case .failure(.scopeNotApplied) = outcome else { Issue.record("\(outcome)"); return }
+            try await expectNothingLeft(fake, registry, keys)
+        }
+    }
+
+    @Test func narrowingIsOneClickWideningNeedsTheApprovalKey() async throws {
+        try await run(Self.scoped, scope: .write) { fake, _, _, outcome in
+            let id = try outcome.get().deviceID
+            let submits = fake.session.count(of: "device.approval.submit")
+            #expect(await AgentScopes.set(.read, deviceID: id, current: .write, macSession: fake.session,
+                                          signer: nil, context: nil) == .changed(.read))
+            #expect(fake.session.count(of: "device.approval.submit") == submits, "narrowing asks no approval")
+            #expect(await AgentScopes.set(.read, deviceID: id, current: .read, macSession: fake.session,
+                                          signer: nil, context: nil) == .unchanged)
+            // Widening without the approval key: refused, nothing changed.
+            #expect(await AgentScopes.set(.destructive, deviceID: id, current: .read, macSession: fake.session,
+                                          signer: nil, context: nil) == .needsApprovalKey)
+            #expect(fake.snapshot.deviceScopes[id] == "read")
+            // With it: the step-up bound to the device and the new scope, signed once.
+            #expect(await AgentScopes.set(.destructive, deviceID: id, current: .read, macSession: fake.session,
+                                          signer: fake.approvalKey, context: fake.approvalContext) == .changed(.destructive))
+            #expect(fake.snapshot.stepUpTarget == "device.scope.set:7:destructive")
+            #expect(fake.session.count(of: "device.approval.submit") == submits + 1)
+            #expect(fake.snapshot.deviceScopes[id] == "destructive")
         }
     }
 

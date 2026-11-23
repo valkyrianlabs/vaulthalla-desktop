@@ -128,6 +128,9 @@ public final class PairingClient: Sendable {
         /// An approval key to register with the pairing (`approval_key`, its SPKI DER); nil: none. An AI app's own
         /// pairing never carries one.
         public var approvalKeySPKI: Data?
+        /// The scope to ask for (`scope`, server 1.23 with `device.scope`); nil asks none (no limit beyond the account).
+        /// Only an AI app's own pairing asks for one, and only of a node that announced the capability.
+        public var scope: DeviceScope?
         /// Wait after an immediate `pending` before asking again (docs/pairing.md §3).
         public var statusPause: Duration = .seconds(2)
         /// A `pending` that came back faster than this was not held by the daemon (no long poll).
@@ -264,7 +267,10 @@ private struct Attempt {
                         payload: .init(
                             name: String(configuration.deviceName.prefix(64)), platform: configuration.platform,
                             appVersion: configuration.appVersion, commitment: Hex.encode(commitment),
-                            approvalKey: configuration.approvalKeySPKI.map { .value($0.base64EncodedString()) }),
+                            approvalKey: configuration.approvalKeySPKI.map { .value($0.base64EncodedString()) },
+                            scope: configuration.scope.flatMap {
+                                Ws.Device.Pair.Request.Payload.Scope(rawValue: $0.rawValue)
+                            }.map { .value($0) }),
                         timeout: configuration.requestTimeout)
                 }
                 guard let serverNonce = Hex.decode(request.nonceServer, length: PairingCode.nonceLength) else {

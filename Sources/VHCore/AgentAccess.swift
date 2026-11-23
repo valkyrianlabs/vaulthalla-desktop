@@ -53,10 +53,13 @@ public struct AgentAccess: Codable, Equatable, Sendable {
         public var own: Bool
         /// Node ids where the person chose this Mac's pairing for the app.
         public var macPairing: [String]
+        /// The scope the app's own pairings ask for; nil: ``AgentAccess/defaultScope``.
+        public var scope: DeviceScope?
 
-        public init(own: Bool, macPairing: [String] = []) {
+        public init(own: Bool, macPairing: [String] = [], scope: DeviceScope? = nil) {
             self.own = own
             self.macPairing = macPairing
+            self.scope = scope
         }
     }
 
@@ -123,6 +126,20 @@ public struct AgentAccess: Codable, Equatable, Sendable {
         return choice.macPairing.contains(node.rawValue)
     }
 
+    /// What a new AI app's own pairings ask for.
+    public static let defaultScope = DeviceScope.read
+
+    /// The scope the app's own pairings ask for.
+    public func scope(for client: AgentClient) -> DeviceScope {
+        pairing[client.rawValue]?.scope ?? Self.defaultScope
+    }
+
+    public mutating func setScope(_ scope: DeviceScope, for client: AgentClient) {
+        var choice = pairing[client.rawValue] ?? PairingChoice(own: false)
+        choice.scope = scope
+        pairing[client.rawValue] = choice
+    }
+
     /// Whether the app gets its own pairing on each node.
     public func prefersOwnPairing(_ client: AgentClient) -> Bool {
         pairing[client.rawValue]?.own == true
@@ -131,10 +148,12 @@ public struct AgentAccess: Codable, Equatable, Sendable {
     /// On: the app gets its own pairing on each node (this Mac's only where chosen per node). Off: this Mac's
     /// pairing wherever the app has none of its own, as before.
     public mutating func setOwnPairing(_ own: Bool, for client: AgentClient) {
+        let scope = pairing[client.rawValue]?.scope
         if own {
-            pairing[client.rawValue] = PairingChoice(own: true, macPairing: pairing[client.rawValue]?.macPairing ?? [])
+            pairing[client.rawValue] = PairingChoice(own: true, macPairing: pairing[client.rawValue]?.macPairing ?? [],
+                                                     scope: scope)
         } else {
-            pairing[client.rawValue] = nil
+            pairing[client.rawValue] = scope.map { PairingChoice(own: false, scope: $0) }
         }
     }
 

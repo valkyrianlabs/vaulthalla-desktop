@@ -17,12 +17,16 @@ public struct AgentIdentity: Codable, Hashable, Sendable {
     /// identity doesn't depend on the Mac's record staying paired.
     public var serverSPKISHA256: Data
     public var pairedAt: Date
+    /// The scope the node confirmed when it paired (``DeviceScope``); nil: the node couldn't limit it (an older server),
+    /// or it was paired before scopes. What the node reports now (`device.list`) is what the app shows.
+    public var scope: DeviceScope?
     /// When the owner found the node no longer accepts it. Set, the node is unavailable to the app (never this Mac's
     /// pairing instead) until the person pairs it again or chooses this Mac's pairing.
     public var refusedAt: Date?
 
     public init(deviceID: String, deviceName: String, certificate: Data, serverSPKISHA256: Data, pairedAt: Date,
-                refusedAt: Date? = nil) {
+                scope: DeviceScope? = nil, refusedAt: Date? = nil) {
+        self.scope = scope
         self.deviceID = deviceID
         self.deviceName = deviceName
         self.certificate = certificate
@@ -34,6 +38,39 @@ public struct AgentIdentity: Codable, Hashable, Sendable {
     /// The keychain tag of the app's key for the node, beside the Mac's (`<node id>`).
     public static func keyTag(node: NodeID, client: AgentClient) -> String {
         "\(node.rawValue).agent.\(client.rawValue)"
+    }
+}
+
+/// How much a paired device may do on the node (server 1.23, capability `device.scope`): a ceiling over its user's
+/// permissions, never more than the account has. `destructive` is what every pairing could do before scopes. This Mac's
+/// own pairing is never scoped by Desktop; only AI apps' own pairings ask for one.
+public enum DeviceScope: String, Codable, CaseIterable, Comparable, Sendable, Identifiable {
+    case read
+    case write
+    case destructive
+
+    public var id: String { rawValue }
+
+    public static func < (lhs: DeviceScope, rhs: DeviceScope) -> Bool {
+        allCases.firstIndex(of: lhs)! < allCases.firstIndex(of: rhs)!
+    }
+
+    public var displayName: String {
+        switch self {
+        case .read: "Read only"
+        case .write: "Read and change"
+        case .destructive: "Everything"
+        }
+    }
+
+    /// What it means, for the person choosing.
+    public var explanation: String {
+        switch self {
+        case .read: "It can list and read, and the node refuses anything that changes data."
+        case .write: "It can also create, edit and move, but the node refuses destructive commands."
+        case .destructive:
+            "It can do anything the account can, destructive commands included (they still wait for your approval)."
+        }
     }
 }
 

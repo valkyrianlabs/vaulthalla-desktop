@@ -11,7 +11,7 @@ public protocol AgentPairingDevice: Sendable {
     /// Pairs `identity` over a pairing-only connection pinned to `serverPin` from the first byte, and streams the
     /// states until a final one. Dropping the stream cancels the attempt.
     func pair(identity: DeviceIdentity, endpoint: NodeEndpoint, serverPin: Data, deviceName: String,
-              appVersion: String) -> AsyncStream<PairingClient.State>
+              appVersion: String, scope: DeviceScope?) -> AsyncStream<PairingClient.State>
 }
 
 /// The real device side: ``PairingClient`` with the pin as a pairing link's (`expectedServerSPKI`), so a server
@@ -20,11 +20,12 @@ public struct PairingClientDevice: AgentPairingDevice {
     public init() {}
 
     public func pair(identity: DeviceIdentity, endpoint: NodeEndpoint, serverPin: Data, deviceName: String,
-                     appVersion: String) -> AsyncStream<PairingClient.State> {
+                     appVersion: String, scope: DeviceScope?) -> AsyncStream<PairingClient.State> {
         var configuration = PairingClient.Configuration(endpoint: endpoint, deviceName: deviceName,
                                                         appVersion: appVersion)
         configuration.expectedServerSPKI = serverPin
         configuration.approvalKeySPKI = nil
+        configuration.scope = scope
         let client = PairingClient(identity: identity, configuration: configuration)
         let inner = client.start()
         return AsyncStream { continuation in
@@ -82,6 +83,8 @@ public struct AgentPairing: Sendable {
         case keychain(String)
         /// A refusal in the node's words.
         case refused(String)
+        /// The node didn't apply the scope asked for; the device was revoked.
+        case scopeNotApplied(String)
 
         public var description: String {
             switch self {
@@ -104,6 +107,7 @@ public struct AgentPairing: Sendable {
             case .expired: "The pairing request expired."
             case .keychain(let why): "The key couldn't be created: \(why)"
             case .refused(let text): text
+            case .scopeNotApplied(let what): "The node didn't limit it as asked (\(what)), so the pairing was undone."
             }
         }
     }
@@ -135,9 +139,11 @@ public struct AgentPairing: Sendable {
         String("\(client.displayName) on \(macName)".prefix(64))
     }
 
-    /// Pairs the app's new key with `node`; the record to save under `node.agentIdentities[client]`.
-    public func pair(_ node: Node, client: AgentClient, macName: String, appVersion: String) async
-        -> Result<AgentIdentity, Failure>
+    /// Pairs the app's new key with `node`; the record to save under `node.agentIdentities[client]`. `scope` is asked
+    /// for and approved only when the node announces `device.scope`; otherwise the pairing is unscoped and the
+    /// record's `scope` is nil (the app says the node can't limit it). The Mac's own pairing never goes through here.
+    public func pair(_ node: Node, client: AgentClient, macName: String, appVersion: String,
+                     scope: DeviceScope? = nil) async -> Result<AgentIdentity, Failure>
     {
         guard keys.role == .owner else { return .failure(.notOwner) }
         guard case .paired(let pin, let macDeviceID, _) = node.pairing, let serverNodeID = node.serverNodeID,
@@ -153,11 +159,12 @@ public struct AgentPairing: Sendable {
         let tag = AgentIdentity.keyTag(node: node.id, client: client)
         let name = Self.deviceName(for: client, macName: macName)
         let progress = Progress()
+        let limit: DeviceScope? = if let scope, await session.capabilitySupport(.deviceScope) == .yes { scope } else { nil }
 
         let outcome: Result<AgentIdentity, Failure> = await withTaskGroup { group in
             group.addTask {
-                await exchange(node, pin: pin, tag: tag, name: name, appVersion: appVersion, signer: signer,
-                               context: context, progress: progress)
+                await exchange(node, pin: pin, tag: tag, name: name, appVersion: appVersion, scope: limit,
+                               signer: signer, context: context, progress: progress)
             }
             group.addTask {
                 try? await Task.sleep(for: timeout)
@@ -190,7 +197,7 @@ public struct AgentPairing: Sendable {
     }
 
     private func exchange(_ node: Node, pin: Data, tag: String, name: String, appVersion: String,
-                          signer: any ApprovalSigner, context: ApprovalContext, progress: Progress) async
+                          scope: DeviceScope?, signer: any ApprovalSigner, context: ApprovalContext, progress: Progress) async
         -> Result<AgentIdentity, Failure>
     {
         // 1. The window, on this Mac's session.
@@ -214,7 +221,7 @@ public struct AgentPairing: Sendable {
 
         // 3. The new key's side, until it shows its code.
         let states = device.pair(identity: identity, endpoint: node.endpoint, serverPin: pin, deviceName: name,
-                                 appVersion: appVersion)
+                                 appVersion: appVersion, scope: scope)
         var iterator = states.makeAsyncIterator()
         var code: PairingCode?
         while code == nil {
@@ -242,16 +249,26 @@ public struct AgentPairing: Sendable {
         guard request.approvalKeyPresent != true else {
             return .failure(.unexpectedRequest("it carries an approval key"))
         }
+        if let scope, request.requestedScope != scope.rawValue {
+            return .failure(.unexpectedRequest("it asks for \(request.requestedScope ?? "no") scope, not \(scope.rawValue)"))
+        }
         guard request.codeChoices.contains(where: { Self.digits($0) == code.digits }) else {
             return .failure(.codeMismatch)
         }
 
         // 5. Approve with this Mac's approval key (the device.trust step-up: Touch ID or the Mac's password).
+        // The scope goes with the approval too: the node binds it into the step-up's target, so the approval key signs
+        // for exactly this scope.
+        let approvedScope: String?
         do {
-            _ = try await DeviceApproval.send(Ws.Device.Pairing.Approve.self,
-                                              payload: .init(requestID: request.requestID, code: code.digits),
-                                              signer: signer, context: context, via: session)
+            let approved = try await DeviceApproval.send(
+                Ws.Device.Pairing.Approve.self,
+                payload: .init(requestID: request.requestID, code: code.digits,
+                               scope: scope.flatMap { Ws.Device.Pairing.Approve.Payload.Scope(rawValue: $0.rawValue) }
+                                   .map { .value($0) }),
+                signer: signer, context: context, via: session)
             progress.update { $0.approvedDeviceID = identity.deviceID }
+            approvedScope = approved.device.scope
         } catch let error as DeviceApprovalError {
             switch error {
             case .consoleApprovalRequired, .keyUnavailable: return .failure(.noApprovalKey)
@@ -274,9 +291,13 @@ public struct AgentPairing: Sendable {
                 guard deviceID == identity.deviceID, serverSPKI == pin, nodeID == node.serverNodeID else {
                     return .failure(.unexpectedRequest("the node approved another device or answered as another node"))
                 }
+                if let scope, approvedScope != scope.rawValue {
+                    return .failure(.scopeNotApplied("it reports \(approvedScope ?? "no") scope"))
+                }
                 return .success(AgentIdentity(deviceID: identity.deviceID, deviceName: name,
                                               certificate: identity.certificateDER, serverSPKISHA256: pin,
-                                              pairedAt: Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down))))
+                                              pairedAt: Date(timeIntervalSince1970: Date().timeIntervalSince1970.rounded(.down)),
+                                              scope: scope))
             case .denied: return .failure(.denied)
             case .expired: return .failure(.expired)
             case .failed(let failure): return .failure(.pairing(failure))

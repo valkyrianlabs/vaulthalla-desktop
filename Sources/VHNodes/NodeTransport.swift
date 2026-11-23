@@ -13,11 +13,16 @@ public protocol NodeTransport: Sendable {
     /// Whether the node has the command, as its session negotiated (`meta.hello`): ask before sending a command an
     /// older node may lack, and fall back to `WsError.isUnknownCommand` while it is unknown (a legacy node).
     func commandSupport(_ command: WsCommand) async -> ProtocolSupport
+
+    /// Whether the node announced `capability` in `meta.hello` (unknown: a legacy node, or not negotiated yet).
+    func capabilitySupport(_ capability: WsCapability) async -> ProtocolSupport
 }
 
 extension NodeTransport {
     /// Transports without a negotiation (previews, test stubs) don't know.
     public func commandSupport(_ command: WsCommand) async -> ProtocolSupport { .unknown }
+
+    public func capabilitySupport(_ capability: WsCapability) async -> ProtocolSupport { .unknown }
 
     /// Transports that never carry key material (previews, test stubs) refuse.
     public func sendSensitive(_ command: WsCommand, payload: SecretBytes) async throws(WsError) -> SecretBytes {
@@ -37,6 +42,10 @@ extension NodeSession: NodeTransport {
 
     public nonisolated func commandSupport(_ command: WsCommand) async -> ProtocolSupport {
         await supports(command: command)
+    }
+
+    public nonisolated func capabilitySupport(_ capability: WsCapability) async -> ProtocolSupport {
+        await supports(capability: capability)
     }
 
     public nonisolated func sendSensitive(_ command: WsCommand, payload: SecretBytes) async throws(WsError) -> SecretBytes {
@@ -67,5 +76,10 @@ public struct SessionTransport: NodeTransport {
     public func commandSupport(_ command: WsCommand) async -> ProtocolSupport {
         guard let session = await session() else { return .unknown }
         return await session.supports(command: command)
+    }
+
+    public func capabilitySupport(_ capability: WsCapability) async -> ProtocolSupport {
+        guard let session = await session() else { return .unknown }
+        return await session.supports(capability: capability)
     }
 }
