@@ -1,10 +1,10 @@
 {
   "server_version": "1.23.0",
-  "server_commit": "20097378",
-  "server_branch": "feat/scoped-devices (unmerged)",
+  "server_commit": "88b91d1d",
+  "server_branch": "main",
   "source": "web/src/util/generated/wsContract.json",
   "contract_version": 3,
   "ws_hash": "1f51b7b7f54eb58af8b8e8946500a850d05cecf5bf28c78b4f00581cceef8038",
   "models_hash": "c57d7e5de2e83617ae11ec95f742862de76f1fb52ba7c46baf711d2af31ee939",
-  "note": "UNMERGED server commit 20097378 (vaulthalla-server#464, feat/scoped-devices: device scopes, capability device.scope). Every scope member is optional and gated on device.scope; older servers keep working against the 1.22.2 baseline."
+  "note": "server main 88b91d1d (#464, scoped devices); the generated contract is byte for byte what feat/scoped-devices 20097378 produced"
 }
