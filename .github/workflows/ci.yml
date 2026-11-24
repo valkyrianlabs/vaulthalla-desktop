@@ -69,6 +69,9 @@ jobs:
         run: tools/vaultfmt/build-vlvaultfmt.sh
       - name: Package tests
         run: swift test
+      # Optimized code only: the Recovery Keys poll's task-group child was miscompiled at -O (KeyStatusPollTests).
+      - name: Recovery Keys poll, optimized
+        run: swift test -c release --filter KeyStatusPollTests
       - name: App build (unsigned)
         run: |
           xcodebuild -project App/Vaulthalla.xcodeproj -scheme Vaulthalla -configuration Debug \
