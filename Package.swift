@@ -146,6 +146,11 @@ let package = Package(
         ),
         .testTarget(name: "VHAgentsTests", dependencies: ["VHAgents", "VHCore"], swiftSettings: strict),
         .testTarget(
+            name: "VHKeyBackupTests",
+            dependencies: ["VHKeyBackup", "VHNodes", "VHCore", "VHContract", "VHTransport"],
+            swiftSettings: strict
+        ),
+        .testTarget(
             name: "VHFinderTests",
             dependencies: ["VHFinder", "VHCore", "VHContract", "VHTransport", "VHIdentity", "VHNodes"],
             swiftSettings: strict

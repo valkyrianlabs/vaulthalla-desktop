@@ -150,24 +150,13 @@ final class RecoveryKeysModel {
     /// Asks every connected node for its key status.
     func pollNodes() async {
         lastPoll = .now
-        await withTaskGroup(of: (NodeID, Result<[WsModel.VaultKeyStatus], WsError>).self) { group in
-            for node in connectedNodes {
-                if nodeKeys[node.id] == nil { nodeKeys[node.id] = .loading }
-                let transport = node.transport
-                let id = node.id
-                group.addTask {
-                    do throws(WsError) {
-                        return (id, .success(try await VaultKeyCommands(transport).status()))
-                    } catch {
-                        return (id, .failure(error))
-                    }
-                }
-            }
-            for await (id, result) in group {
-                switch result {
-                case .success(let statuses): nodeKeys[id] = .loaded(statuses, at: .now)
-                case .failure(let error): nodeKeys[id] = .failed(error, last: lastStatuses(id))
-                }
+        let nodes = connectedNodes
+        for node in nodes where nodeKeys[node.id] == nil { nodeKeys[node.id] = .loading }
+        // KeyStatusPoll, not a task group here: the group child this had was miscompiled (see KeyStatusPoll.run).
+        await KeyStatusPoll.run(nodes) { id, result in
+            switch result {
+            case .success(let statuses): nodeKeys[id] = .loaded(statuses, at: .now)
+            case .failure(let error): nodeKeys[id] = .failed(error, last: lastStatuses(id))
             }
         }
         await notifyIfNeeded()
