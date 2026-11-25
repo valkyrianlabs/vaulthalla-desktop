@@ -32,6 +32,8 @@ final class AppModel {
     @ObservationIgnored private(set) var cloud: CloudModel?
     /// AI apps' own pairings and switches (Settings → Agents, a node's Devices page).
     let agents = AgentPairingCoordinator()
+    /// Linked servers across the paired nodes (All Nodes; experimental, hidden while no node has it on).
+    let linkedServers = LinkedServersModel()
     var selectedNodeID: NodeID?
     var selectedSection: NodeSection = .overview
     /// Which page of the Overview shows, and the panel and metric a followed warning points at.
@@ -138,6 +140,7 @@ final class AppModel {
         loadNodes()
         recoveryKeys.app = self
         agents.app = self
+        linkedServers.app = self
         if let keys {
             let cloud = CloudModel(lease: store.lease)
             if cloud.isVisible {
@@ -605,6 +608,11 @@ final class AppModel {
         #endif
         guard let sessions, sessions.session(for: id) != nil else { return nil }
         return SessionTransport { [weak sessions] in sessions?.session(for: id) }
+    }
+
+    /// A node's live session as a transport (or PREVIEW DATA), nil while it has none: linked servers.
+    func transport(for id: NodeID) -> (any NodeTransport)? {
+        keyTransport(for: id)
     }
 
     /// ⌘R: refetch what the selected node's visible section shows.

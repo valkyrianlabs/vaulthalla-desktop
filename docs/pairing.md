@@ -212,3 +212,22 @@ signature 30440220768b64330311652f611615e15e6260f1bd4bc913557e19aaa5a45a4f16fde1
 ECDSA signatures are randomized: implementations MUST verify this signature and produce their own, never compare
 signature bytes. The values were computed with Python's `hashlib` and `cryptography`; `Tests/VHIdentityTests` asserts
 all of them, and the daemon's unit tests should too.
+
+## 9. Linking two servers through Desktop
+
+Servers pair with each other by the server's own protocol (its design/peers/link.md: a `vh/peer/*` commitment, a
+code over both pinned keys and both peer cards, three choices on the accepting side). Desktop takes no part in that
+handshake; it drives the two owners' sides over its own Device sessions (`VHNodes.ServerLinking`, docs/architecture.md
+§3, "Linked servers"), which is what makes it free of trust on first use:
+
+- the dialling server is told the accepting server's key (`peer.link.start` `expect_spki` = this Mac's pin for it) and
+  refuses any other at the handshake;
+- the accepting server's request must come from this Mac's pin for the dialling server, and `peer.pairing.approve`
+  carries that pin as `expect_spki`, which the server checks before the code;
+- the code is compared by machine: the dialling server's code (`peer.link.status`) must be one of the accepting
+  server's three choices (`peer.pairing.pending`), and the server checks it again. A relay on the servers' leg holds
+  another key, so it is refused at the handshake or by `expect_spki` before any code matters; a request that fails
+  either check is denied.
+
+Both servers record `compared_by: desktop`. Desktop never sees or shows a code to a person and never computes one (it
+has neither nonce), so the server's vector file `core/test-assets/peer/pairing-vectors.json` has no Desktop test.

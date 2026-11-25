@@ -27,6 +27,11 @@ public enum WsAuth: String, Sendable, CaseIterable {
     case pending
     /// A signed-in user who must enroll a second factor before anything else (server 1.22: `auth.mfa.*.enroll.*`).
     case enrollment
+    /// The dialling server of a server link, on a pairing-only connection of the other server's device listener
+    /// (server 1.26: `peer.pair.*`). Desktop never sends these.
+    case peerPairing = "peer_pairing"
+    /// A linked server's own Peer session (server 1.26: `peer.hello`, `peer.ping`, ...). Desktop never sends these.
+    case peer
 }
 
 /// The payload of a command whose handler reads nothing from it (contract input `none` or `token`). It is sent as

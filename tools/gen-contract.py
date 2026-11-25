@@ -75,7 +75,8 @@ MODELS_FILE_LINES = 2500
 CONTRACT_VERSIONS = {2, 3}
 # The member a relaxed field carries in the (copied) contract while it is generated.
 RELAXED = "_relaxed_by_baseline"
-AUTH_LEVELS = {"public", "session", "human", "share", "pairing", "device", "any", "pending", "enrollment"}
+AUTH_LEVELS = {"public", "session", "human", "share", "pairing", "device", "any", "pending", "enrollment",
+               "peer_pairing", "peer"}
 INPUTS = {"payload", "none", "token"}
 
 SWIFT_KEYWORDS = {
@@ -1030,7 +1031,7 @@ def generate_contract_swift(book: Book, text: str) -> str:
 
     out += ["", "    /// What the session must be before the router runs the command.",
             "    public var auth: WsAuth {"]
-    out += grouped_switch(commands, lambda c: c.raw["auth"], lambda v, i: [" " * i + f".{escaped(v)}"], 8)
+    out += grouped_switch(commands, lambda c: c.raw["auth"], lambda v, i: [" " * i + f".{escaped(value_name(v))}"], 8)
     out += ["    }", "",
             "    /// How long a client waits before reporting \"no answer yet\" (never \"failed\": the daemon may",
             "    /// still be working on it).",

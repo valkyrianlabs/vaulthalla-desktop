@@ -155,6 +155,14 @@ then signs this Mac out of every node, revokes it there, deletes its keys and re
 Out** does the same at any time. Settings ▸ General ▸ Security can ask for Touch ID before Recovery Keys,
 Credentials and Access show.
 
+**Linked servers (experimental).** A server with `peers.experimental: true` in its config.yaml can be linked with
+another: a pinned, encrypted connection between the two, which will carry mirrored vaults later (it carries nothing
+yet). When two of your paired nodes have it on, All Nodes offers **Link Servers…**: pick the two, confirm once, and
+Desktop links them over its own connections, comparing the code against the keys it already trusts, so there is no
+number to read. You must be a super admin on both, and one of them must be able to reach the other. All Nodes then
+lists each node's linked servers and their health, with Rename and Unlink. Agents can't link servers. Design:
+[`docs/architecture.md`](docs/architecture.md) §3, "Linked servers".
+
 On a node that supports them (server 1.20), uploads go in resumable parts: Retry, a dropped route or quitting the app
 picks an upload up where the node left it, and the part size and parts in flight adapt to the link. The node's
 Overview has a Connection panel: the route in use, its round trip, live throughput and tuning, an Automatic tuning
