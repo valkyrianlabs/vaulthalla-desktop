@@ -7,6 +7,13 @@ import VHNodes
 /// back. Every figure is a node's own answer; totals add up only what the nodes reported.
 struct AllNodesView: View {
     @Environment(AppModel.self) private var model
+    /// The Link Servers sheet, and the node it was opened from.
+    @State private var linking: LinkRequest?
+
+    private struct LinkRequest: Identifiable {
+        var node: NodeID?
+        var id: String { node?.rawValue ?? "" }
+    }
 
     var body: some View {
         ScrollView {
@@ -14,8 +21,15 @@ struct AllNodesView: View {
                 SectionHeader(eyebrow: "Vaulthalla", title: "All Nodes",
                               subtitle: "Every Vaulthalla server this Mac knows about, live.") {
                     if !model.nodes.isEmpty {
-                        Button("Add Node…", systemImage: "plus") { model.presentAddNode() }
-                            .controlSize(.small)
+                        HStack(spacing: 8) {
+                            // Experimental and off by default on the servers: offered only once two nodes have it on.
+                            if model.linkedServers.canLink {
+                                Button("Link Servers…", systemImage: "link") { linking = LinkRequest() }
+                                    .controlSize(.small)
+                            }
+                            Button("Add Node…", systemImage: "plus") { model.presentAddNode() }
+                                .controlSize(.small)
+                        }
                     }
                 }
 
@@ -50,6 +64,10 @@ struct AllNodesView: View {
                         FleetAlertsPanel(alerts: summary.alerts)
                     }
 
+                    if model.linkedServers.isVisible {
+                        LinkedServersPanel { node in linking = LinkRequest(node: node) }
+                    }
+
                     // Nodes with figures first, in sidebar order; those without (unpaired, revoked, offline before
                     // their first answer) below, so their short cards don't leave gaps between the full ones.
                     let live = pulses.filter { $0.pulse != nil }
@@ -73,6 +91,10 @@ struct AllNodesView: View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .scrollContentBackground(.hidden)
+        .task { await model.linkedServers.watch() }
+        .sheet(item: $linking) { request in
+            LinkServersSheet(preselected: request.node)
+        }
     }
 
     private func cards(_ entries: [(node: Node, pulse: NodePulse?)]) -> some View {
