@@ -522,6 +522,75 @@ docs/                   this plan, the pairing protocol, release notes
     23. This Mac's own pairing is never scoped. Undo: none intended; it would mean passing `scope` in `PairingFlow`.
     24. The generator renames members Swift can't store (`self`, `Self`, `init`, `Type`) with a `Value` suffix. Undo:
         drop `UNUSABLE_MEMBERS` in `tools/gen-contract.py` (the contract then doesn't compile).
+- **Linked servers** (experimental; the server's design/peers/link.md, phase 1a, server main cc41d5d4). Two
+  Vaulthalla servers can be linked: a long-lived, mutually pinned connection between them, which later carries mirrored
+  vaults (it carries nothing yet). The feature is off on a server until `peers.experimental: true` is set in its
+  config.yaml; then every `peer.*` command answers, otherwise `peers_experimental`. Desktop brokers the link between two
+  servers it is paired with, so nothing trusts a key on first use and no number is shown to anyone.
+  - **Who.** A person, in the app, on this Mac's own full-access, directly connected Device session, as a super admin
+    on both servers. The servers decide it on RBAC alone (no step-up for such a device, decision 2 of link.md; refused
+    during the account's recovery cooldown, `recovery_cooldown`). Agents, scoped AI app pairings and relayed sessions
+    are refused by the server (`peer_forbidden`), and the bridge offers no way to try (§5).
+  - **Preconditions** (`ServerLinking.check`, before anything is opened): both nodes paired, different servers
+    (pins and server ids), and `peer.list` answering on each. Its refusals are exactly the server's linking checks, in
+    order: `peers_experimental` (switched off: "set `peers.experimental: true` in that server's config.yaml and restart
+    it"), `denied` (not a super admin), `peer_forbidden` (not a full-access, direct device); no `peer.*` commands
+    (`meta.hello`, else "Unknown command") is an older server; offline is offline. Each failure names the node. A link
+    both already record is "already linked"; one only one side records is offered for unlinking (below).
+  - **The exchange** (`VHNodes.ServerLinking`, link.md "Desktop-brokered, in full"): `peer.pairing.open` on the
+    accepting server (its answer's key and node id must be this Mac's pin and record for it); `peer.link.start` on the
+    dialling one with the accepting server's endpoints and `expect_spki` = this Mac's pin for it; `peer.link.status`
+    until it shows its code (the peer it reached must carry that pin and node id); `peer.pairing.pending` on the
+    accepting server must list a request from this Mac's pin for the dialling server (a request in its name from
+    another key is denied: `wrongKey`) whose three `code_choices` include the dialling server's code (else denied:
+    `codeMismatch`); `peer.pairing.approve {request_id, code, expect_spki}` with that pin (the server checks the key
+    before the code); `peer.link.status` until `linked`; `peer.pairing.close`. Both rows record `compared_by: desktop`.
+    A 300 s deadline covers everything.
+  - **Which server dials.** The accepting server must be reachable from the dialling one. The one advertising the more
+    reachable address class (`Node.endpoints`, loopback never counts) accepts first; on a tie the first picked dials.
+    The endpoints passed are this Mac's configured address for the accepting server (unless it is this Mac), then
+    everything it advertises (`peer.pairing.open`'s `endpoints` and the saved `device.endpoints`), same network first
+    and loopback last (it only helps when both run on one host), at most 32. A dial that reaches nothing ends `failed`
+    with no `address`: that direction is undone (attempt finished, window closed) and the other is tried; if neither
+    reaches, "they need a route to each other: the same network, a VPN, or a forwarded port on one of them", with the
+    dialling servers' reasons. A dial that reached the other server and failed there is a failure, not a direction.
+  - **Undoing.** Every failure, timeout and cancellation (the caller's task) runs the clean-up outside the cancelled
+    task: the dial cancelled (`peer.link.cancel`) unless it was approved, a seen request denied, the window closed
+    (which expires any request this Mac never saw). After an approval the dial is never cancelled: the clean-up waits
+    up to 10 s for the dialling server to record the link (then it is linked after all) or to fail; if it failed, the
+    accepting server holds a row the other lacks (the server documents this), returned as `halfLinked` for the sheet to
+    offer Unlink there. `LinkedServers.oneSided` finds the same from both nodes' `peer.list` for All Nodes.
+  - **UI** (All Nodes; `LinkedServersModel`, `LinkedServersPanel`, `LinkServersSheet`). Nothing shows while no node
+    reports the feature on (`LinkedServers.availability`: on, or on but not permitted; off, older and unreachable
+    nodes show nothing), polled every 15 s while All Nodes shows. With one or more: a "Linked servers" panel, marked
+    Experimental, per such node its links (connected or not and since when, which side dialled, round trip, version,
+    who compared the code) with Rename… (that node's name for it only) and Unlink… (confirmed; the other side is told
+    and unlinks too), and any one-sided link with Unlink. With two or more: Link Servers… in the header (and Link… per
+    node, pre-filled), one sheet: pick two, one confirmation ("Link vps and Mac Studio? Each will keep a pinned,
+    encrypted connection to the other, checked by key, so that later it can receive the vaults you mirror to it.
+    Nothing is mirrored yet: for now the link carries nothing."), progress, then the result or the reason.
+  - **Contract.** Vendored from server main cc41d5d4 (1.26.2): it adds the `peer.*` family with two auth levels,
+    `peer_pairing` and `peer` (server-to-server only; `WsAuth.peerPairing`, `.peer`), which the generator now names in
+    Swift style. The compatibility baseline is unchanged.
+  - **Pairing code.** Desktop never computes the server pairing code (it has neither side's nonce): it compares the
+    dialling server's code with the accepting server's three choices and lets the accepting server check it again, so
+    the published vector (`core/test-assets/peer/pairing-vectors.json`) has no Desktop counterpart.
+  - **Decisions** (each with its undo):
+    1. The more reachable server (by advertised class) accepts first. Undo: always let the first picked dial in
+       `ServerLinking.bothWays`.
+    2. Only a dial that never connected (`failed` without `address`, including the wrong key at an address) counts as
+       unreachable and tries the other direction. Undo: retry on every `failed` in `ServerLinking.direction`.
+    3. This Mac's configured address for the accepting server goes first in the endpoints. Undo: drop it in
+       `ServerLinking.endpoints`.
+    4. A request in the dialling server's name from another key fails the whole attempt (denied), rather than waiting
+       for the right one. Undo: keep polling in `findRequest`.
+    5. After an approval the dial is never cancelled; a late record still counts as linked. Undo: cancel in `undo`
+       regardless of `approved`.
+    6. Availability is polled every 15 s while All Nodes shows. Undo: change `LinkedServersModel.watch`.
+    7. The feature is hidden on a node that is off, older or unreachable; shown (with the reason) when the account
+       may not link there. Undo: `ServerLinkAvailability.isOn`.
+    8. The sheet's wording replaces link.md's "Each will be able to receive the vaults you mirror to it" with what the
+       link is today. Undo: the text in `LinkServersSheet.choose`.
 - **Signing and the shared container** (desktop#4; evidence from the desktop#2 spike). The File Provider extension
   is sandboxed and must read the same registry and device keys as the app, so signed builds share an App Group and a
   keychain access group.
@@ -675,7 +744,10 @@ There is no device-scoped permission system.
     definitions and a note naming their nodes; a call reaches only the nodes that define it that way, so annotations
     are never merged. The bridge adds no tool besides `nodes_list`, never one the daemon doesn't offer, and drops
     (defensively; the daemon never offers them) tools named for key or secret export/import, and refuses `vh_run`
-    command lines that would export or import keys.
+    command lines that would export or import keys. Likewise for linked servers ("Linked servers" in §3): no tool
+    named for peers (`peer_*`, `peers_*`) is listed, and a `command` (`vh_run`, `vh_read`, `vh_help`) starting with
+    `peer` (or `vh peer`) is refused before it reaches a node (`ToolCatalog.isServerLinking`, pinned by
+    `BridgeTests.serverLinkingNeverReachesANode`); the node refuses agents with `peer_forbidden` anyway.
   - **Calls.** `tools/call` goes to the named node's `/mcp` with the arguments minus `node`; the node's result
     (`isError`, structured `needs_confirmation`) or JSON-RPC error comes back verbatim, so the destructive gate and
     confirmations work exactly as with `vh mcp`.

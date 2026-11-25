@@ -33,6 +33,14 @@ opt-in: without `VH_LIVE_NODE` every test in it is skipped, so `swift test` and 
 | `anAIAppsOwnPairingIsHeldToItsScope` | (a server with `device.scope`, 1.23) Codex pairs asking read: approved read, `device.list` reports read, this Mac's own pairing isn't scoped; its own ws session gets `device_scope` for a write, its `/mcp` answers a `vh_run` write with the "read-only" error result while `vh_read` runs; widening to write without the approval key is refused, with it allowed; narrowing back needs nothing |
 | `withoutAnApprovalKeyNothingIsLeftBehind` | this Mac paired without an approval key: the attempt stops with "no approval key", the new key is deleted, no request pending, the window closed, no new device |
 
+`LiveServerLinkTests` covers linking two servers through Desktop (docs/architecture.md §3, "Linked servers"). It needs
+two instances of a server with `peer.*` (server main cc41d5d4 or later), each started with `peers: {experimental: true}`
+in its config.yaml (below), and runs only with `VH_LIVE_LINK_A` and `VH_LIVE_LINK_B` set:
+
+| Test | Steps |
+|---|---|
+| `linksTwoServersBothWaysAndUnlinksThem` | 1. This Mac pairs with each instance as its super admin (`vh-admin device pair`, the code compared through `vh` as `LocalPairing` does) and brings up a `NodeSession` on each. 2. `LinkedServers.availability` reports both on, with no links. 3. `ServerLinking` links them with A dialling B: `vh peer list` on both shows one live row for the other's key, connected, `compared_by: desktop`, with the other's node id; Desktop's own `peer.list` view agrees; linking again is "already linked". 4. Rename on A (A's `vh peer list` shows the new name), then `LinkedServers.unlink` on A: both sides revoked (B was told). 5. The same with A advertising a public class, so B dials A; unlink from B. 6. Neither instance has a window or a request left; both devices are revoked |
+
 `LiveTransferTests` covers direct transport (the server's docs/reference/transfer-protocol.md); each test pairs its own
 key and revokes it at the end:
 
@@ -122,6 +130,20 @@ VH_LIVE_NODE=<box address>:36982 swift test --scratch-path .build-interop --filt
 | `VH_LIVE_BENCH` | (unset: skip) | `1` runs `LiveTransferBenchmarks` |
 | `VH_LIVE_BENCH_REPS`, `VH_LIVE_BENCH_MIB` | `2`, `1024` | benchmark repetitions and file size |
 | `VH_LIVE_BENCH_OUT` | (none) | also write the benchmark rows as JSON lines to this file |
+| `VH_LIVE_LINK_A`, `VH_LIVE_LINK_B` | (unset: skip) | the two linked-servers instances' device listeners as this Mac reaches them |
+| `VH_LIVE_LINK_RUN_A`, `VH_LIVE_LINK_RUN_B` | `/tmp/vhi_link_a`, `/tmp/vhi_link_b` | their run directories on the box |
+
+Linked servers need two instances with the switch on (they may run on the same box; each dials the other's LAN
+address, or loopback):
+
+```sh
+ssh dev 'cd <server-checkout> && sudo VHI_RUN=/tmp/vhi_link_a bash vh-instance.sh up build-interop 36983 &&
+         sleep 1 && sudo VHI_RUN=/tmp/vhi_link_b bash vh-instance.sh up build-interop 36984 &&
+         for r in a b; do echo "peers: {experimental: true}" | sudo tee -a /tmp/vhi_link_$r/config.yaml >/dev/null;
+           sudo VHI_RUN=/tmp/vhi_link_$r bash vh-instance.sh restart; done'
+VH_LIVE_LINK_A=<box>:36983 VH_LIVE_LINK_B=<box>:36984 swift test --scratch-path .build-interop --filter LiveServerLinkTests
+ssh dev 'for r in a b; do sudo VHI_RUN=/tmp/vhi_link_$r bash ~/work/vh-instance.sh down; done'
+```
 
 Each run pairs fresh keys and revokes them at the end, so the suite can run repeatedly against one instance (a
 pairing window allows five requests and ten per minute per address: wait a minute between rapid reruns).
@@ -198,6 +220,15 @@ tools/interop/finder-e2e.py … --agent --revoke-cmd "<vh device revoke <device 
 | Clean Mac (moved from desktop#10) | a Mac that never ran Desktop: install the cask, sign in, show a vault | the vault is browsable in Finder |
 
 Record each run under "Findings" below and on desktop#9 (date, macOS, Desktop and server versions, node, results).
+
+## Findings: linked servers (2026-11-25, server main cc41d5d4)
+
+- `LiveServerLinkTests` passes against two instances on the dev box (`-O0` build), twice in a row: each run links A to
+  B (A dials B's configured LAN address), unlinks, links B to A, unlinks, in 16-19 s including pairing this Mac with
+  both. Both rows say `compared_by: desktop`; the unlinked side's peer revokes its own row at once.
+- Right after the link comes up `peer.list` reports no round trip yet (`rtt_ms` null): the first `peer.ping` is 30 s
+  later. Both instances report their host name ("dev") as their name, so the rows read "dev"; Rename fixes that per
+  side.
 
 ## Findings: direct transport (2026-10-31, server `feat/direct-transport` 372b5bdb, Desktop `feat/direct-transport`)
 
