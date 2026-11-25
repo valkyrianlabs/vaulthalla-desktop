@@ -1,10 +1,10 @@
 {
-  "server_version": "1.23.0",
-  "server_commit": "88b91d1d",
+  "server_version": "1.26.2",
+  "server_commit": "cc41d5d4",
   "server_branch": "main",
   "source": "web/src/util/generated/wsContract.json",
   "contract_version": 3,
-  "ws_hash": "1f51b7b7f54eb58af8b8e8946500a850d05cecf5bf28c78b4f00581cceef8038",
-  "models_hash": "c57d7e5de2e83617ae11ec95f742862de76f1fb52ba7c46baf711d2af31ee939",
-  "note": "server main 88b91d1d (#464, scoped devices); the generated contract is byte for byte what feat/scoped-devices 20097378 produced"
+  "ws_hash": "965f58905ea791d306bf6136ae93a310ad8c076b070ce871df72a47d959cc7d3",
+  "models_hash": "a973eba373811a2c4c9a0413826290da2c61e0254ec3a5626154023274b4cfb9",
+  "note": "server main cc41d5d4 (#480 merged; the server link, phase 1a: peer.*)"
 }
