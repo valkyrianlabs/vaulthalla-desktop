@@ -267,6 +267,13 @@ final class ScriptedNode: NodeTransport {
         capabilities.withLock { $0[capability.rawValue] } ?? .unknown
     }
 
+    /// What `commandSupport` answers (unknown when unset).
+    let commands = Mutex<[String: ProtocolSupport]>([:])
+
+    func commandSupport(_ command: WsCommand) async -> ProtocolSupport {
+        commands.withLock { $0[command.rawValue] } ?? .unknown
+    }
+
     func stop() { state.withLock { $0.stopped = true } }
 
     func send<R: WsRequest>(_ request: R.Type, payload: R.Payload) async throws(WsError) -> R.Response {
