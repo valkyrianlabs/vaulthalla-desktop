@@ -212,6 +212,40 @@ import VHCore
         #expect(!ToolCatalog.isKeyMaterial(toolName: "users_create"))
     }
 
+    /// Linking servers is decided by a person in the app (the server's design/peers/link.md, "Who may link servers"):
+    /// no tool about it is listed, whatever a node offers, and no command line reaches `vh peer` on a node.
+    @Test func serverLinkingNeverReachesANode() async throws {
+        defer { registry.remove() }
+        let peerTools: [JSONValue] = ["peer_list", "peer_link_start", "peers_pairing_approve", "peer_unlink"].map {
+            ["name": .string($0), "description": "Linked servers.", "inputSchema": ["type": "object"],
+             "annotations": Catalog.annotations("write", title: $0)]
+        }
+        alpha.set { $0.tools = Catalog.standard + peerTools }
+        let client = try client()
+        try await client.initialize()
+        let tools = try await client.tools()
+        #expect(JSONValue.array(tools).toolNames == ["nodes_list", "vh_read", "vh_run", "vaults_delete"])
+
+        for command in ["peer link 10.0.0.2:36972", "peer approve abc --code 123456", "vh peer pair", "PEER LIST",
+                        "peers list", "\"peer\" unlink 1", "peer.link.start"] {
+            for tool in ["vh_run", "vh_read"] {
+                let reply = try await client.call(tool, ["node": "Alpha", "command": .string(command)])
+                #expect(reply["result"]?["isError"] == true, "\(tool) \(command)")
+                #expect(reply["result"]?.text.contains("decided by a person") == true)
+            }
+        }
+        let call = try await client.call("peer_list", ["node": "Alpha"])
+        #expect(call["error"]?["code"] == -32602)
+        #expect(alpha.calls.isEmpty)
+
+        // Commands that merely mention the word still run.
+        let other = try await client.call("vh_read", ["node": "Alpha", "command": "device list --peer"])
+        #expect(other["result"]?["isError"] == false)
+        #expect(ToolCatalog.isServerLinking(toolName: "peer_pairing_open"))
+        #expect(!ToolCatalog.isServerLinking(toolName: "peering_status") && !ToolCatalog.isServerLinking(toolName: "users_create"))
+        #expect(!ToolCatalog.isServerLinking(commandLine: "vault list") && !ToolCatalog.isServerLinking(commandLine: ""))
+    }
+
     @Test func cancellationStopsTheRequestAndSuppressesTheAnswer() async throws {
         defer { registry.remove() }
         let client = try client()

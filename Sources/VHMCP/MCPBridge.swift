@@ -443,6 +443,13 @@ public actor MCPBridge {
                     + "Keys in Vaulthalla, or run `vh vault keys export <vault>` in a terminal on the node.",
                 isError: true))
         }
+        if let command = forwarded["command"]?.stringValue, ToolCatalog.isServerLinking(commandLine: command) {
+            log(.warning, "refused a linked-servers command for \(node.id)")
+            return .success(RPC.toolResult(
+                text: "Linking Vaulthalla servers is decided by a person, never through MCP: use Link Servers in "
+                    + "Vaulthalla (All Nodes), or `vh peer` in a terminal on the node.",
+                isError: true))
+        }
 
         guard let remote = remotes[node.id] else {
             return .success(RPC.toolResult(text: "\(node.displayName) isn't a node this Mac knows.", isError: true))

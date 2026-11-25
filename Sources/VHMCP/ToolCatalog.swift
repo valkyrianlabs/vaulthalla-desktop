@@ -14,6 +14,8 @@ import VHCore
 /// **Never listed.** A tool named `nodes_list` (the bridge's own), a tool that already declares a `node` argument
 /// (it couldn't be routed unambiguously), and, defensively, any tool whose name speaks of exporting or importing keys
 /// or exporting secrets: the daemon never offers those over MCP (D4), and the bridge wouldn't pass them on if one did.
+/// Nor any tool about linked servers (`peer_*`): linking servers is decided by a person in the app, never by an agent
+/// (the server's design/peers/link.md, "Who may link servers"; the node refuses agents with `peer_forbidden` anyway).
 struct ToolCatalog: Equatable, Sendable {
     struct Entry: Equatable, Sendable {
         /// The name the client calls.
@@ -105,7 +107,7 @@ struct ToolCatalog: Equatable, Sendable {
 
     static func isListable(_ tool: JSONValue) -> Bool {
         guard let name = tool["name"]?.stringValue else { return false }
-        if name == nodesListName || isKeyMaterial(toolName: name) { return false }
+        if name == nodesListName || isKeyMaterial(toolName: name) || isServerLinking(toolName: name) { return false }
         if tool["inputSchema"]?["properties"]?[nodeArgument] != nil { return false }
         return true
     }
@@ -126,6 +128,22 @@ struct ToolCatalog: Equatable, Sendable {
             return words.contains("secrets") && words.contains("update")
         }
         return words[..<verb].contains { ["key", "keys", "secret", "secrets"].contains($0) }
+    }
+
+    /// Tool names about linked servers: `peer_list`, `peers_link`, `peer_pairing_approve`, ...
+    static func isServerLinking(toolName: String) -> Bool {
+        let words = toolName.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+        return words.contains { $0 == "peer" || $0 == "peers" }
+    }
+
+    /// A command line (`vh_run`'s, `vh_read`'s or `vh_help`'s `command`) about linked servers: `peer …` (`vh peer
+    /// link`, `vh peer approve`, …), with or without a leading `vh`. Refused by the bridge before it reaches a node.
+    static func isServerLinking(commandLine: String) -> Bool {
+        var words = commandLine.lowercased().split(whereSeparator: { $0.isWhitespace || $0 == "\"" || $0 == "'" })
+            .map(String.init)
+        if words.first == "vh" { words.removeFirst() }
+        guard let first = words.first else { return false }
+        return first == "peer" || first == "peers" || first.hasPrefix("peer.")
     }
 
     // MARK: - Shaping
