@@ -1,11 +1,15 @@
 import AppKit
 import SwiftUI
+import VHNodes
 
 struct SettingsView: View {
     var body: some View {
         TabView {
             Tab("General", systemImage: "gearshape") {
                 GeneralSettingsView()
+            }
+            Tab("Notifications", systemImage: "bell.badge") {
+                NotificationsSettingsView()
             }
             Tab("Agents", systemImage: "sparkles") {
                 AgentsSettingsView()
@@ -26,7 +30,7 @@ struct SettingsView: View {
     }
 }
 
-private struct GeneralSettingsView: View {
+struct GeneralSettingsView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
@@ -39,6 +43,7 @@ private struct GeneralSettingsView: View {
                 }
                 LabeledContent("Count", value: model.nodes.count.formatted())
             }
+            MenuBarSettingsSection()
             SignInSettingsSection()
             UpdateSettingsSection()
             Section("Connections") {
@@ -50,6 +55,53 @@ private struct GeneralSettingsView: View {
         }
         .formStyle(.grouped)
         .frame(minHeight: 220)
+    }
+}
+
+/// The menu bar item and "Open at login" (docs/mac-experience.md §2 to §4).
+private struct MenuBarSettingsSection: View {
+    @Environment(AppModel.self) private var model
+    @Environment(\.scenePhase) private var scenePhase
+    @AppStorage(MenuBarPreferences.showsItemKey) private var showsItem = true
+
+    var body: some View {
+        let login = model.loginItem
+        Section("Menu Bar") {
+            Toggle(isOn: $showsItem) {
+                Text("Show Vaulthalla in the menu bar")
+                Text(showsItem
+                     ? "Vaulthalla keeps running when its window is closed and watches your nodes from the menu bar."
+                     : "Closing the window quits Vaulthalla. Nothing watches your nodes while it isn't open.")
+            }
+            Toggle(isOn: Binding(get: { login.isEnabled }, set: { login.setEnabled($0) })) {
+                Text("Open at login")
+                Text(loginCaption(login.status))
+            }
+            .disabled(!showsItem || login.status == .unavailable)
+            if login.status == .requiresApproval {
+                LabeledContent("Turned off in System Settings") {
+                    Button("Open Login Items…") { MainAppLoginItem.openSystemSettings() }
+                }
+            }
+            if let problem = login.problem {
+                Text(problem)
+                    .font(.callout)
+                    .foregroundStyle(StatusTone.warn.color)
+            }
+        }
+        .onChange(of: showsItem) { _, _ in MainWindow.updatePresence() }
+        .onChange(of: scenePhase) { _, _ in login.refresh() }
+        .onAppear { login.refresh() }
+    }
+
+    private func loginCaption(_ status: LoginItemStatus) -> String {
+        if !showsItem { return "Needs the menu bar item: without it there is nothing to open into." }
+        switch status {
+        case .enabled: return "Starts with only the menu bar item, no window. Listed under Login Items in System Settings."
+        case .disabled: return "Vaulthalla starts when you open it."
+        case .requiresApproval: return "macOS is holding it back until you allow it under Login Items."
+        case .unavailable: return "This build can't be a login item."
+        }
     }
 }
 

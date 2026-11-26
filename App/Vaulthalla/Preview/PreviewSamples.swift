@@ -78,9 +78,25 @@ enum PreviewSamples {
         try? lease.acquire()
         let store = NodeStore(fileURL: url, lease: lease)
         for node in nodes { _ = try? store.add(node) }
-        let model = AppModel(store: store)
+        let model = AppModel(store: store, defaults: previewDefaults())
         if let id { model.selectNode(id) }
         return model
+    }
+
+    /// PREVIEW-ONLY preferences: favourites, mutes and notification switches set while looking at previews never
+    /// reach the real app's preferences (a development build shares its identifier with an installed release).
+    /// `-VHDebugFavorite <node id>` and `-VHDebugMuted <node id>` seed one of each for a render.
+    static func previewDefaults() -> UserDefaults {
+        let suite = "sh.vaulthalla.app.preview"
+        guard let defaults = UserDefaults(suiteName: suite) else { return .standard }
+        defaults.removePersistentDomain(forName: suite)
+        if let favorite = UserDefaults.standard.string(forKey: "VHDebugFavorite") {
+            defaults.set([favorite], forKey: NodePreferences.favoritesKey)
+        }
+        if let muted = UserDefaults.standard.string(forKey: "VHDebugMuted") {
+            defaults.set([muted], forKey: NodePreferences.mutedKey)
+        }
+        return defaults
     }
 
     /// A model whose paired nodes answer from PREVIEW DATA (`PreviewTransport`): "Home lab" as an admin sees it,

@@ -41,7 +41,8 @@ struct Sidebar: View {
                 }
                 ForEach(model.nodes) { node in
                     NodeRow(node: node, status: model.status(for: node), isCurrent: isCurrent(node),
-                            incompatibility: model.incompatibility(for: node))
+                            incompatibility: model.incompatibility(for: node),
+                            isFavorite: model.preferences.isFavorite(node.id))
                         .tag(SidebarItem.node(node.id))
                         .contextMenu { contextMenu(for: node) }
                 }
@@ -85,6 +86,13 @@ struct Sidebar: View {
 
     @ViewBuilder
     private func contextMenu(for node: Node) -> some View {
+        Button(model.preferences.isFavorite(node.id) ? "Remove from Favorites" : "Add to Favorites") {
+            model.preferences.toggleFavorite(node.id)
+        }
+        Button(model.preferences.isMuted(node.id) ? "Turn Notifications On" : "Mute Notifications") {
+            model.preferences.setMuted(!model.preferences.isMuted(node.id), for: node.id)
+        }
+        Divider()
         Button("Rename…") { model.nodePendingRename = node }
         if !node.pairing.isPaired || model.needsPairingAgain(node.id) {
             Button(node.pairing.isPaired ? "Pair Again…" : "Pair This Mac…") { model.presentPairing(for: node.id) }
@@ -133,6 +141,8 @@ struct NodeRow: View {
     var isCurrent = false
     /// Set when the node runs a Vaulthalla this build shares no protocol version with: a small badge says so.
     var incompatibility: ProtocolMismatch?
+    /// A favourite: listed first in the menu bar panel.
+    var isFavorite = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -149,6 +159,12 @@ struct NodeRow: View {
                     .truncationMode(.middle)
             }
             Spacer(minLength: 0)
+            if isFavorite {
+                Image(systemName: "star.fill")
+                    .font(.caption2)
+                    .foregroundStyle(.accentText)
+                    .accessibilityLabel("Favorite")
+            }
             if let incompatibility {
                 IncompatibleBadge(mismatch: incompatibility)
             }

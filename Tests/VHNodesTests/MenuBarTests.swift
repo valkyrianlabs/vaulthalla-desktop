@@ -420,6 +420,17 @@ import VHCore
         #expect(node.count(of: "sync.conflicts.summary") == 1)
     }
 
+    @MainActor @Test func aNodeWithoutTheSmallQuestionIsAskedForItsOverviewEachTime() async throws {
+        let node = FleetSamples.scriptedNode(status: "warning")
+        node.answer("stats.dashboard.severity") { _ in .refuse("Unknown command", code: "unknown_command") }
+        let pulse = NodePulse(queries: NodeQueries(transport: node))
+
+        await pulse.checkHealth()
+        await pulse.checkHealth()
+        #expect(pulse.digest.health.value?.severity == "warning")
+        #expect(node.count(of: "stats.dashboard.overview") == 2)
+    }
+
     @MainActor @Test func aNodeWithoutStatsAccessIsAskedForItsOverviewOnce() async throws {
         let node = FleetSamples.scriptedNode(status: "healthy")
         let refusal = ScriptedNode.Reply.refuse("Permission denied: this account lacks admin.stats.view.", code: "denied")

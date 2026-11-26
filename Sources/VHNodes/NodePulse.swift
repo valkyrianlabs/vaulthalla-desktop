@@ -114,9 +114,14 @@ public final class NodePulse {
             return
         }
         await severity.refresh()
-        guard severity.refreshError == nil, let now = severity.value?.stats else {
-            // Refused or failed: the overview says why (an account without stats access stays calm), asked once.
-            if overview.value == nil, overview.error == nil { await overview.refresh() }
+        guard severity.error == nil, let now = severity.value?.stats else {
+            if case .denied? = severity.error {
+                // No stats access: the overview says so once, and the node is left in peace.
+                if overview.value == nil, overview.error == nil { await overview.refresh() }
+            } else {
+                // The small question went unanswered (an older node, a slow one): ask for the whole picture instead.
+                await overview.refresh()
+            }
             return
         }
         let mark = HealthMark(status: now.overallStatus, errors: now.errorCount, warnings: now.warningCount)

@@ -34,6 +34,12 @@ final class AppModel {
     let agents = AgentPairingCoordinator()
     /// Linked servers across the paired nodes (All Nodes; experimental, hidden while no node has it on).
     let linkedServers = LinkedServersModel()
+    /// Favourites and muted notifications, by node (docs/mac-experience.md §5).
+    let preferences: NodePreferences
+    /// Watches every node with or without a window: the menu bar item's state and what gets notified.
+    let fleet: FleetMonitor
+    /// "Open at login", as macOS reports it.
+    let loginItem: LoginItemController
     var selectedNodeID: NodeID?
     var selectedSection: NodeSection = .overview
     /// Which page of the Overview shows, and the panel and metric a followed warning points at.
@@ -131,16 +137,27 @@ final class AppModel {
     /// `store` and `keys` carry the credential lease when this app owns the credentials; without it (or while
     /// another process holds it) the model is a consumer: it shows the registry read-only and edits are refused.
     init(store: NodeStore, keys: DeviceKeys? = nil, recoveryKeys: RecoveryKeysModel = RecoveryKeysModel(),
-         registry: RegistryOwnership? = nil, transferStats: TransferStatsBoard = .shared) {
+         registry: RegistryOwnership? = nil, transferStats: TransferStatsBoard = .shared,
+         defaults: UserDefaults = .standard) {
         self.store = store
         self.registry = registry
         self.recoveryKeys = recoveryKeys
         self.transferStatsBoard = transferStats
+        // Favourites, mutes and the notification switches are this Mac's preferences (`defaults`: previews pass a
+        // throwaway suite). What was already notified is kept next to the node list; previews (no keys) keep nothing.
+        let preferences = NodePreferences(defaults: defaults)
+        self.preferences = preferences
+        fleet = FleetMonitor(preferences: preferences,
+                             memoryURL: keys == nil ? nil
+                                 : store.fileURL.deletingLastPathComponent().appending(path: "notified.json"),
+                             defaults: defaults)
+        loginItem = LoginItemController(service: MainAppLoginItem(), appliesDefault: MainAppLoginItem.appliesDefault)
         credentialRole = store.role
         loadNodes()
         recoveryKeys.app = self
         agents.app = self
         linkedServers.app = self
+        fleet.app = self
         if let keys {
             let cloud = CloudModel(lease: store.lease)
             if cloud.isVisible {
@@ -152,6 +169,7 @@ final class AppModel {
             recoveryKeys.start()
             if credentialRole == .consumer { watchOwner() }
             watchTransferStats()
+            startWatchingFleet()
             connectionTest = ConnectionTests.calibrating { [weak self] session throws(TransferError) in
                 guard let lanes = await self?.fileLanes(for: session.nodeID) else { throw .cancelled }
                 return try await lanes.testConnection()
@@ -322,6 +340,7 @@ final class AppModel {
             Task { await agents.nodeRemoved(removed, macSession: session) }
         }
         guard edit({ try store.remove(id) }) else { return }
+        preferences.forget(id)
         // Removing this Mac's own server is a choice: it isn't added back on its own.
         if let removed { LocalNodeSetup.recordRemoval(of: removed) }
         liveStatus[id] = nil
@@ -488,6 +507,7 @@ final class AppModel {
                 nodesNeedingPairing.remove(id)
             }
             queryStores[id]?.connectionChanged(online: status == .online)
+            fleet.connectionChanged(id, online: status == .online)
             // Revocations of AI apps' devices this node still owes go out once it is back.
             if status == .online, isCredentialOwner, let keys = deviceKeys,
                record(id)?.pendingAgentRevocations.isEmpty == false {
@@ -660,6 +680,59 @@ final class AppModel {
     /// The transport's hook: report what a node's connection is doing, or `nil` once nothing is connected.
     func setConnectionStatus(_ status: NodeConnectionStatus?, for id: NodeID) {
         liveStatus[id] = status
+    }
+
+    // MARK: - Menu bar and notifications
+
+    /// With live sessions: the fleet is watched whether or not a window is open, what it finds is posted as
+    /// notifications, and a click on one lands here.
+    private func startWatchingFleet() {
+        let hub = NotificationHub.shared
+        hub.activate()
+        hub.onOpen = { [weak self] route in self?.follow(route) }
+        fleet.post = { hub.post($0) }
+        fleet.start()
+    }
+
+    /// Once per launch, for the real app only (not previews or scripted runs): open at login is on by default while
+    /// the menu bar item is shown, and macOS is asked for notification permission the first time.
+    func applyLaunchDefaults() {
+        // The Finder agent's registration follows whether a vault is in Finder; a launch without a window still
+        // has to bring it up to date (the window's own `.task` does when there is one).
+        Task { await FinderVaults.updateAgent() }
+        guard MenuBarPreferences.showsItem else { return }
+        loginItem.applyDefaultIfNeeded()
+        #if !DEBUG
+        // Development builds share the installed app's identifier: they ask only from Settings.
+        Task {
+            let hub = NotificationHub.shared
+            await hub.refreshPermission()
+            if hub.permission == .notAsked, fleet.settings.enabled { await hub.requestPermission() }
+        }
+        #endif
+    }
+
+    /// Where a clicked notification goes: the window comes forward at the place it was about.
+    func follow(_ route: NotificationHub.Route) {
+        switch route {
+        case .node(let id):
+            selectNode(id, section: .overview)
+        case .pairAgain(let id):
+            selectNode(id, section: .overview)
+            if let node = node(withID: id), !node.pairing.isPaired || needsPairingAgain(id), isCredentialOwner {
+                presentPairing(for: id)
+            }
+        case .finding(let id, let alert):
+            if node(withID: id) != nil { open(alert, on: id) }
+        case .syncConflicts(let id):
+            selectNode(id, section: .syncConflicts)
+        case .recoveryKeys:
+            showAllRecoveryKeys()
+        case .update:
+            Updates.shared.showPending()
+            return
+        }
+        MainWindow.show()
     }
 
     // MARK: - Selection

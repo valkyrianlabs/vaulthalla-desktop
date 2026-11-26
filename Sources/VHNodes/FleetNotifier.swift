@@ -26,13 +26,13 @@ public enum FleetNotice: String, Sendable, Hashable, Codable, CaseIterable {
 
     public var title: String {
         switch self {
-        case .nodeUnreachable: "A server becomes unreachable"
-        case .nodeReachable: "A server is reachable again"
-        case .nodeRevoked: "A server revokes this Mac"
-        case .nodeIncompatible: "A server needs a different version"
-        case .healthError: "A server reports an error"
-        case .healthWarning: "A server reports a warning"
-        case .healthCleared: "A server's errors have cleared"
+        case .nodeUnreachable: "A node becomes unreachable"
+        case .nodeReachable: "A node is reachable again"
+        case .nodeRevoked: "A node revokes this Mac"
+        case .nodeIncompatible: "A node needs a different version"
+        case .healthError: "A node reports an error"
+        case .healthWarning: "A node reports a warning"
+        case .healthCleared: "A node's errors have cleared"
         case .syncConflicts: "New sync conflicts"
         }
     }
