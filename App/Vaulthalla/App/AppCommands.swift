@@ -36,6 +36,14 @@ struct AppCommands: Commands {
             Divider()
         }
 
+        // Help ▸ Report a Problem…: a redacted bundle the person reads first (docs/mac-experience.md §8).
+        CommandGroup(after: .help) {
+            Button("Report a Problem…") {
+                model.reportRequest = ReportRequest(origin: model.selectedNodeID.map { .node($0) } ?? .general)
+                MainWindow.show()
+            }
+        }
+
         CommandMenu("Node") {
             Button("All Nodes") { model.showAllNodes() }
                 .keyboardShortcut("0")

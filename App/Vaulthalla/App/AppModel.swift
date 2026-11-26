@@ -50,6 +50,8 @@ final class AppModel {
     var healthFocus: String?
 
     var sheet: Sheet?
+    /// The report being filed (the Report a Problem sheet), from a finding, a node or the Help menu.
+    var reportRequest: ReportRequest?
     var columnVisibility: NavigationSplitViewVisibility = .all
     var nodePendingRename: Node?
     var nodePendingRemoval: Node?

@@ -33,6 +33,7 @@
 		7A30000000000000000000A2 /* VHKeyBackup in Frameworks */ = {isa = PBXBuildFile; productRef = 7A30000000000000000000C2 /* VHKeyBackup */; };
 		7A70000000000000000000A1 /* VHRecovery in Frameworks */ = {isa = PBXBuildFile; productRef = 7A70000000000000000000C1 /* VHRecovery */; };
 		7A70000000000000000000A2 /* VHCloud in Frameworks */ = {isa = PBXBuildFile; productRef = 7A70000000000000000000C2 /* VHCloud */; };
+		7AB0000000000000000000A1 /* VHReports in Frameworks */ = {isa = PBXBuildFile; productRef = 7AB0000000000000000000C1 /* VHReports */; };
 		7A30000000000000000000A3 /* vaulthalla-1password in Embed 1Password Helper */ = {isa = PBXBuildFile; fileRef = 7A3000000000000000000010 /* vaulthalla-1password */; settings = {ATTRIBUTES = (CodeSignOnCopy, ); }; };
 		7A40000000000000000000A1 /* VHCore in Frameworks */ = {isa = PBXBuildFile; productRef = 7A40000000000000000000C1 /* VHCore */; };
 		7A40000000000000000000A2 /* VHIdentity in Frameworks */ = {isa = PBXBuildFile; productRef = 7A40000000000000000000C2 /* VHIdentity */; };
@@ -152,6 +153,7 @@
 				7A30000000000000000000A2 /* VHKeyBackup in Frameworks */,
 				7A70000000000000000000A1 /* VHRecovery in Frameworks */,
 				7A70000000000000000000A2 /* VHCloud in Frameworks */,
+				7AB0000000000000000000A1 /* VHReports in Frameworks */,
 				7A40000000000000000000A6 /* VHFinder in Frameworks */,
 				7A80000000000000000000A1 /* VHVault in Frameworks */,
 				7A90000000000000000000A1 /* VHAgents in Frameworks */,
@@ -264,6 +266,7 @@
 				7A30000000000000000000C2 /* VHKeyBackup */,
 				7A70000000000000000000C1 /* VHRecovery */,
 				7A70000000000000000000C2 /* VHCloud */,
+				7AB0000000000000000000C1 /* VHReports */,
 				7A40000000000000000000C5 /* VHFinder */,
 				7A80000000000000000000C1 /* VHVault */,
 				7A90000000000000000000C1 /* VHAgents */,
@@ -777,6 +780,10 @@
 		7A70000000000000000000C2 /* VHCloud */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = VHCloud;
+		};
+		7AB0000000000000000000C1 /* VHReports */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = VHReports;
 		};
 		7A40000000000000000000C1 /* VHCore */ = {
 			isa = XCSwiftPackageProductDependency;
