@@ -195,19 +195,51 @@ The state is the server's, so the console and every Mac agree. The server docume
 
 ## 8. Filing a report (stage 3)
 
-- **From** any finding (panel, Overview, notification), any error sheet, and Help ▸ Report a Problem….
-- **Produces** a folder the person can inspect, then save as a zip or copy the summary from:
-  - `report.md`: what happened, in order, readable by a person;
+Decided by the maintainer (2026-11-26): a report goes to his own service, vaulthalla.cloud, directly, and only when
+the person chooses to send it; the service may open a draft item for triage in a private project. The contract
+both ends build to is `docs/design/report-intake.md` in valkyrianlabs/vaulthalla-cloud (`vh-report/1`). This
+section is Desktop's half.
+
+**Where a report starts.** Any finding (panel, Overview, a notification's action), any error sheet, and Help ▸
+Report a Problem…. A notification already carries what a report about it needs: the node, and the finding's class,
+severity, card, title and message.
+
+**What it builds.** One report in the `vh-report/1` form, shown to the person before anything else can happen:
+
+- the summary: product and version, platform, what the report is about, how often and since when;
+- each piece of evidence as readable text:
   - `finding.json`: the finding as the node reported it (class, severity, message, card, metric);
-  - `node.json`: the node's Vaulthalla version, protocol range, health overview and route class;
-  - `desktop.json`: app version and build, macOS version, Mac model, relevant settings;
+  - `node.json`: the node's Vaulthalla version, protocol range, health overview and the class of route to it;
+  - `desktop.json`: app version and build, macOS version, Mac model, the settings that matter;
   - `log.txt`: this app's own log lines from the last 15 minutes;
-  - `REDACTED.md`: every kind of thing that was removed and how many of each.
-- **Redacted before it is written:** host names and addresses, user names and emails, vault, file and folder
-  names, device names, ids that identify an install. Node and vault names become `node-1`, `vault-3`, the same
-  label throughout one report. Keys, tokens, pairing codes and certificates are never collected in the first place.
-- **No network call.** Building, viewing, saving and copying happen on this Mac. Where a report may be sent is
-  the maintainer's decision; until he decides, nothing sends it anywhere.
+- what was removed, by kind and count;
+- an optional note in the person's own words.
+
+**Redaction (`vh-redact/1`), before it is shown**, so what the person reads is exactly what would leave:
+
+- Replaced with labels that are stable within the one report: node, vault, user and device names; host names;
+  IP addresses; email addresses; installation, node and device ids (`node-1`, `vault-3`, `addr-2`).
+- Never collected in the first place: file contents, file and folder names and paths, keys, tokens, passwords,
+  pairing codes, certificates and key pins.
+- Evidence is built from chosen, typed fields. Text that comes from elsewhere (a node's message, log lines) goes
+  through the pattern rules as well.
+- Tested with seeded secrets: names, addresses, tokens and paths are planted in the inputs, and the tests assert
+  none of those bytes are in the output.
+
+**What the person can do with it**
+
+| Action | When | What happens |
+| --- | --- | --- |
+| Save… | always | The bundle is written as a folder or zip where they choose. |
+| Copy Summary | always | The summary text goes to the clipboard. |
+| Send to Valkyrian Labs | only while this Mac is linked to Vaulthalla Cloud | One signed request (`POST /v1/reports`) from this Mac's own cloud identity. The answer's reference (`VHR-…`) is shown and kept with the saved copy. |
+
+- **Sending is a choice made each time.** There is no automatic sending and no setting for it.
+- **An unlinked Mac is never told about sending.** The button is absent, not disabled, so nothing in the app
+  describes the cloud as available to someone who cannot use it. They keep Save and Copy.
+- **A refusal is shown as it is**: not linked any more, too many reports today, or the service found something that
+  must not be in a report (which is a bug in this app; the bundle stays local and the message says so).
+- Nothing else in the app makes a network call for a report: building, viewing, saving and copying are local.
 
 ## 9. What is deliberately not in this epic
 
