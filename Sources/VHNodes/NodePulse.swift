@@ -27,6 +27,8 @@ public final class NodePulse {
     @ObservationIgnored public let queries: NodeQueries
 
     public let overview: NodeQuery<Ws.Stats.Dashboard.Overview>
+    /// The overview's four headline numbers on their own: what the background check asks (``checkHealth()``).
+    public let severity: NodeQuery<Ws.Stats.Dashboard.Severity>
     public let storage: NodeQuery<Ws.Stats.System.Storage>
     public let budget: NodeQuery<Ws.Stats.Pricing.Budget>
     public let conflicts: NodeQuery<Ws.Sync.Conflicts.Summary>
@@ -34,12 +36,26 @@ public final class NodePulse {
     public private(set) var activity: NodeDigest.Part<NodeDigest.Activity> = .loading
     public private(set) var isFetchingActivity = false
     @ObservationIgnored private var activityTask: Task<Void, Never>?
+    /// The headline numbers the overview on hand was fetched for, and how many checks ago it was fetched.
+    @ObservationIgnored private var checkedMark: HealthMark?
+    @ObservationIgnored private var checksSinceOverview = 0
+    /// A full overview at least every this many checks: the numbers can stay the same while the findings change.
+    public nonisolated let fullCheckEvery: Int
 
-    public init(queries: NodeQueries, intervals: Intervals = Intervals(), activityVaultLimit: Int = 24) {
+    private struct HealthMark: Equatable {
+        var status: String
+        var errors: Int64
+        var warnings: Int64
+    }
+
+    public init(queries: NodeQueries, intervals: Intervals = Intervals(), activityVaultLimit: Int = 24,
+                fullCheckEvery: Int = 5) {
         self.queries = queries
         self.intervals = intervals
         self.activityVaultLimit = activityVaultLimit
+        self.fullCheckEvery = max(1, fullCheckEvery)
         overview = queries.query(Ws.Stats.Dashboard.Overview.self, .init())
+        severity = queries.query(Ws.Stats.Dashboard.Severity.self)
         storage = queries.query(Ws.Stats.System.Storage.self)
         budget = queries.query(Ws.Stats.Pricing.Budget.self, .init())
         conflicts = queries.query(Ws.Sync.Conflicts.Summary.self)
@@ -83,6 +99,43 @@ public final class NodePulse {
         async let open: Void = conflicts.refresh()
         _ = await (health, figures, spend, open)
         await refreshActivity()
+    }
+
+    // MARK: Background check
+
+    /// The check that runs with no window open (docs/mac-experience.md §3): asks the node for its four headline
+    /// numbers, and fetches the whole overview only when they differ from the ones the overview on hand was fetched
+    /// for (or there is none, or it is ``fullCheckEvery`` checks old). A node without the small command is asked for
+    /// the overview each time. Returns once settled; never polls on its own.
+    public func checkHealth() async {
+        guard queries.isConnected else { return }
+        if queries.supports(command: .statsDashboardSeverity) == .no {
+            await overview.refresh()
+            return
+        }
+        await severity.refresh()
+        guard severity.refreshError == nil, let now = severity.value?.stats else {
+            // Refused or failed: the overview says why (an account without stats access stays calm), asked once.
+            if overview.value == nil, overview.error == nil { await overview.refresh() }
+            return
+        }
+        let mark = HealthMark(status: now.overallStatus, errors: now.errorCount, warnings: now.warningCount)
+        checksSinceOverview += 1
+        guard mark != checkedMark || overview.value == nil || checksSinceOverview >= fullCheckEvery else { return }
+        await overview.refresh()
+        if overview.refreshError == nil, overview.value != nil {
+            checkedMark = mark
+            checksSinceOverview = 0
+        }
+    }
+
+    /// The slow figures (storage, spend, open conflicts), fetched now. The background check calls it every few minutes.
+    public func refreshFigures() async {
+        guard queries.isConnected else { return }
+        async let figures: Void = storage.refresh()
+        async let spend: Void = budget.refresh()
+        async let open: Void = conflicts.refresh()
+        _ = await (figures, spend, open)
     }
 
     // MARK: Activity
