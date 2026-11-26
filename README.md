@@ -10,6 +10,15 @@ business logic: every action is an operation the daemon authorizes.
 **Status:** foundation. The plan, the pairing protocol and the open decisions are in
 [`docs/architecture.md`](docs/architecture.md).
 
+## Menu bar
+
+Vaulthalla lives in the menu bar. The icon shows the state of every paired node at a glance (all quiet, warnings, needs
+attention, not reporting), and the panel under it has the totals, what needs attention, your nodes with favourites
+first, and a way into any part of the app. Closing the window doesn't quit: Vaulthalla keeps watching your nodes and
+notifies you when one becomes unreachable or reports an error, once per problem. It opens at login by default, with
+no window. Settings ▸ General turns the menu bar item and "Open at login" off; Settings ▸ Notifications has a switch
+per kind of notification and per node. Design and rules: [`docs/mac-experience.md`](docs/mac-experience.md).
+
 ## Finder
 
 Settings ▸ Finder lists every vault of every paired node, each with a **Show in Finder** switch. A vault you show
