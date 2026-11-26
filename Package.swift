@@ -19,6 +19,7 @@ let package = Package(
         .library(name: "VHTransport", targets: ["VHTransport"]),
         .library(name: "VHIdentity", targets: ["VHIdentity"]),
         .library(name: "VHNodes", targets: ["VHNodes"]),
+        .library(name: "VHReports", targets: ["VHReports"]),
         .library(name: "VHOnePassword", targets: ["VHOnePassword"]),
         .library(name: "VHKeyBackup", targets: ["VHKeyBackup"]),
         .library(name: "VHRecovery", targets: ["VHRecovery"]),
@@ -50,6 +51,9 @@ let package = Package(
             dependencies: ["VHCore", "VHContract", "VHTransport", "VHIdentity"],
             swiftSettings: strict
         ),
+        // Problem reports (docs/mac-experience.md §8): the vh-report/1 document, redaction (vh-redact/1) and the
+        // bundle a person can read before anything is sent. No dependencies: it handles only what it is given.
+        .target(name: "VHReports", swiftSettings: strict),
         // Vaulthalla's recovery formats in Swift (CryptoKit): KEV1 envelopes, the recovery seed, uids and the recovery
         // kit, byte for byte the server's and Vaulthalla Cloud's (vectors.json, vendored in its tests). #49.
         .target(name: "VHRecovery", dependencies: ["VHCore"], swiftSettings: strict),
@@ -133,6 +137,7 @@ let package = Package(
             dependencies: ["VHIdentity", .product(name: "X509", package: "swift-certificates")],
             swiftSettings: strict
         ),
+        .testTarget(name: "VHReportsTests", dependencies: ["VHReports"], swiftSettings: strict),
         .testTarget(
             name: "VHNodesTests",
             dependencies: ["VHNodes", "VHCore", "VHContract", "VHTransport", "VHIdentity"],
