@@ -22,14 +22,35 @@ enum Launch {
 }
 
 struct VaulthallaApp: App {
-    @State private var model = Self.makeModel()
-    /// Signs out on quit and at logout while "Keep me signed in on this Mac" is off (SignIn.swift).
+    @State private var model = Self.makeAndRegisterModel()
+    /// Quit, reopen and the Dock icon (AppDelegate.swift); signs out on quit while "Keep me signed in" is off.
     @NSApplicationDelegateAdaptor private var delegate: AppDelegate
+    /// The menu bar item (docs/mac-experience.md §2), on by default.
+    @AppStorage(MenuBarPreferences.showsItemKey) private var showsMenuBarItem = true
+
+    private static func makeAndRegisterModel() -> AppModel {
+        let model = makeModel()
+        AppDelegate.model = model
+        #if DEBUG
+        MenuBarDebug.run(model: model)
+        #endif
+        return model
+    }
 
     private static func makeModel() -> AppModel {
         #if DEBUG
         // `-VHDebugPreviewData YES`: the preview nodes, answering from PREVIEW DATA, without sessions (DebugSnapshot).
-        if UserDefaults.standard.bool(forKey: "VHDebugPreviewData") { return PreviewSamples.liveModel() }
+        if UserDefaults.standard.bool(forKey: "VHDebugPreviewData") {
+            let model = PreviewSamples.liveModel()
+            // The menu bar item over PREVIEW DATA; with `-VHDebugNotify YES` what it finds is really notified.
+            if UserDefaults.standard.bool(forKey: "VHDebugNotify") {
+                NotificationHub.shared.activate()
+                NotificationHub.shared.onOpen = { [weak model] route in model?.follow(route) }
+                model.fleet.post = { NotificationHub.shared.post($0) }
+            }
+            model.fleet.start()
+            return model
+        }
         #endif
         #if DEBUG
         // `-VHDebugRegistry <path>`: run against another node list (DebugSnapshot, scripted checks), never migrated.
@@ -54,7 +75,16 @@ struct VaulthallaApp: App {
                              keys: DeviceKeys.standard(lease: registry.lease), registry: registry)
         model.signOutIfNotKept()
         model.setUpLocalNode()
+        model.applyLaunchDefaults()
         return model
+    }
+
+    /// Whether the item is in the menu bar, for `MenuBarExtra`. Not the `@AppStorage` binding itself: SwiftUI writes
+    /// the status item's visibility back on every update of the app's scenes, and a write that changes nothing would
+    /// still start another update (the app then spins at 100% CPU and the item never appears). Dragging the item out
+    /// of the menu bar still turns the setting off.
+    private var menuBarItemInserted: Binding<Bool> {
+        Binding(get: { showsMenuBarItem }, set: { if $0 != showsMenuBarItem { showsMenuBarItem = $0 } })
     }
 
     var body: some Scene {
@@ -62,7 +92,6 @@ struct VaulthallaApp: App {
         Window("Vaulthalla", id: "main") {
             RootView()
                 .environment(model)
-                .onAppear { delegate.model = model }
                 // `vaulthalla://pair?…` from the web console's Pair a Device dialog (untrusted: parsed defensively).
                 .onOpenURL { model.openPairLink($0) }
         }
@@ -74,5 +103,15 @@ struct VaulthallaApp: App {
             SettingsView()
                 .environment(model)
         }
+
+        // Vaulthalla in the menu bar: the fleet's state as the icon, and the panel under it.
+        MenuBarExtra(isInserted: menuBarItemInserted) {
+            MenuBarPanel()
+                .environment(model)
+        } label: {
+            MenuBarLabel()
+                .environment(model)
+        }
+        .menuBarExtraStyle(.window)
     }
 }

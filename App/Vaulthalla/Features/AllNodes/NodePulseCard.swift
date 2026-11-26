@@ -57,7 +57,25 @@ struct NodePulseCard: View {
             if pulse?.isRefreshing == true {
                 ProgressView().controlSize(.mini)
             }
+            favoriteButton
             StatusBadge(label: status.label, tone: status.tone, pulse: status.isTransitional)
+        }
+    }
+
+    /// The star: a favourite is listed first in the menu bar panel. Shown while it is one, or under the pointer.
+    @ViewBuilder
+    private var favoriteButton: some View {
+        let favorite = model.preferences.isFavorite(node.id)
+        if favorite || hovering {
+            Button {
+                model.preferences.toggleFavorite(node.id)
+            } label: {
+                Image(systemName: favorite ? "star.fill" : "star")
+                    .foregroundStyle(favorite ? Color.accentText : Color.fgSubtle)
+            }
+            .buttonStyle(.plain)
+            .help(favorite ? "Remove from Favorites" : "Add to Favorites: listed first in the menu bar")
+            .accessibilityLabel(favorite ? "Remove from Favorites" : "Add to Favorites")
         }
     }
 
@@ -111,6 +129,12 @@ struct NodePulseCard: View {
             Button("Pair This Mac…") { model.presentPairing(for: node.id) }
         }
         Divider()
+        Button(model.preferences.isFavorite(node.id) ? "Remove from Favorites" : "Add to Favorites") {
+            model.preferences.toggleFavorite(node.id)
+        }
+        Button(model.preferences.isMuted(node.id) ? "Turn Notifications On" : "Mute Notifications") {
+            model.preferences.setMuted(!model.preferences.isMuted(node.id), for: node.id)
+        }
         Button("Rename…") { model.nodePendingRename = node }
     }
 }

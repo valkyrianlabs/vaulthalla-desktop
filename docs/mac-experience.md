@@ -163,9 +163,9 @@ it); a node that is not paired; a figure that is merely loading; info-level find
   on Studio" notification.
 - **Reachability has a grace period** (2 minutes) and is held back entirely while this Mac has no network, is
   waking from sleep (first 30 seconds), or the node is restarting for an update it announced.
-- **A relaunch is not news.** What was already notified is remembered on disk
-  (`Application Support/Vaulthalla/notified.json`, node ids and finding codes only), so starting the app does not
-  replay every open finding. The first check after a launch notifies only what is new since then.
+- **A relaunch is not news.** What was already notified is remembered on disk (`notified.json` next to the node
+  list, node ids and finding codes only), so starting the app does not replay every open finding. The first check
+  after a launch notifies only what is new since then.
 - **Warnings are off by default** because one warning class (`system.operations.active_work`) fires during
   every upload. Stage 2 lets the server say which classes are worth a notification, and then warnings follow the
   server's hint instead of one switch.
@@ -225,3 +225,36 @@ The state is the server's, so the console and every Mac agree. The server docume
 - **Seen running**, with screenshots in light and dark menu bars: the item in each state, the panel, the Settings
   tabs, the login item listed in System Settings, and a delivered notification.
 - Stage 2: a live check against a private daemon on dev (`docs/interop-testing.md`).
+
+## 11. Stage 1 as built
+
+**Where it lives**
+
+| Piece | Code |
+| --- | --- |
+| The item's state | `Sources/VHNodes/FleetStatus.swift` |
+| What notifies, and what never repeats | `Sources/VHNodes/FleetNotifier.swift` |
+| Favourites and mutes | `Sources/VHNodes/NodePreferences.swift` |
+| Open at login (the default and the switch) | `Sources/VHNodes/LoginItem.swift`, `App/Vaulthalla/App/MainAppLoginItem.swift` |
+| The background check | `NodePulse.checkHealth()`, `App/Vaulthalla/MenuBar/FleetMonitor.swift` |
+| The icon, the panel | `App/Vaulthalla/MenuBar/MenuBarIcon.swift`, `MenuBarPanel.swift` |
+| The window, the Dock icon, a background launch | `App/Vaulthalla/MenuBar/MainWindow.swift`, `App/Vaulthalla/App/AppDelegate.swift` |
+| The notification centre | `App/Vaulthalla/App/NotificationHub.swift` |
+| Update reminders | `UpdateReminders` in `App/Vaulthalla/App/Updates.swift` |
+| Settings | `SettingsView.swift` (Menu Bar section), `NotificationsSettingsView.swift` |
+
+**Two things worth knowing before changing it**
+
+- `MenuBarExtra(isInserted:)` must not be given the `@AppStorage` binding directly. SwiftUI writes the item's
+  visibility back on every update of the app's scenes; with `@AppStorage` that write starts another update even when
+  nothing changed, the app spins at 100% CPU and the item never appears. `VaulthallaApp.menuBarItemInserted` writes
+  only on a real change.
+- On current macOS the item's clicks are delivered by the system, and its button has no action. The panel cannot be
+  opened from code, so seeing it open under the item takes a real click. Everything else has a DEBUG hook
+  (`MenuBarDebug`): the panel and both Settings tabs rendered to PNG, every icon state on a light and a dark bar,
+  and a report of what the running app is (background launch, Dock icon or not, windows, where the item is).
+
+**Development builds** share the app's identifier and preferences with an installed release. So they never apply
+"open at login" by default, never ask for notification permission at launch (only from Settings), and previews keep
+favourites, mutes and notification switches in a throwaway preferences suite.
+

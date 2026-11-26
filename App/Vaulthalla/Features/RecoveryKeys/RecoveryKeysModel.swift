@@ -113,7 +113,6 @@ final class RecoveryKeysModel {
     /// Starts change detection: a poll now and every 5 minutes while the app is active.
     func start() {
         guard pollTask == nil else { return }
-        notifier.onOpen = { [weak self] in self?.app?.showAllRecoveryKeys() }
         pollTask = Task { [weak self] in
             while !Task.isCancelled {
                 if let self, self.appActive { await self.pollNodes() }

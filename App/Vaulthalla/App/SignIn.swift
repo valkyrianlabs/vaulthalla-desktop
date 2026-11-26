@@ -75,23 +75,3 @@ extension AppModel {
         }
     }
 }
-
-/// Signs out on quit and at logout (macOS quits every app then) while "Keep me signed in" is off.
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    weak var model: AppModel?
-    private var signingOut = false
-
-    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        guard !SignInPreferences.keepSignedIn, let model, model.isCredentialOwner, model.hasSignedInNodes else {
-            return .terminateNow
-        }
-        if !signingOut {
-            signingOut = true
-            Task {
-                await model.signOut()
-                sender.reply(toApplicationShouldTerminate: true)
-            }
-        }
-        return .terminateLater
-    }
-}

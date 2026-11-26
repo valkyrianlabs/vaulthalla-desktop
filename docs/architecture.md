@@ -125,7 +125,8 @@ docs/                   this plan, the pairing protocol, release notes
   - Feature sections: Overview/Health, Files, Vaults, Shares, Access (users, groups, roles), Sync conflicts, Cost,
     S3 gateway, Recovery keys, Settings.
   - "All nodes" views cover what spans deployments: overview, key backup status, devices.
-  - ⌘1–9 switch nodes, ⌘K opens a command palette, and a menu bar extra shows health.
+  - ⌘1–9 switch nodes. A menu bar item shows the fleet's state and keeps the app running in the background
+    (`docs/mac-experience.md`). The ⌘K command palette planned here is not built.
 - Each node is an `@Observable NodeSession` actor-backed model that owns one `WsClient` and a small query cache. The
   cache is the TanStack Query idea, minimal: keyed results, invalidate-after-mutation, polling only while a view is
   visible and the app is active. Swift 6 strict concurrency throughout.
