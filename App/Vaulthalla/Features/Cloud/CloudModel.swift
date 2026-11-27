@@ -2,6 +2,7 @@ import AppKit
 import Foundation
 import Observation
 import VHCloud
+import VHReports
 import VHContract
 import VHCore
 import VHKeykit
@@ -146,6 +147,17 @@ final class CloudModel {
 
     /// Whether the section shows: the defaults switch, or a Mac already linked.
     /// A vault this Mac holds that left managed storage shows the section too, linked or not: its own key is entered there.
+    /// Whether this Mac can send a problem report: only while it is linked (docs/mac-experience.md §8).
+    var canSendReports: Bool { phase == .linked && client != nil }
+
+    /// Sends one report, signed as this Mac, and returns the service's receipt.
+    func sendReport(_ report: ReportDocument) async throws -> ReportReceipt {
+        guard let client, phase == .linked else { throw CloudError.notLinked }
+        struct Answer: Decodable { var report: ReportReceipt }
+        let data = try await client.sendReport(try report.encoded())
+        return try JSONDecoder().decode(Answer.self, from: data).report
+    }
+
     var isVisible: Bool { Self.isEnabledByDefaults || phase == .linked || desktopVaults?.leftVaults.isEmpty == false }
     var isOwner: Bool { items.role == .owner }
 

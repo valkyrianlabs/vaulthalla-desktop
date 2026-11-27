@@ -136,6 +136,8 @@ struct NodePulseCard: View {
             model.preferences.setMuted(!model.preferences.isMuted(node.id), for: node.id)
         }
         Button("Rename…") { model.nodePendingRename = node }
+        Divider()
+        Button("Report a Problem…") { model.reportRequest = ReportRequest(origin: .node(node.id)) }
     }
 }
 

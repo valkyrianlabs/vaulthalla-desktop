@@ -117,6 +117,12 @@ public struct CloudClient: Sendable {
 
     public func installation() async throws -> CloudInstallation { try await signed("GET", "/v1/installation") }
 
+    /// Sends a problem report (`vh-report/1`, `POST /v1/reports`) signed as this Mac, once. `document` is the report
+    /// exactly as the person read it; the answer is the service's receipt (`{"report": {id, reference, received_at}}`).
+    public func sendReport(_ document: Data) async throws -> Data {
+        try await signedData("POST", "/v1/reports", body: document)
+    }
+
     public func deployments() async throws -> [CloudDeployment] {
         struct Reply: Decodable { var deployments: [CloudDeployment] }
         let reply: Reply = try await signed("GET", "/v1/deployments")

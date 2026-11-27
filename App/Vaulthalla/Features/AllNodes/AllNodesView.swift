@@ -256,6 +256,12 @@ private struct FleetAlertsPanel: View {
                     }
                     .buttonStyle(.plain)
                     .help("Open \(entry.alert.title) on \(entry.nodeName)")
+                    .contextMenu {
+                        Button("Open") { model.open(entry.alert, on: entry.node) }
+                        Button("File a Report…") {
+                            model.reportRequest = ReportRequest(origin: .finding(entry.node, entry.alert))
+                        }
+                    }
                 }
             }
         } actions: {

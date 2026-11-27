@@ -32,6 +32,9 @@ struct RootView: View {
         .sheet(item: $model.sheet) { sheet in
             AddNodeSheet(start: sheet)
         }
+        .sheet(item: $model.reportRequest) { request in
+            ReportSheet(request: request)
+        }
         .alert("Couldn't save the change", isPresented: errorBinding) {
             Button("OK", role: .cancel) {}
         } message: {
