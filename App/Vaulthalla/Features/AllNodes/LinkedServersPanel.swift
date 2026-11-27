@@ -2,9 +2,9 @@ import SwiftUI
 import VHCore
 import VHNodes
 
-/// All Nodes' "Linked servers" panel (experimental): for each node with the feature on, the servers it is linked
-/// with and how each connection is doing, as the node reports it (`peer.list`), with Rename and Unlink; and any link
-/// only one side records, with Unlink. Shown only while a node has the feature switched on.
+/// All Nodes' "Linked servers" panel: for each node that links servers, the servers it is linked with and how each
+/// connection is doing, as the node reports it (`peer.list`), with Rename and Unlink; any link only one side records,
+/// with Unlink; and which nodes need a newer Vaulthalla. Shown once a node has said whether it links servers.
 struct LinkedServersPanel: View {
     var link: (NodeID?) -> Void
 
@@ -17,8 +17,8 @@ struct LinkedServersPanel: View {
 
     var body: some View {
         Panel(title: "Linked servers",
-              subtitle: "Servers linked with each other keep a pinned, encrypted connection, checked by key on every "
-                + "connection. Experimental: the link carries nothing yet.") {
+              subtitle: "Linked servers trust each other over a pinned, mutually authenticated connection: the trusted "
+                + "connection mirrored vaults travel over. Linking two servers takes a super admin on each.") {
             VStack(alignment: .leading, spacing: 14) {
                 ForEach(linked.oneSided) { half in
                     Callout(tone: .warn, systemImage: "exclamationmark.triangle") {
@@ -31,16 +31,14 @@ struct LinkedServersPanel: View {
                 if let problem = linked.problem {
                     Callout(tone: .danger, systemImage: "xmark.octagon") { Text(problem) }
                 }
-                ForEach(linked.nodesWithFeature) { node in
+                ForEach(linked.linkableNodes) { node in
                     nodeSection(node)
                 }
-            }
-        } actions: {
-            HStack(spacing: 8) {
-                StatusBadge(label: "Experimental", tone: .info)
-                if linked.canLink {
-                    Button("Link Servers…", systemImage: "link") { link(nil) }
-                        .controlSize(.small)
+                ForEach(linked.olderNodes) { node in
+                    Text(ServerLinking.Failure.olderServer(node.displayName).description)
+                        .font(.callout)
+                        .foregroundStyle(.fgSubtle)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -78,7 +76,7 @@ struct LinkedServersPanel: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(.fgMuted)
                 Spacer(minLength: 4)
-                if linked.canLink, case .on = availability {
+                if case .on = availability {
                     Button("Link…") { link(node.id) }
                         .controlSize(.small)
                         .buttonStyle(.borderless)

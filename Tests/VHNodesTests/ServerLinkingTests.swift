@@ -46,7 +46,6 @@ final class FakeLinkLab: Sendable {
         var name: String
         var nodeID: String
         var pin: Data
-        var experimental = true
         var superAdmin = true
         var forbidden = false
         var tooOld = false
@@ -135,10 +134,6 @@ final class FakeLinkLab: Sendable {
         { [self] json in
             let s = server(i)
             if s.tooOld { return .fail(.unknownCommand("Unknown command")) }
-            if !s.experimental {
-                return .refuse("linked servers are experimental and off on this server: set peers.experimental: true "
-                    + "in config.yaml and restart the daemon", code: "peers_experimental")
-            }
             if !s.superAdmin { return .refuse("only super admins may link servers", code: "denied") }
             if s.forbidden {
                 return .refuse("only a person, or a fully trusted device connected directly, may link servers",
@@ -404,7 +399,6 @@ final class FakeLinkLab: Sendable {
     @Test func eachPreconditionNamesTheNodeAndOpensNothing() async throws {
         typealias Case = (change: @Sendable (inout FakeLinkLab.State) -> Void, expect: (ServerLinking.Failure) -> Bool)
         let cases: [Case] = [
-            ({ $0.servers[1].experimental = false }, { $0 == .switchedOff("Mac Studio") }),
             ({ $0.servers[0].tooOld = true }, { $0 == .olderServer("vps") }),
             ({ $0.servers[1].superAdmin = false }, { if case .notSuperAdmin("Mac Studio", _) = $0 { true } else { false } }),
             ({ $0.servers[0].forbidden = true }, { if case .notTrusted("vps", _) = $0 { true } else { false } }),
@@ -420,9 +414,9 @@ final class FakeLinkLab: Sendable {
                 #expect(lab.sessions[i].count(of: "peer.link.start") == 0)
             }
         }
-        // The switch's explanation says what to do.
-        #expect(ServerLinking.Failure.switchedOff("Mac Studio").description
-            .contains("set `peers.experimental: true` in that server's config.yaml and restart it"))
+        // An older server is named plainly, with the version it needs.
+        #expect(ServerLinking.Failure.olderServer("Mac Studio").description
+            == "Mac Studio needs Vaulthalla 1.27 or newer to link servers.")
     }
 
     @Test func anOlderServerIsKnownWithoutAsking() async throws {
@@ -569,18 +563,37 @@ final class FakeLinkLab: Sendable {
 
     // MARK: - Per node
 
-    @Test func availabilityHidesASwitchedOffNode() async throws {
-        #expect(await LinkedServers.availability(on: lab.sessions[0], name: "vps") == .on([]))
-        lab.set { $0.servers[0].experimental = false }
-        #expect(await LinkedServers.availability(on: lab.sessions[0], name: "vps") == .off)
-        #expect(!ServerLinkAvailability.off.isOn)
+    @Test func linkingIsDetectedFromTheAdvertisedCommands() async throws {
+        let session = lab.sessions[0]
+        // Advertised (meta.hello): asked, and on.
+        session.commands.withLock { $0["peer.list"] = .yes }
+        #expect(await LinkedServers.supportsLinking(on: session) == true)
+        #expect(await LinkedServers.availability(on: session, name: "vps") == .on([]))
+        #expect(session.count(of: "peer.list") == 1)
+        // Not advertised: an older Vaulthalla, known without asking.
+        session.commands.withLock { $0["peer.list"] = .no }
+        #expect(await LinkedServers.supportsLinking(on: session) == false)
+        #expect(await LinkedServers.availability(on: session, name: "vps") == .unsupported)
+        #expect(session.count(of: "peer.list") == 1)
+        #expect(!ServerLinkAvailability.unsupported.supportsLinking)
+        // Unknown (a legacy node without meta.hello): asking settles it.
+        session.commands.withLock { $0["peer.list"] = nil }
+        #expect(await LinkedServers.supportsLinking(on: session) == nil)
+        #expect(await LinkedServers.availability(on: session, name: "vps") == .on([]))
         lab.set { $0.servers[0].tooOld = true }
-        #expect(await LinkedServers.availability(on: lab.sessions[0], name: "vps") == .unsupported)
+        #expect(await LinkedServers.availability(on: session, name: "vps") == .unsupported)
+    }
+
+    @Test func availabilityKeepsAPermissionRefusalAndForgetsNothingWhenOffline() async throws {
         lab.set { $0.servers[1].superAdmin = false }
         let refused = await LinkedServers.availability(on: lab.sessions[1], name: "Mac Studio")
-        #expect(refused.isOn && refused.links.isEmpty)
+        #expect(refused.supportsLinking && refused.links.isEmpty)
+        guard case .notPermitted(.notSuperAdmin("Mac Studio", _)) = refused else {
+            Issue.record("\(refused)")
+            return
+        }
         lab.sessions[1].stop()
-        #expect(await !LinkedServers.availability(on: lab.sessions[1], name: "Mac Studio").isOn)
+        #expect(await !LinkedServers.availability(on: lab.sessions[1], name: "Mac Studio").supportsLinking)
     }
 
     @Test func linkedServersCarryHealthAndCanBeRenamed() async throws {

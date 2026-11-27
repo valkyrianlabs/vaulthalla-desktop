@@ -5,9 +5,9 @@ import VHNodes
 import VHTransport
 
 /// Linked servers across every paired node, for All Nodes (docs/architecture.md §3, "Linked servers"): which nodes
-/// have the experimental feature switched on, each one's links with their health, links only one side records, and
-/// the Link Servers sheet's attempt. Nothing about it shows unless at least one node reports the feature on, and Link
-/// Servers only once two do. Everything goes over this Mac's own Device sessions; agents never reach any of it.
+/// link servers (Vaulthalla 1.27 and newer) and which are older, each one's links with their health, links only one
+/// side records, and the Link Servers sheet's attempt. Link Servers is always offered; linking needs two nodes that
+/// link servers. Everything goes over this Mac's own Device sessions; agents never reach any of it.
 @MainActor @Observable final class LinkedServersModel {
     /// What each paired node said last (`peer.list`).
     private(set) var availability: [NodeID: ServerLinkAvailability] = [:]
@@ -30,22 +30,27 @@ import VHTransport
         var isRunning: Bool { outcome == nil }
     }
 
-    /// Paired nodes reporting the feature on, in sidebar order.
-    var nodesWithFeature: [Node] {
-        (app?.nodes ?? []).filter { availability[$0.id]?.isOn == true }
+    /// Paired nodes whose Vaulthalla links servers, in sidebar order.
+    var linkableNodes: [Node] {
+        (app?.nodes ?? []).filter { availability[$0.id]?.supportsLinking == true }
     }
 
-    /// Whether All Nodes shows anything about linked servers.
-    var isVisible: Bool { !nodesWithFeature.isEmpty }
+    /// Paired nodes whose Vaulthalla is too old to link servers, in sidebar order.
+    var olderNodes: [Node] {
+        (app?.nodes ?? []).filter { availability[$0.id] == .unsupported }
+    }
 
-    /// Whether Link Servers is offered: two nodes with the feature on.
-    var canLink: Bool { nodesWithFeature.count >= 2 }
+    /// Whether All Nodes shows the Linked servers panel: once any node has said whether it links servers.
+    var isVisible: Bool { !linkableNodes.isEmpty || !olderNodes.isEmpty }
+
+    /// Whether two servers can be picked: two nodes that link servers.
+    var canLink: Bool { linkableNodes.count >= 2 }
 
     func links(for id: NodeID) -> [LinkedServer] { availability[id]?.links ?? [] }
 
     /// Links only one side records, among this Mac's nodes.
     var oneSided: [ServerLinking.HalfLink] {
-        LinkedServers.oneSided(nodes: nodesWithFeature,
+        LinkedServers.oneSided(nodes: linkableNodes,
                                links: availability.compactMapValues { if case .on(let l) = $0 { l } else { nil } })
     }
 

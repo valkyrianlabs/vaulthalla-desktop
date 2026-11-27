@@ -32,7 +32,7 @@ final class AppModel {
     @ObservationIgnored private(set) var cloud: CloudModel?
     /// AI apps' own pairings and switches (Settings → Agents, a node's Devices page).
     let agents = AgentPairingCoordinator()
-    /// Linked servers across the paired nodes (All Nodes; experimental, hidden while no node has it on).
+    /// Linked servers across the paired nodes (All Nodes, and its Link Servers sheet).
     let linkedServers = LinkedServersModel()
     /// Favourites and muted notifications, by node (docs/mac-experience.md §5).
     let preferences: NodePreferences

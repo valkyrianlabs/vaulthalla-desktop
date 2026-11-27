@@ -34,8 +34,8 @@ opt-in: without `VH_LIVE_NODE` every test in it is skipped, so `swift test` and 
 | `withoutAnApprovalKeyNothingIsLeftBehind` | this Mac paired without an approval key: the attempt stops with "no approval key", the new key is deleted, no request pending, the window closed, no new device |
 
 `LiveServerLinkTests` covers linking two servers through Desktop (docs/architecture.md §3, "Linked servers"). It needs
-two instances of a server with `peer.*` (server main cc41d5d4 or later), each started with `peers: {experimental: true}`
-in its config.yaml (below), and runs only with `VH_LIVE_LINK_A` and `VH_LIVE_LINK_B` set:
+two instances of a server with `peer.*` (1.27.0 or later; below), and runs only with `VH_LIVE_LINK_A` and
+`VH_LIVE_LINK_B` set:
 
 | Test | Steps |
 |---|---|
@@ -133,14 +133,11 @@ VH_LIVE_NODE=<box address>:36982 swift test --scratch-path .build-interop --filt
 | `VH_LIVE_LINK_A`, `VH_LIVE_LINK_B` | (unset: skip) | the two linked-servers instances' device listeners as this Mac reaches them |
 | `VH_LIVE_LINK_RUN_A`, `VH_LIVE_LINK_RUN_B` | `/tmp/vhi_link_a`, `/tmp/vhi_link_b` | their run directories on the box |
 
-Linked servers need two instances with the switch on (they may run on the same box; each dials the other's LAN
-address, or loopback):
+Linked servers need two instances (they may run on the same box; each dials the other's LAN address, or loopback):
 
 ```sh
 ssh dev 'cd <server-checkout> && sudo VHI_RUN=/tmp/vhi_link_a bash vh-instance.sh up build-interop 36983 &&
-         sleep 1 && sudo VHI_RUN=/tmp/vhi_link_b bash vh-instance.sh up build-interop 36984 &&
-         for r in a b; do echo "peers: {experimental: true}" | sudo tee -a /tmp/vhi_link_$r/config.yaml >/dev/null;
-           sudo VHI_RUN=/tmp/vhi_link_$r bash vh-instance.sh restart; done'
+         sleep 1 && sudo VHI_RUN=/tmp/vhi_link_b bash vh-instance.sh up build-interop 36984'
 VH_LIVE_LINK_A=<box>:36983 VH_LIVE_LINK_B=<box>:36984 swift test --scratch-path .build-interop --filter LiveServerLinkTests
 ssh dev 'for r in a b; do sudo VHI_RUN=/tmp/vhi_link_$r bash ~/work/vh-instance.sh down; done'
 ```
