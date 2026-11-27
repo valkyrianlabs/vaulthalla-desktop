@@ -17,8 +17,8 @@ struct LinkedServersPanel: View {
 
     var body: some View {
         Panel(title: "Linked servers",
-              subtitle: "Linked servers trust each other over a pinned, mutually authenticated connection: the trusted "
-                + "connection mirrored vaults travel over. Linking two servers takes a super admin on each.") {
+              subtitle: "A link is a handshake between exactly two servers: each records the other's key, and a super "
+                + "admin on each side approves. Mirrored vaults travel over it; a third server gains nothing.") {
             VStack(alignment: .leading, spacing: 14) {
                 ForEach(linked.oneSided) { half in
                     Callout(tone: .warn, systemImage: "exclamationmark.triangle") {

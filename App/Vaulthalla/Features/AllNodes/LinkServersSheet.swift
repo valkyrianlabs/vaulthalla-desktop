@@ -30,7 +30,7 @@ struct LinkServersSheet: View {
                     Text("Link Servers")
                         .font(.title3.weight(.semibold))
                         .foregroundStyle(.fg)
-                    Text("Linked servers trust each other and can mirror vaults to one another. Linking two servers takes a super admin on each, and this Mac must be paired as one on both. Vaulthalla's roles still decide who can do what.")
+                    Text("A handshake between exactly two servers this Mac is paired with. A super admin on each side approves it, so this Mac must be paired as a super admin on both.")
                         .font(.callout)
                         .foregroundStyle(.fgSubtle)
                         .fixedSize(horizontal: false, vertical: true)
@@ -103,9 +103,16 @@ struct LinkServersSheet: View {
                     Text("Link \(name(first)) and \(name(second))?")
                         .font(.headline)
                         .foregroundStyle(.fg)
-                    Text("Each keeps a pinned, mutually authenticated connection to the other: the trusted connection mirrored vaults travel over. It carries nothing else: linking alone mirrors no vault.")
-                        .foregroundStyle(.fgMuted)
-                        .fixedSize(horizontal: false, vertical: true)
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(Self.grants, id: \.self) { line in
+                            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                Text("•")
+                                Text(line)
+                            }
+                        }
+                    }
+                    .foregroundStyle(.fgMuted)
+                    .fixedSize(horizontal: false, vertical: true)
                     Text("Vaulthalla compares the pairing code for you against the keys this Mac already trusts. One of the two servers must be able to reach the other.")
                         .font(.callout)
                         .foregroundStyle(.fgSubtle)
@@ -114,6 +121,15 @@ struct LinkServersSheet: View {
             }
         }
     }
+
+    /// What a link does and doesn't grant, as the server defines it (design/peers/link.md, identity.md, mirror.md).
+    private static let grants = [
+        "Each server records the other's key, and a super admin on each side approves.",
+        "Accounts are shared as identities only.",
+        "No vault is mirrored until one server offers it and the other accepts.",
+        "On mirrored vaults the linked server gets only the role chosen for it: none by default.",
+        "Trust goes no further: a third server gains nothing.",
+    ]
 
     private func picker(_ selection: Binding<NodeID?>, excluding other: NodeID?) -> some View {
         Picker("", selection: selection) {

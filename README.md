@@ -164,12 +164,13 @@ then signs this Mac out of every node, revokes it there, deletes its keys and re
 Out** does the same at any time. Settings ▸ General ▸ Security can ask for Touch ID before Recovery Keys,
 Credentials and Access show.
 
-**Linked servers.** Two servers running Vaulthalla 1.27 or newer can be linked: they trust each other over a pinned,
-encrypted connection and can mirror vaults to one another. All Nodes always offers **Link Servers…** (an older node
+**Linked servers.** Two servers running Vaulthalla 1.27 or newer can be linked: a handshake between exactly those two,
+in which each records the other's key and a super admin on each side approves. Accounts are shared as identities only;
+no vault is mirrored until one server offers it and the other accepts; on mirrored vaults the linked server gets only
+the role chosen for it (none by default); a third server gains nothing. All Nodes always offers **Link Servers…** (an older node
 shows that it needs Vaulthalla 1.27 or newer): pick the two, confirm once, and
 Desktop links them over its own connections, comparing the code against the keys it already trusts, so there is no
-number to read. This Mac must be paired as a super admin on both, and one of them must be able to reach the other;
-Vaulthalla's roles still decide who can do what. All Nodes then
+number to read. This Mac must be paired as a super admin on both, and one of them must be able to reach the other. All Nodes then
 lists each node's linked servers and their health, with Rename and Unlink. Agents can't link servers. Design:
 [`docs/architecture.md`](docs/architecture.md) §3, "Linked servers".
 
