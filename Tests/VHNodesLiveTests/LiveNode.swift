@@ -114,7 +114,7 @@ enum LiveNode {
 enum LiveKeychain {
     static let nodeTags = ["live-node", "live-denied", "live-agent-mac", "live-agent-plain",
                            "live-agent-mac.agent.claude-code", "live-agent-plain.agent.claude-code",
-                           "live-link-a", "live-link-b"]
+                           "live-link-a", "live-link-b", "live-health"]
 
     static func withKeys<R: Sendable>(_ body: (DeviceKeys) async throws -> R) async throws -> R {
         try await withKeys(reopenable: { keys, _ in try await body(keys) })

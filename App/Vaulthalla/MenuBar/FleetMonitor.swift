@@ -11,8 +11,9 @@ import VHNodes
 ///
 /// With no window open nothing polls on its own (`NodeQueries.isActive`), so the monitor asks. Once a minute each
 /// online node is asked for its four headline numbers (`NodePulse.checkHealth()`), which fetches the whole overview
-/// only when they changed; the slow figures every five minutes. The answers land in the same query cache the views
-/// read, so opening the window shows them at once.
+/// only when they changed; the slow figures every five minutes. A node that pushes `health.changed` is asked only
+/// every ten minutes, as a safety net (`NodePulse.isFollowingPush`). The answers land in the same query cache the
+/// views read, so opening the window shows them at once.
 @Observable
 final class FleetMonitor {
     static let checkInterval: Duration = .seconds(60)

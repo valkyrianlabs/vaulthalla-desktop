@@ -67,6 +67,9 @@ public actor NodeSession {
         /// The node's advertised endpoints changed, or a connection came up on a new last good endpoint: save them.
         /// Owner sessions only, like ``recordChanged(pairing:nextServerSPKISHA256:)``.
         case endpointsChanged(endpoints: [AdvertisedEndpoint], advertisedAt: Date?, lastGood: LastGoodEndpoint?)
+        /// The node pushed `health.changed` on the current connection (it follows a `health.subscribe` someone sent on
+        /// it). Relayed as it arrives; the connection's subscription ends with the connection.
+        case healthChanged(HealthChange)
     }
 
     public struct Configuration: Sendable {
@@ -376,6 +379,13 @@ public actor NodeSession {
             for await state in states { sink.yield(.state(state)) }
             sink.finish()
         }
+        // Pushed events are taken from before the connect, so none that follows a subscription is missed.
+        let unsolicited = await made.unsolicitedMessages()
+        let pushes = Task { [eventSink] in
+            for await message in unsolicited {
+                if let change = HealthChange(message) { eventSink.yield(.healthChanged(change)) }
+            }
+        }
         // A network change calls for a new selection (the 5 s floor applies).
         let paths = configuration.routes.pathChanges.map { changes in
             Task {
@@ -386,6 +396,7 @@ public actor NodeSession {
         signals = sink
         defer {
             relay.cancel()
+            pushes.cancel()
             paths?.cancel()
             timers.cancelAll()
             sink.finish()

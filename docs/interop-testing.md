@@ -33,6 +33,13 @@ opt-in: without `VH_LIVE_NODE` every test in it is skipped, so `swift test` and 
 | `anAIAppsOwnPairingIsHeldToItsScope` | (a server with `device.scope`, 1.23) Codex pairs asking read: approved read, `device.list` reports read, this Mac's own pairing isn't scoped; its own ws session gets `device_scope` for a write, its `/mcp` answers a `vh_run` write with the "read-only" error result while `vh_read` runs; widening to write without the approval key is refused, with it allowed; narrowing back needs nothing |
 | `withoutAnApprovalKeyNothingIsLeftBehind` | this Mac paired without an approval key: the attempt stops with "no approval key", the new key is deleted, no request pending, the window closed, no new device |
 
+`LiveHealthPushTests` covers health findings by push (the server's design/health/findings.md §6; a server with
+`health.subscribe`, 1.28 or later):
+
+| Test | Steps |
+|---|---|
+| `followsHealthByPushAndActsOnAFinding` | 1. This Mac pairs as the super admin (`vh-admin device pair`); `health.findings.list` with the catalog answers `can_manage`. 2. `NodePulse` subscribes once on connect, and a background check while subscribed asks nothing. 3. `vh-admin health ack <class>` (another session): a `health.changed` arrives and the pulse refetches on its own; the true counts stay, the unattended ones drop. 4. Desktop turns it back on, acknowledges and turns it back on again (`HealthFindings` actions): each is pushed, and the counts come back. The class is `VH_LIVE_HEALTH_CLASS`, else the first active finding; with none active only 1 and 2 run |
+
 `LiveServerLinkTests` covers linking two servers through Desktop (docs/architecture.md §3, "Linked servers"). It needs
 two instances of a server with `peer.*` (1.27.0 or later; below), and runs only with `VH_LIVE_LINK_A` and
 `VH_LIVE_LINK_B` set:
