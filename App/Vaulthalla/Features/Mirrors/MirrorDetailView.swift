@@ -120,6 +120,7 @@ private struct MirrorDetailBody: View {
                         MirrorFactsGrid(items: settingsItems(settings))
                     }
                 }
+                if MirrorModel.actions(row).contains(.held) { MirrorHeldChangesPanel(queries: queries, row: row) }
             }
             MirrorActionsBar(node: node, queries: queries, row: row, heldCopy: heldCopy)
         }
