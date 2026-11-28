@@ -22,11 +22,9 @@ struct AllNodesView: View {
                               subtitle: "Every Vaulthalla server this Mac knows about, live.") {
                     if !model.nodes.isEmpty {
                         HStack(spacing: 8) {
-                            // Experimental and off by default on the servers: offered only once two nodes have it on.
-                            if model.linkedServers.canLink {
-                                Button("Link Servers…", systemImage: "link") { linking = LinkRequest() }
-                                    .controlSize(.small)
-                            }
+                            // Always offered: the sheet says which nodes are too old to link servers.
+                            Button("Link Servers…", systemImage: "link") { linking = LinkRequest() }
+                                .controlSize(.small)
                             Button("Add Node…", systemImage: "plus") { model.presentAddNode() }
                                 .controlSize(.small)
                         }
@@ -95,6 +93,14 @@ struct AllNodesView: View {
         .sheet(item: $linking) { request in
             LinkServersSheet(preselected: request.node)
         }
+        #if DEBUG
+        // `-VHDebugLinkServers YES` opens the Link Servers sheet once the nodes have answered (DebugSnapshot).
+        .task {
+            guard UserDefaults.standard.bool(forKey: "VHDebugLinkServers") else { return }
+            for _ in 0..<40 where !model.linkedServers.isVisible { try? await Task.sleep(for: .milliseconds(50)) }
+            linking = LinkRequest()
+        }
+        #endif
     }
 
     private func cards(_ entries: [(node: Node, pulse: NodePulse?)]) -> some View {

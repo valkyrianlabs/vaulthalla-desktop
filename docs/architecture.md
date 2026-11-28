@@ -523,20 +523,22 @@ docs/                   this plan, the pairing protocol, release notes
     23. This Mac's own pairing is never scoped. Undo: none intended; it would mean passing `scope` in `PairingFlow`.
     24. The generator renames members Swift can't store (`self`, `Self`, `init`, `Type`) with a `Value` suffix. Undo:
         drop `UNUSABLE_MEMBERS` in `tools/gen-contract.py` (the contract then doesn't compile).
-- **Linked servers** (experimental; the server's design/peers/link.md, phase 1a, server main cc41d5d4). Two
-  Vaulthalla servers can be linked: a long-lived, mutually pinned connection between them, which later carries mirrored
-  vaults (it carries nothing yet). The feature is off on a server until `peers.experimental: true` is set in its
-  config.yaml; then every `peer.*` command answers, otherwise `peers_experimental`. Desktop brokers the link between two
-  servers it is paired with, so nothing trusts a key on first use and no number is shown to anyone.
+- **Linked servers** (the server's design/peers/link.md; Vaulthalla 1.27.0 and newer, on for everyone). Two
+  Vaulthalla servers can be linked: a long-lived, mutually pinned connection between them, the trusted connection
+  mirrored vaults travel over (it carries nothing else). A node links servers when its advertised command set
+  (`meta.hello`) has `peer.list` (`LinkedServers.supportsLinking`); a legacy node without `meta.hello` is asked, and
+  "Unknown command" means the same. An older node shows "needs Vaulthalla 1.27 or newer" in All Nodes and the Link
+  Servers sheet, never an error, and Link Servers is always offered. Desktop brokers the link between two servers it
+  is paired with, so nothing trusts a key on first use and no number is shown to anyone.
   - **Who.** A person, in the app, on this Mac's own full-access, directly connected Device session, as a super admin
     on both servers. The servers decide it on RBAC alone (no step-up for such a device, decision 2 of link.md; refused
     during the account's recovery cooldown, `recovery_cooldown`). Agents, scoped AI app pairings and relayed sessions
     are refused by the server (`peer_forbidden`), and the bridge offers no way to try (§5).
   - **Preconditions** (`ServerLinking.check`, before anything is opened): both nodes paired, different servers
     (pins and server ids), and `peer.list` answering on each. Its refusals are exactly the server's linking checks, in
-    order: `peers_experimental` (switched off: "set `peers.experimental: true` in that server's config.yaml and restart
-    it"), `denied` (not a super admin), `peer_forbidden` (not a full-access, direct device); no `peer.*` commands
-    (`meta.hello`, else "Unknown command") is an older server; offline is offline. Each failure names the node. A link
+    order: `denied` (not a super admin), `peer_forbidden` (not a full-access, direct device); no `peer.*` commands
+    (`meta.hello`, else "Unknown command") is an older server ("needs Vaulthalla 1.27 or newer"); offline is
+    offline. Each failure names the node. A link
     both already record is "already linked"; one only one side records is offered for unlinking (below).
   - **The exchange** (`VHNodes.ServerLinking`, link.md "Desktop-brokered, in full"): `peer.pairing.open` on the
     accepting server (its answer's key and node id must be this Mac's pin and record for it); `peer.link.start` on the

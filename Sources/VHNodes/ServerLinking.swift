@@ -96,10 +96,8 @@ public struct ServerLinking: Sendable {
         /// Both picks are the same server.
         case sameServer
         case offline(String)
-        /// The node's Vaulthalla has no linked servers.
+        /// The node's Vaulthalla is older than ``ServerLinking/minimumVersion`` (no linked servers).
         case olderServer(String)
-        /// `peers.experimental` is off there.
-        case switchedOff(String)
         /// This Mac's account there isn't a super admin (the node's words).
         case notSuperAdmin(String, String)
         /// The node accepts linking only from a person or a full-access, directly connected device (`peer_forbidden`).
@@ -137,10 +135,7 @@ public struct ServerLinking: Sendable {
             case .sameServer: "Those are the same server. Pick two different servers."
             case .offline(let node): "\(node) isn't connected. Try again once it is."
             case .olderServer(let node):
-                "\(node) runs a Vaulthalla without linked servers. Update Vaulthalla on \(node) first."
-            case .switchedOff(let node):
-                "Linked servers are switched off on \(node). They're experimental: set `peers.experimental: true` in "
-                    + "that server's config.yaml and restart it."
+                "\(node) needs Vaulthalla \(ServerLinking.minimumVersion) or newer to link servers."
             case .notSuperAdmin(let node, let why):
                 "Linking servers needs a super admin on both, and the account this Mac is paired by on \(node) isn't "
                     + "one (\(why))."
@@ -190,7 +185,6 @@ public struct ServerLinking: Sendable {
         static func precondition(_ error: WsError, name: String) -> Failure {
             if error.isUnknownCommand { return .olderServer(name) }
             switch error {
-            case .refused("peers_experimental", _): return .switchedOff(name)
             case .refused("peer_forbidden", let text): return .notTrusted(name, text)
             case .refused("recovery_cooldown", let text): return .recoveryCooldown(name, text)
             case .denied(let text): return .notSuperAdmin(name, text)
@@ -202,6 +196,9 @@ public struct ServerLinking: Sendable {
             }
         }
     }
+
+    /// The oldest Vaulthalla that links servers (the first with `peer.*`), as the app names it.
+    public static let minimumVersion = "1.27"
 
     /// The whole attempt, both directions and the clean-up included.
     public var timeout: Duration = .seconds(300)
@@ -275,7 +272,7 @@ public struct ServerLinking: Sendable {
     }
 
     private static func precheck(_ side: Side) async -> Result<[LinkedServer], Failure> {
-        if await side.transport.commandSupport(.peerList) == .no { return .failure(.olderServer(side.name)) }
+        if await LinkedServers.supportsLinking(on: side.transport) == false { return .failure(.olderServer(side.name)) }
         do {
             let answer = try await side.transport.send(Ws.Peer.List.self, payload: .init())
             return .success(answer.peers.map(LinkedServer.init).filter { !$0.revoked })

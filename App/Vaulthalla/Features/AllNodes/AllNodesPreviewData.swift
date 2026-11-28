@@ -12,10 +12,36 @@ nonisolated enum AllNodesPreviewData: PreviewFeature {
         if command == .storageVaultAccessibleList, transport.scenario == .restricted {
             return Ws.Storage.Vault.Accessible.List.Response(vaults: [])
         }
+        if command == .peerList { return try peers(transport) }
         guard command == .statsVaultActivity else { return nil }
         guard transport.scenario == .full else { throw .denied("Permission denied: you don't own this vault.") }
         let id = (payload as? Ws.Stats.Vault.Activity.Payload)?.vaultID ?? 0
         return Ws.Stats.Vault.Activity.Response(stats: activity(id))
+    }
+
+    /// "Home lab" is linked with one server; "Studio" answers as an account that isn't a super admin, or with
+    /// `-VHDebugLinkOlder YES` as a Vaulthalla older than 1.27 (no `peer.*` commands).
+    private static func peers(_ transport: PreviewTransport) throws(WsError) -> Ws.Peer.List.Response {
+        guard transport.scenario == .full else {
+            if UserDefaults.standard.bool(forKey: "VHDebugLinkOlder") { throw .unknownCommand("Unknown command") }
+            throw .denied("only super admins may link servers")
+        }
+        let now = PreviewData.now
+        let json = """
+            {"peers": [{"id": 1, "node_id": "preview-offsite-node", "name": "Offsite (preview)",
+              "spki_sha256": "\(String(repeating: "ef", count: 32))", "next_spki_sha256": null,
+              "attest_public_keys": [], "wrap_public_key": "AAAA", "endpoints": [], "sharing": "identities",
+              "approved_by": 1, "compared_by": "desktop", "peer_protocol": 1, "product_version": "1.27.1",
+              "linked_at": \(now - 86_400 * 3), "last_seen_at": \(now - 30), "revoked_at": null, "revoked": false,
+              "health": {"connected": true, "since": \(now - 7_200), "dialed_by": "this_server",
+                "address": "vault.example.com:36972", "rtt_ms": 38, "peer_protocol": 1, "peer_version": "1.27.1",
+                "protocol_compatible": true, "last_error": null, "last_error_at": null, "next_attempt_at": null}}]}
+            """
+        do {
+            return try JSONDecoder().decode(Ws.Peer.List.Response.self, from: Data(json.utf8))
+        } catch {
+            throw .contractMismatch("preview peer.list: \(error)")
+        }
     }
 
     private static let samples: [Int64: [(action: String, path: String, minutesAgo: Int64)]] = [

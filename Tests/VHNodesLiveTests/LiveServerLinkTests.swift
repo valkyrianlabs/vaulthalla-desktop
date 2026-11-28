@@ -7,8 +7,8 @@ import VHIdentity
 import VHNodes
 import VHTransport
 
-/// Desktop-brokered server linking (the server's design/peers/link.md) against two live daemons with
-/// `peers.experimental: true` (docs/interop-testing.md, "Linked servers"): this Mac pairs with both as their super
+/// Desktop-brokered server linking (the server's design/peers/link.md) against two live daemons, 1.27.0 or newer
+/// (docs/interop-testing.md, "Linked servers"): this Mac pairs with both as their super
 /// admin, then ``ServerLinking`` links them through this Mac's real Device sessions, both ways round, and unlinks them.
 /// Skipped unless `VH_LIVE_LINK_A` and `VH_LIVE_LINK_B` are set.
 @Suite(.enabled(if: LiveLink.isConfigured, "set VH_LIVE_LINK_A and VH_LIVE_LINK_B=<host:port> to run"),
@@ -105,7 +105,7 @@ final class StepLog: Sendable {
 }
 
 /// The two instances: `vh-instance.sh` run dirs on the box (`VH_LIVE_LINK_RUN_A`, `_B`), their device listeners as this
-/// Mac reaches them (`VH_LIVE_LINK_A`, `_B`), each started with `peers: {experimental: true}` in its config.yaml.
+/// Mac reaches them (`VH_LIVE_LINK_A`, `_B`).
 enum LiveLink {
     private static let environment = ProcessInfo.processInfo.environment
     static let endpointA = environment["VH_LIVE_LINK_A"].flatMap(NodeEndpoint.init(parsing:))

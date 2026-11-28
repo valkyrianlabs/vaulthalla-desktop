@@ -4,7 +4,7 @@ public import VHCore
 public import VHTransport
 
 /// A server one node is linked with, as that node reports it (`peer.list`): the server link of the server's
-/// design/peers/link.md, experimental and off by default (`peers.experimental` in the node's config.yaml).
+/// design/peers/link.md, the trusted connection mirrored vaults travel over (Vaulthalla 1.27 and newer).
 public struct LinkedServer: Identifiable, Hashable, Sendable {
     /// The row's number on the reporting node (what `peer.unlink` and `peer.rename` name).
     public var id: Int64
@@ -95,24 +95,22 @@ public struct LinkedServer: Identifiable, Hashable, Sendable {
     private static func date(_ seconds: Int64) -> Date { Date(timeIntervalSince1970: TimeInterval(seconds)) }
 }
 
-/// What a node says about linking servers, for deciding whether the app shows anything about it at all.
+/// What a node says about linking servers.
 public enum ServerLinkAvailability: Hashable, Sendable {
-    /// The switch is on and this Mac may link servers there: the node's live links.
+    /// This Mac may link servers there: the node's live links.
     case on([LinkedServer])
-    /// The switch is on, but this Mac's account or connection may not link servers there (the reason names the node).
+    /// The node links servers, but this Mac's account or connection may not (the reason names the node).
     case notPermitted(ServerLinking.Failure)
-    /// `peers.experimental` is off on the node (`peers_experimental`).
-    case off
-    /// The node's Vaulthalla has no `peer.*` commands.
+    /// The node's Vaulthalla is older than ``ServerLinking/minimumVersion``: it has no `peer.*` commands.
     case unsupported
     /// The node couldn't be asked (offline, or another failure): nothing is known.
     case unknown(String)
 
-    /// Whether the node has the feature switched on: only then does the app mention linking at all.
-    public var isOn: Bool {
+    /// Whether the node's Vaulthalla links servers at all (whether or not this Mac may).
+    public var supportsLinking: Bool {
         switch self {
         case .on, .notPermitted: true
-        case .off, .unsupported, .unknown: false
+        case .unsupported, .unknown: false
         }
     }
 
@@ -124,16 +122,27 @@ public enum ServerLinkAvailability: Hashable, Sendable {
 /// Reading and changing one node's linked servers over this Mac's Device session. Linking two servers is
 /// ``ServerLinking``.
 public enum LinkedServers {
-    /// Asks the node (`peer.list`), which checks everything linking needs except the code: the switch, a super admin,
-    /// and a full-access, directly connected device (`peer_forbidden` otherwise). `name` is the node's, for messages.
+    /// Whether the node links servers, from the command set it advertised (`meta.hello`): every Vaulthalla since
+    /// 1.27.0 has the `peer.*` commands, none before. `nil` while it is unknown (a legacy node, or not negotiated yet):
+    /// then asking settles it (an older node doesn't know the command).
+    public static func supportsLinking(on transport: any NodeTransport) async -> Bool? {
+        switch await transport.commandSupport(.peerList) {
+        case .yes: true
+        case .no: false
+        case .unknown: nil
+        }
+    }
+
+    /// Asks the node (`peer.list`), which checks everything linking needs except the code: a super admin, and a
+    /// full-access, directly connected device (`peer_forbidden` otherwise). A node whose advertised commands lack
+    /// `peer.list` isn't asked. `name` is the node's, for messages.
     public static func availability(on transport: any NodeTransport, name: String) async -> ServerLinkAvailability {
-        if await transport.commandSupport(.peerList) == .no { return .unsupported }
+        if await supportsLinking(on: transport) == false { return .unsupported }
         do {
             let answer = try await transport.send(Ws.Peer.List.self, payload: .init())
             return .on(answer.peers.map(LinkedServer.init).filter { !$0.revoked })
         } catch {
             switch ServerLinking.Failure.precondition(error, name: name) {
-            case .switchedOff: return .off
             case .olderServer: return .unsupported
             case .offline(let name): return .unknown("\(name) isn't connected.")
             case let failure where failure.isPermission: return .notPermitted(failure)
