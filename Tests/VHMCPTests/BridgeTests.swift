@@ -277,6 +277,40 @@ import VHCore
         #expect(!ToolCatalog.isFindingState(commandLine: "health.findings.list"))
     }
 
+    /// Mirrored vaults are a person's decision (switch, take over, detach, end, remove a copy): no tool about them is
+    /// listed, whatever a node offers, and no command line reaches `vh mirror` on a node.
+    @Test func mirroredVaultsNeverReachANode() async throws {
+        defer { registry.remove() }
+        let mirrorTools: [JSONValue] = ["mirror_list", "mirror_switch", "mirrors_takeover", "mirror_detach_copy"].map {
+            ["name": .string($0), "description": "Mirrored vaults.", "inputSchema": ["type": "object"],
+             "annotations": Catalog.annotations("write", title: $0)]
+        }
+        alpha.set { $0.tools = Catalog.standard + mirrorTools }
+        let client = try client()
+        try await client.initialize()
+        let tools = try await client.tools()
+        #expect(JSONValue.array(tools).toolNames == ["nodes_list", "vh_read", "vh_run", "vaults_delete"])
+
+        for command in ["mirror switch 4", "mirror takeover 4 --confirm Photos", "vh mirror detach 4", "MIRROR LIST",
+                        "mirrors list", "\"mirror\" cancel 4 --remove-copy", "mirror.detach.copy", "mirror versions 4"] {
+            for tool in ["vh_run", "vh_read"] {
+                let reply = try await client.call(tool, ["node": "Alpha", "command": .string(command)])
+                #expect(reply["result"]?["isError"] == true, "\(tool) \(command)")
+                #expect(reply["result"]?.text.contains("decided by a person") == true)
+            }
+        }
+        let call = try await client.call("mirror_switch", ["node": "Alpha"])
+        #expect(call["error"]?["code"] == -32602)
+        #expect(alpha.calls.isEmpty)
+
+        // Commands that merely mention the word still run (a sync policy named mirror, say).
+        let other = try await client.call("vh_read", ["node": "Alpha", "command": "vault sync show 3 --mode mirror"])
+        #expect(other["result"]?["isError"] == false)
+        #expect(ToolCatalog.isMirroring(toolName: "mirror_held_retry"))
+        #expect(!ToolCatalog.isMirroring(toolName: "mirroring_status") && !ToolCatalog.isMirroring(toolName: "vaults_create"))
+        #expect(!ToolCatalog.isMirroring(commandLine: "vault list") && !ToolCatalog.isMirroring(commandLine: ""))
+    }
+
     @Test func cancellationStopsTheRequestAndSuppressesTheAnswer() async throws {
         defer { registry.remove() }
         let client = try client()

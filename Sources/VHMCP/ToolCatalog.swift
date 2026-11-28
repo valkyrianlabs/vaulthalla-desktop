@@ -111,7 +111,7 @@ struct ToolCatalog: Equatable, Sendable {
     static func isListable(_ tool: JSONValue) -> Bool {
         guard let name = tool["name"]?.stringValue else { return false }
         if name == nodesListName || isKeyMaterial(toolName: name) || isServerLinking(toolName: name)
-            || isFindingState(toolName: name) { return false }
+            || isFindingState(toolName: name) || isMirroring(toolName: name) { return false }
         if tool["inputSchema"]?["properties"]?[nodeArgument] != nil { return false }
         return true
     }
@@ -169,6 +169,24 @@ struct ToolCatalog: Equatable, Sendable {
         if first.hasPrefix("health.finding.") { return true }
         guard first == "health" || first == "findings" else { return false }
         return words.dropFirst().contains { findingStateVerbs.contains($0) }
+    }
+
+    /// Tool names about mirrored vaults: `mirror_list`, `mirrors_switch`, `mirror_detach_copy`, ... Which servers hold a
+    /// copy of a vault (and its keys), and which one is its core, is a person's decision (the server's MCP catalog
+    /// refuses the `mirror` family too): none is listed, whatever a node offers.
+    static func isMirroring(toolName: String) -> Bool {
+        let words = toolName.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+        return words.contains { $0 == "mirror" || $0 == "mirrors" }
+    }
+
+    /// A command line about mirrored vaults: `mirror …` (`vh mirror switch`, `vh mirror detach`, …) or a `mirror.*`
+    /// command, with or without a leading `vh`. Refused by the bridge before it reaches a node.
+    static func isMirroring(commandLine: String) -> Bool {
+        var words = commandLine.lowercased().split(whereSeparator: { $0.isWhitespace || $0 == "\"" || $0 == "'" })
+            .map(String.init)
+        if words.first == "vh" { words.removeFirst() }
+        guard let first = words.first else { return false }
+        return first == "mirror" || first == "mirrors" || first.hasPrefix("mirror.")
     }
 
     // MARK: - Shaping

@@ -443,6 +443,13 @@ public actor MCPBridge {
                     + "Keys in Vaulthalla, or run `vh vault keys export <vault>` in a terminal on the node.",
                 isError: true))
         }
+        if let command = forwarded["command"]?.stringValue, ToolCatalog.isMirroring(commandLine: command) {
+            log(.warning, "refused a mirrored-vaults command for \(node.id)")
+            return .success(RPC.toolResult(
+                text: "Which servers hold a copy of a vault, and which one is its core, is decided by a person, never "
+                    + "through MCP: use Mirrored Vaults in Vaulthalla, or `vh mirror` in a terminal on the node.",
+                isError: true))
+        }
         if let command = forwarded["command"]?.stringValue, ToolCatalog.isServerLinking(commandLine: command) {
             log(.warning, "refused a linked-servers command for \(node.id)")
             return .success(RPC.toolResult(
