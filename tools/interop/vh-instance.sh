@@ -31,11 +31,15 @@ free_port() { python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",
 
 listening() { ss -Hltn "sport = :$1" | grep -q .; }
 
-# The daemon we started, and only it: same executable, test mode, our database.
+# The daemon we started, and only it: same executable, test mode, our database. A rebuild relinks the executable, and
+# the running daemon's exe then reads "<path> (deleted)": still the same path, so still ours (else restart refused it
+# and down removed the run dir under it).
 ours() {
-    local pid=$1 server=$2 db=$3
+    local pid=$1 server=$2 db=$3 exe
     [[ -r /proc/$pid/environ ]] || return 1
-    [[ "$(readlink -f "/proc/$pid/exe")" == "$(readlink -f "$server")" ]] || return 1
+    exe=$(readlink "/proc/$pid/exe") || return 1
+    exe=${exe% (deleted)}
+    [[ "$(readlink -f "$exe")" == "$(readlink -f "$server")" ]] || return 1
     tr '\0' '\n' < "/proc/$pid/environ" | grep -qx 'VH_TEST_MODE=1' || return 1
     tr '\0' '\n' < "/proc/$pid/environ" | grep -qx "VH_TEST_DB_NAME=$db"
 }
