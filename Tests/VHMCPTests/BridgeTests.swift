@@ -292,7 +292,8 @@ import VHCore
         #expect(JSONValue.array(tools).toolNames == ["nodes_list", "vh_read", "vh_run", "vaults_delete"])
 
         for command in ["mirror switch 4", "mirror takeover 4 --confirm Photos", "vh mirror detach 4", "MIRROR LIST",
-                        "mirrors list", "\"mirror\" cancel 4 --remove-copy", "mirror.detach.copy", "mirror versions 4"] {
+                        "mirrors list", "\"mirror\" cancel 4 --remove-copy", "mirror.detach.copy", "mirror versions 4",
+                        "mirror relink 4 --with vps", "mirror relink 4 --approve --confirm Photos", "mirror.relink.accept"] {
             for tool in ["vh_run", "vh_read"] {
                 let reply = try await client.call(tool, ["node": "Alpha", "command": .string(command)])
                 #expect(reply["result"]?["isError"] == true, "\(tool) \(command)")

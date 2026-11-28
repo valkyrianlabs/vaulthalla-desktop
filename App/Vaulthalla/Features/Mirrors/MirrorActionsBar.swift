@@ -71,6 +71,7 @@ struct MirrorActionsBar: View {
         case .switch: .mirrorSwitch
         case .takeover: .mirrorTakeover
         case .resync: .mirrorResync
+        case .reconnect: .mirrorRelinkCompare
         case .detach: .mirrorDetach
         case .copy: .mirrorDetachCopy
         case .versions: .mirrorVersionsSet
@@ -98,7 +99,7 @@ struct MirrorActionsBar: View {
     }
 
     #if DEBUG
-    /// `-VHDebugMirrorAction <switch|takeover|resync|detach|copy|versions|cancel>` opens that action's sheet on the
+    /// `-VHDebugMirrorAction <switch|takeover|resync|reconnect|detach|copy|versions|cancel>` opens that action's sheet on the
     /// mirror `-VHDebugMirror` opens, when it applies there (DebugSnapshot). Only ever with PREVIEW DATA.
     private func openDebugAction(_ actions: [MirrorAction]) {
         guard UserDefaults.standard.bool(forKey: "VHDebugPreviewData"),
@@ -175,6 +176,7 @@ struct MirrorActionSheetContent: View {
             case .switch: MirrorSwitchSheet(row: row, queries: queries)
             case .takeover: MirrorTakeoverSheet(row: row, queries: queries)
             case .resync: MirrorResyncSheet(row: row, queries: queries)
+            case .reconnect: MirrorRelinkSheet(row: row, queries: queries)
             case .detach: MirrorDetachSheet(row: row, queries: queries)
             case .copy: MirrorDetachCopySheet(row: row, node: node, queries: queries)
             case .versions: MirrorVersionsSheet(row: row, queries: queries)
