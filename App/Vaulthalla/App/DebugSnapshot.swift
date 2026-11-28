@@ -15,7 +15,8 @@ import VHCore
 /// `-VHDebugVault <id>` selects a vault and `-VHDebugDeleteVault YES` opens its delete sheet;
 /// `-VHDebugRecoveryKeys sync|restore|restore-result|restore-salvage|settings` opens a Recovery Keys sheet;
 /// with `1:mirroredVaults`, `-VHDebugMirror <vault id>` opens a mirror's detail and `-VHDebugMirrorsEmpty YES` empties
-/// the list.
+/// the list; `-VHDebugMirrorAction switch|takeover|resync|detach|copy|versions|cancel` then opens that action's sheet
+/// and `-VHDebugMirrorConfirm YES` presses its button once (PREVIEW DATA only) to show the outcome.
 /// `-VHDebugRegistry <nodes.json>` uses another node list, and `-VHDebugPairing <phase>` shows the pairing sheet in a
 /// fixed phase without contacting the node (`DebugPairing`).
 /// The window renders itself to the PNG (and the sheet to `<name>.sheet.png`), then the app exits. Glass can't be
