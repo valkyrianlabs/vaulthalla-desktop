@@ -648,6 +648,8 @@ docs/                   this plan, the pairing protocol, release notes
     the detail through `AppModel.openMirror`).
   - **Actions** go in `MirrorActionsBar.swift` only: it lists `MirrorModel.actions(_:)` with the console's labels as
     disabled buttons today; each action piece wires its button there and adds its own sheet beside it.
+  - **Relink** (`mirror.relink.*`, `MirrorRelink` from the console's `relink.ts`): `MirrorRelinkSheet` (Reconnect…) requests, waits, compares, plans, applies (name typed);
+    `MirrorRelinkRequestsPanel` (list page) accepts, declines or approves (name typed) only on its own server, by a click.
   - **Preview data** (`MirrorsPreviewData`): every role and state, a link down, pending changes, a first copy, a core
     deleting its vault, a take over, starts, a detached copy; `-VHDebugMirrorsEmpty YES` empties the list and
     `-VHDebugMirror <vault id>` opens a detail for snapshots.

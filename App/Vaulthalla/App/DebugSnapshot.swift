@@ -15,8 +15,11 @@ import VHCore
 /// `-VHDebugVault <id>` selects a vault and `-VHDebugDeleteVault YES` opens its delete sheet;
 /// `-VHDebugRecoveryKeys sync|restore|restore-result|restore-salvage|settings` opens a Recovery Keys sheet;
 /// with `1:mirroredVaults`, `-VHDebugMirror <vault id>` opens a mirror's detail and `-VHDebugMirrorsEmpty YES` empties
-/// the list; `-VHDebugMirrorAction switch|takeover|resync|detach|copy|versions|cancel` then opens that action's sheet
-/// and `-VHDebugMirrorConfirm YES` presses its button once (PREVIEW DATA only) to show the outcome.
+/// the list; `-VHDebugMirrorAction switch|takeover|resync|reconnect|detach|copy|versions|cancel` then opens that action's
+/// sheet and `-VHDebugMirrorConfirm YES` presses its button once (PREVIEW DATA only) to show the outcome.
+/// `-VHDebugRelink requested|waiting|comparison|plan|confirm|applied|refused` sets the relink PREVIEW DATA answers (with
+/// `reconnect` on vault 20, the Reconnect sheet at that state); `panel|approve|accept` lists relink requests on the
+/// Mirrored Vaults page and opens the approve or accept dialog (`MirrorRelinkDebug`).
 /// `-VHDebugMirrorSheet add|accept|decline|cancel|settings|settings-confirm|settings-refuse|discard` opens an offer,
 /// held-change or link-settings dialog (`MirrorDebugSheet`).
 /// `-VHDebugRegistry <nodes.json>` uses another node list, and `-VHDebugPairing <phase>` shows the pairing sheet in a

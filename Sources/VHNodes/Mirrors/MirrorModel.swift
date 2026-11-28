@@ -313,7 +313,7 @@ public enum MirrorModel {
         switch row.role {
         case .core:
             if coreReplaced(row) {
-                out += [.resync, .detach, .held]
+                out += [.reconnect, .resync, .detach, .held]
                 break
             }
             if row.state == .live, !deleting { out.append(.switch) }
@@ -325,11 +325,11 @@ public enum MirrorModel {
             if row.state == .diverged || row.state == .expired || row.state == .stopped { out.append(.resync) }
             out += [.detach, .copy, .versions, .held]
         case .orphaned:
-            out += [.detach, .copy, .cancel, .held]
+            out += [.reconnect, .detach, .copy, .cancel, .held]
         case .starting:
             if let start = row.start, startOpen.contains(start.state) { out.append(.cancel) }
         case .detached:
-            out.append(.held)
+            out += [.reconnect, .held]
         case .none, .other:
             break
         }
@@ -381,6 +381,9 @@ public enum MirrorModel {
         case .takeover:
             return ActionText(label: MirrorCopy.takeoverAction, hint: MirrorCopy.takeoverHint(peer), danger: true,
                               systemImage: "shield.lefthalf.filled")
+        case .reconnect:
+            return ActionText(label: MirrorRelinkCopy.reconnectAction, hint: MirrorRelinkCopy.reconnectHint(peer),
+                              danger: false, systemImage: "link")
         case .copy:
             return ActionText(label: MirrorCopy.copyAction, hint: MirrorCopy.copyHint, danger: false,
                               systemImage: "doc.on.doc")
@@ -518,5 +521,5 @@ public enum MirrorModel {
 /// An action on a mirrored vault. The detail's actions bar lists the ones ``MirrorModel/actions(_:)`` gives; `held`
 /// is the held-changes list rather than a button.
 public enum MirrorAction: String, CaseIterable, Hashable, Sendable {
-    case cancel, `switch`, takeover, resync, detach, copy, versions, held
+    case cancel, `switch`, takeover, resync, reconnect, detach, copy, versions, held
 }

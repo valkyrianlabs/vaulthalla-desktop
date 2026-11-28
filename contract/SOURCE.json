@@ -1,10 +1,10 @@
 {
-  "server_version": "1.27.1",
-  "server_commit": "a7f970d9",
+  "server_version": "1.28.1",
+  "server_commit": "d738783f",
   "server_branch": "main",
   "source": "web/src/util/generated/wsContract.json",
   "contract_version": 3,
   "ws_hash": "5a774ba486bbcebc71656b3bcc07380313bb3244acaf31512ebbdd4a282c1654",
   "models_hash": "fb2eb50b685f7091174b75d352410329a3ab874281197b5e75237c9eacb3def9",
-  "note": "server main a7f970d9 (health.subscribe, health.unsubscribe, health.changed push)"
+  "note": "server main d738783f v1.28.1 (mirror.relink.*)"
 }

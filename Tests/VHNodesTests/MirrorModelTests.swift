@@ -115,7 +115,8 @@ struct MirrorModelTests {
         #expect(a(Self.row()) == [.switch, .detach, .copy, .versions, .held])
         #expect(a(Self.row { $0.state = .diverged }) == [.resync, .detach, .copy, .versions, .held])
         #expect(!a(Self.row()).contains(.cancel), "a completed mirror leaves by detaching")
-        #expect(a(Self.row { $0.role = .orphaned }) == [.detach, .copy, .cancel, .held])
+        #expect(a(Self.row { $0.role = .orphaned }) == [.reconnect, .detach, .copy, .cancel, .held])
+        #expect(a(Self.row { $0.role = .detached }) == [.reconnect, .held])
         #expect(a(Self.row { $0.role = .starting; $0.start = Self.start() }) == [.cancel])
         #expect(a(Self.row { $0.role = .starting; $0.start = Self.start(state: "declined") }) == [])
         #expect(a(Self.row { $0.role = .core; $0.deleting = .init(deleting: true, purgeAfter: 1, copy: "leave") }) == [.cancel])
@@ -177,8 +178,8 @@ struct MirrorModelTests {
         }
         #expect(Self.status(took, linkUp: false).sentence.contains("has not returned yet"))
         #expect(MirrorModel.advice(took, linkUp: false, held: 0)?.contains("The old core has not returned yet") == true)
-        #expect(MirrorModel.actions(Self.row { $0.role = .core; $0.state = .rejoining }, firstCopyFinished: nil) == [.resync, .detach, .held])
-        #expect(MirrorModel.actions(Self.row { $0.role = .core; $0.state = .forked }, firstCopyFinished: nil) == [.resync, .detach, .held])
+        #expect(MirrorModel.actions(Self.row { $0.role = .core; $0.state = .rejoining }, firstCopyFinished: nil) == [.reconnect, .resync, .detach, .held])
+        #expect(MirrorModel.actions(Self.row { $0.role = .core; $0.state = .forked }, firstCopyFinished: nil) == [.reconnect, .resync, .detach, .held])
         #expect(MirrorModel.actions(took, firstCopyFinished: nil) == [.switch, .detach, .cancel])
         #expect(MirrorModel.advice(Self.row { $0.role = .core; $0.state = .rejoining }, linkUp: true, held: 0)?
             .contains("Resync it to follow vps again") == true)

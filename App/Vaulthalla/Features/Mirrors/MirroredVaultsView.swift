@@ -100,6 +100,10 @@ private struct MirrorListScreen: View {
                                   peerNames: Dictionary(linked.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a }))
                     .padding(.horizontal, Theme.pagePadding)
                     .layoutPriority(1)
+                // Shown only while a linked server's relink waits for an answer here.
+                MirrorRelinkRequestsPanel(queries: queries)
+                    .padding(.horizontal, Theme.pagePadding)
+                    .layoutPriority(1)
                 if value.vaults.isEmpty {
                     MirrorsEmptyState(queries: queries)
                         .padding(.horizontal, Theme.pagePadding)

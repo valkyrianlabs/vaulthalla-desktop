@@ -21,7 +21,7 @@ nonisolated final class PreviewTransport: NodeTransport {
 
     /// Feature folders' own canned answers (`PreviewFeature`), asked in order for commands answered nowhere here. All
     /// Nodes first: with `-VHDebugLinkBoth` it answers Studio's vault roles, which Access refuses for that account.
-    static let features: [any PreviewFeature.Type] = [AllNodesPreviewData.self, CostPreviewData.self, CredentialsPreviewData.self, NewVaultPreviewData.self, SyncConflictsPreviewData.self, AccessPreviewData.self, SharesPreviewData.self, DevicesPreviewData.self, GatewayPreviewData.self, RecoveryKeysPreviewData.self, HealthPreviewData.self, MirrorsPreviewData.self, FindingsPreviewData.self, MirrorOffersPreviewData.self]
+    static let features: [any PreviewFeature.Type] = [AllNodesPreviewData.self, CostPreviewData.self, CredentialsPreviewData.self, NewVaultPreviewData.self, SyncConflictsPreviewData.self, AccessPreviewData.self, SharesPreviewData.self, DevicesPreviewData.self, GatewayPreviewData.self, RecoveryKeysPreviewData.self, HealthPreviewData.self, MirrorsPreviewData.self, FindingsPreviewData.self, MirrorOffersPreviewData.self, MirrorRelinkPreviewData.self]
 
     init(_ scenario: Scenario) {
         self.scenario = scenario
