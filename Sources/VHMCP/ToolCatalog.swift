@@ -107,7 +107,8 @@ struct ToolCatalog: Equatable, Sendable {
 
     static func isListable(_ tool: JSONValue) -> Bool {
         guard let name = tool["name"]?.stringValue else { return false }
-        if name == nodesListName || isKeyMaterial(toolName: name) || isServerLinking(toolName: name) { return false }
+        if name == nodesListName || isKeyMaterial(toolName: name) || isServerLinking(toolName: name)
+            || isMirroring(toolName: name) { return false }
         if tool["inputSchema"]?["properties"]?[nodeArgument] != nil { return false }
         return true
     }
@@ -144,6 +145,24 @@ struct ToolCatalog: Equatable, Sendable {
         if words.first == "vh" { words.removeFirst() }
         guard let first = words.first else { return false }
         return first == "peer" || first == "peers" || first.hasPrefix("peer.")
+    }
+
+    /// Tool names about mirrored vaults: `mirror_add`, `mirrors_list`, `mirror_held_retry`, ...
+    static func isMirroring(toolName: String) -> Bool {
+        let words = toolName.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber })
+        return words.contains { $0 == "mirror" || $0 == "mirrors" }
+    }
+
+    /// A command line about mirrored vaults: `mirror …` (`vh mirror add`, `vh mirror accept`, `vh mirror held retry`,
+    /// `vh mirror accept-all`, …), with or without a leading `vh`. Offering a vault, answering an offer, a held change
+    /// or a link's mirror settings change what another server holds: a person decides them in the app, so the bridge
+    /// refuses them before they reach a node.
+    static func isMirroring(commandLine: String) -> Bool {
+        var words = commandLine.lowercased().split(whereSeparator: { $0.isWhitespace || $0 == "\"" || $0 == "'" })
+            .map(String.init)
+        if words.first == "vh" { words.removeFirst() }
+        guard let first = words.first else { return false }
+        return first == "mirror" || first == "mirrors" || first.hasPrefix("mirror.")
     }
 
     // MARK: - Shaping

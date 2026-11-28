@@ -58,17 +58,30 @@ private struct MirrorListScreen: View {
     @State private var selection: MirrorListRow.ID?
     @State private var sortOrder: [KeyPathComparator<MirrorListRow>] = [KeyPathComparator(\.order)]
     @State private var filter = ""
+    @State private var adding = false
 
     var body: some View {
         let list = queries.query(Ws.Mirror.List.self)
+        let peers = queries.query(Ws.Peer.List.self, .init(all: true))
+        let linked = (peers.value?.peers ?? []).filter { !$0.revoked }
+        let mirrored = (list.value?.vaults ?? []).map(MirroredVault.init)
 
         VStack(alignment: .leading, spacing: 0) {
             SectionHeader(eyebrow: node.displayName, title: MirrorCopy.title, subtitle: MirrorCopy.description) {
-                let status = model.status(for: node)
-                StatusBadge(label: status.label, tone: status.tone, pulse: status.isTransitional)
+                HStack(spacing: 12) {
+                    let status = model.status(for: node)
+                    StatusBadge(label: status.label, tone: status.tone, pulse: status.isTransitional)
+                    Button(MirrorOfferCopy.addAction, systemImage: "plus") { adding = true }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.accentFill)
+                        .disabled(linked.isEmpty || list.value == nil)
+                        .help(linked.isEmpty ? MirrorCopy.noLinksBody : MirrorOfferCopy.addDescription)
+                }
             }
             .padding([.horizontal, .top], Theme.pagePadding)
             .padding(.bottom, 16)
+            // The header, the offers and the settings keep their lines; the table takes what is left.
+            .layoutPriority(1)
 
             switch list.state {
             case .idle, .loading:
@@ -83,18 +96,47 @@ private struct MirrorListScreen: View {
                 StaleBanner(node: node, updatedAt: at, refreshError: list.refreshError, connected: queries.isConnected)
                     .padding(.horizontal, Theme.pagePadding)
                     .padding(.bottom, 12)
+                MirrorOffersPanel(queries: queries, rows: mirrored,
+                                  peerNames: Dictionary(linked.map { ($0.id, $0.name) }, uniquingKeysWith: { a, _ in a }))
+                    .padding(.horizontal, Theme.pagePadding)
+                    .layoutPriority(1)
                 if value.vaults.isEmpty {
                     MirrorsEmptyState(queries: queries)
                         .padding(.horizontal, Theme.pagePadding)
+                    linkSettings(linked, rows: mirrored)
                     Spacer(minLength: 0)
                 } else {
                     table(rows(value.vaults))
+                        // At the smallest window the table gives way first, never the sentences around it.
+                        .frame(minHeight: 0, maxHeight: .infinity)
+                    linkSettings(linked, rows: mirrored)
                 }
             }
         }
         .observing(list, polling: MirrorPolling.list)
+        .observing(peers, polling: MirrorPolling.list)
+        .sheet(isPresented: $adding) {
+            AddMirrorSheet(queries: queries, mirrored: mirrored, peers: linked)
+        }
+        #if DEBUG
+        .task(id: linked.count + mirrored.count) {
+            if !adding, MirrorDebugSheet.requested == "add", !linked.isEmpty, list.value != nil { adding = true }
+        }
+        #endif
         .searchable(text: $filter, placement: .toolbar, prompt: "Filter Vaults")
         .frame(minWidth: 0, maxWidth: .infinity)
+    }
+
+    /// The console's Per linked server panel, under the table.
+    @ViewBuilder
+    private func linkSettings(_ linked: [Ws.Peer.List.Response.Peer], rows: [MirroredVault]) -> some View {
+        if !linked.isEmpty {
+            MirrorLinkSettingsPanel(queries: queries, peers: linked, rows: rows)
+                .padding(.horizontal, Theme.pagePadding)
+                .padding(.top, 8)
+                .padding(.bottom, 14)
+                .layoutPriority(1)
+        }
     }
 
     @ViewBuilder
@@ -124,19 +166,19 @@ private struct MirrorListScreen: View {
                 .padding(.vertical, 4)
                 .help(row.vault.vaultID > 0 ? "" : "Not created on this server yet")
             }
-            .width(min: 150, ideal: 190)
+            .width(min: 120, ideal: 190)
 
             TableColumn(MirrorCopy.colServer, value: \.sortServer) { row in
                 Text(MirrorModel.peerName(row.vault))
                     .foregroundStyle(row.vault.peer == nil ? Color.fgFaint : Color.fgMuted)
                     .lineLimit(1)
             }
-            .width(min: 90, ideal: 130, max: 200)
+            .width(min: 70, ideal: 130, max: 200)
 
             TableColumn(MirrorCopy.colRole, value: \.sortRole) { row in
                 MirrorRoleBadge(role: row.vault.role)
             }
-            .width(min: 80, ideal: 100, max: 130)
+            .width(min: 70, ideal: 100, max: 130)
 
             TableColumn(MirrorCopy.colState, value: \.status.label) { row in
                 VStack(alignment: .leading, spacing: 3) {
@@ -149,22 +191,22 @@ private struct MirrorListScreen: View {
                 }
                 .help(row.status.sentence)
             }
-            .width(min: 180, ideal: 260)
+            .width(min: 140, ideal: 260)
 
             TableColumn(MirrorCopy.colPending, value: \.sortPending) { row in
                 pending(row.vault)
             }
-            .width(min: 56, ideal: 64, max: 90)
+            .width(min: 44, ideal: 64, max: 90)
 
             TableColumn(MirrorCopy.colConfirmed, value: \.sortConfirmed) { row in
                 confirmed(row.vault)
             }
-            .width(min: 100, ideal: 140, max: 180)
+            .width(min: 76, ideal: 140, max: 180)
 
             TableColumn(MirrorCopy.colLink, value: \.sortLink) { row in
                 MirrorLinkLabel(link: row.vault.link)
             }
-            .width(min: 100, ideal: 110, max: 140)
+            .width(min: 80, ideal: 110, max: 140)
         }
         .tableStyle(.inset(alternatesRowBackgrounds: false))
         .scrollContentBackground(.hidden)

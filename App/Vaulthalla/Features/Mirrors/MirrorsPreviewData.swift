@@ -105,6 +105,8 @@ nonisolated enum MirrorsPreviewData: PreviewFeature {
             row(19, "Travel (preview)", role: "starting", state: nil, peer: offsite, linkUp: true,
                 start: start(42, side: "core", state: "failed", name: "Travel (preview)", vaultID: 19,
                              reason: "mirror_no_space", lastError: "not enough space on Offsite for 412 GB")),
+            row(24, "Garden Plans (preview)", role: "starting", state: nil, peer: offsite, linkUp: true,
+                start: start(44, side: "core", state: "offered", name: "Garden Plans (preview)", vaultID: 24)),
             row(20, "Contracts (preview)", role: "detached", state: nil, peer: offsite, linkUp: true,
                 detached: #"{"id": 3, "side": "mirror", "vault_id": 20, "peer_id": 1, "fork": {"term": 2, "seq": 88}, "digest_matched": true, "was_state": "live", "missing": 0, "owner_id": 1, "detached_by": 1, "detached_at": \#(now - 86_400 * 9), "rekeyed_at": null, "rekey_recommended": true}"#, rekey: true),
         ]

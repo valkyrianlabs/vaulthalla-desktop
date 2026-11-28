@@ -450,6 +450,13 @@ public actor MCPBridge {
                     + "Vaulthalla (All Nodes), or `vh peer` in a terminal on the node.",
                 isError: true))
         }
+        if let command = forwarded["command"]?.stringValue, ToolCatalog.isMirroring(commandLine: command) {
+            log(.warning, "refused a mirrored-vaults command for \(node.id)")
+            return .success(RPC.toolResult(
+                text: "Mirroring vaults is decided by a person, never through MCP: use Mirrored Vaults in Vaulthalla, "
+                    + "or `vh mirror` in a terminal on the node.",
+                isError: true))
+        }
 
         guard let remote = remotes[node.id] else {
             return .success(RPC.toolResult(text: "\(node.displayName) isn't a node this Mac knows.", isError: true))
