@@ -171,16 +171,16 @@ struct ToolCatalog: Equatable, Sendable {
         return words.dropFirst().contains { findingStateVerbs.contains($0) }
     }
 
-    /// Tool names about mirrored vaults: `mirror_add`, `mirrors_list`, `mirror_held_retry`, ...
+    /// Tool names about mirrored vaults: `mirror_list`, `mirrors_switch`, `mirror_detach_copy`, ... Which servers hold a
+    /// copy of a vault (and its keys), and which one is its core, is a person's decision (the server's MCP catalog
+    /// refuses the `mirror` family too): none is listed, whatever a node offers.
     static func isMirroring(toolName: String) -> Bool {
         let words = toolName.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber })
         return words.contains { $0 == "mirror" || $0 == "mirrors" }
     }
 
-    /// A command line about mirrored vaults: `mirror …` (`vh mirror add`, `vh mirror accept`, `vh mirror held retry`,
-    /// `vh mirror accept-all`, …), with or without a leading `vh`. Offering a vault, answering an offer, a held change
-    /// or a link's mirror settings change what another server holds: a person decides them in the app, so the bridge
-    /// refuses them before they reach a node.
+    /// A command line about mirrored vaults: `mirror …` (`vh mirror switch`, `vh mirror detach`, …) or a `mirror.*`
+    /// command, with or without a leading `vh`. Refused by the bridge before it reaches a node.
     static func isMirroring(commandLine: String) -> Bool {
         var words = commandLine.lowercased().split(whereSeparator: { $0.isWhitespace || $0 == "\"" || $0 == "'" })
             .map(String.init)

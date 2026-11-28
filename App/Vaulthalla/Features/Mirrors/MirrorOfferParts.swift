@@ -55,18 +55,6 @@ final class MirrorChange {
     }
 }
 
-/// A refusal in plain words. An approval this Mac can't give (`step_up_required`) reads as the server's message,
-/// which says where to give it.
-enum MirrorRefusal {
-    static func sentence(_ error: WsError) -> String {
-        switch error {
-        case .unknownCommand: CompatibilityWords.unknownCommand
-        case .contractMismatch: "The server answered in a shape this version of Vaulthalla doesn't understand."
-        default: error.message
-        }
-    }
-}
-
 /// The last refusal or success of a ``MirrorChange``, as a callout.
 struct MirrorChangeNote: View {
     var change: MirrorChange

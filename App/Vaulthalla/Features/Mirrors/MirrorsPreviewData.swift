@@ -27,7 +27,7 @@ nonisolated enum MirrorsPreviewData: PreviewFeature {
             let id = (payload as? Ws.Mirror.Detach.Preview.Payload)?.vaultID ?? 0
             return try decode(Ws.Mirror.Detach.Preview.Response.self, preview(id))
         default:
-            return nil
+            return try actionAnswer(command, payload, from: transport)
         }
     }
 

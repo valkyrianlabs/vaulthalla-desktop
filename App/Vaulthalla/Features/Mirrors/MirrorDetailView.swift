@@ -64,6 +64,7 @@ struct MirrorDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollContentBackground(.hidden)
+        .modifier(MirrorActionPresenter(node: node, queries: queries))
         .observing(get, polling: Self.isRunning(row) ? MirrorPolling.running : MirrorPolling.list)
     }
 

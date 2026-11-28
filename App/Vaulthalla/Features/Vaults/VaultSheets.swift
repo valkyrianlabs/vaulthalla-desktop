@@ -70,6 +70,10 @@ struct EditVaultSheet: View {
 /// and for how long; S3 upstream data is kept unless the person chooses otherwise; "Delete now" needs the vault's
 /// name typed. The daemon's own confirmations (`vault_upstream_key_loss`, `vault_delete_now`) come back through
 /// the data layer: the typed name accepts `vault_delete_now`, and key loss is asked in the daemon's words.
+/// A vault this server mirrors to a linked server also asks what happens to the copy there (`mirror_copy`: leave or
+/// remove, nothing chosen for the person), when `mirror.get` says it is this server's (core) or the daemon refuses
+/// with `mirror_copy_choice_required`; a copy held here can't be deleted, so the sheet says so and points to its
+/// mirror (the console's DeleteVaultDialog).
 struct DeleteVaultSheet: View {
     var vault: WsModel.Vault
     var node: Node
@@ -81,14 +85,21 @@ struct DeleteVaultSheet: View {
     @State private var deleteUpstream = false
     @State private var typedName = ""
     @State private var remove: NodeMutation<Ws.Storage.Vault.Remove>
+    @State private var mirrorCopy: Ws.Storage.Vault.Remove.Payload.MirrorCopy?
+    @State private var mirrorChoiceRequired = false
     private let plan: NodeQuery<Ws.Storage.Vault.Remove.Plan>
+    /// Whether the vault is mirrored (super admins may read it; anyone else learns it from the refusal).
+    private let mirror: NodeQuery<Ws.Mirror.Get>?
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppModel.self) private var model
 
     init(vault: WsModel.Vault, node: Node, queries: NodeQueries, onDeleted: @escaping () -> Void) {
         self.vault = vault
         self.node = node
         self.onDeleted = onDeleted
         plan = queries.query(Ws.Storage.Vault.Remove.Plan.self, .init(id: vault.id))
+        mirror = queries.supports(command: .mirrorGet) == .no ? nil
+            : queries.query(Ws.Mirror.Get.self, .init(vaultID: vault.id))
         _remove = State(initialValue: NodeMutation(
             Ws.Storage.Vault.Remove.self, on: queries,
             invalidating: ["storage.vault", "stats.system.storage", "stats.vault", "vault.recovery"]))
@@ -128,6 +139,7 @@ struct DeleteVaultSheet: View {
         .padding(22)
         .frame(width: 500)
         .task { await plan.refresh() }
+        .task { await mirror?.refresh() }
         // The facts can change underneath (a key exported from a terminal): re-read them when the daemon asks.
         .onChange(of: remove.confirmation?.id) { _, id in
             if id != nil { Task { await plan.refresh() } }
@@ -160,6 +172,8 @@ struct DeleteVaultSheet: View {
                 }
             }
 
+            mirrorSection
+
             if Self.keyAtRisk(plan, deleteUpstream: deleteUpstream) {
                 Callout(tone: .danger, systemImage: "exclamationmark.triangle") {
                     Text("The data in \(plan.bucket ?? "the bucket") can't be decrypted without this vault's key")
@@ -180,6 +194,61 @@ struct DeleteVaultSheet: View {
         }
     }
 
+    // MARK: Mirror
+
+    private var mirrorRow: MirroredVault? { mirror?.value.map { MirroredVault($0.vault) } }
+
+    private var mirrorDeletion: MirrorActions.Deletion {
+        MirrorActions.deletion(role: mirrorRow?.role, choiceRequired: mirrorChoiceRequired)
+    }
+
+    @ViewBuilder
+    private var mirrorSection: some View {
+        let peer = mirrorRow?.peer.flatMap { $0.name.isEmpty ? nil : $0.name }
+        switch mirrorDeletion {
+        case .none:
+            EmptyView()
+        case .heldCopy, .orphan:
+            Callout(tone: .warn, systemImage: "exclamationmark.triangle") {
+                Text(mirrorDeletion == .orphan ? MirrorCopy.deleteOrphan
+                    : MirrorCopy.deleteHeldCopy(peer ?? MirrorCopy.unnamedServer))
+                    .foregroundStyle(.fgMuted)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button(MirrorCopy.deleteOpenMirror) {
+                    dismiss()
+                    model.openMirror(vault.id, on: node.id)
+                }
+                .buttonStyle(.link)
+                .padding(.top, 2)
+            }
+        case .choose:
+            VStack(alignment: .leading, spacing: 6) {
+                MirrorChoiceCards(
+                    legend: peer.map(MirrorCopy.deleteMirrorLegend) ?? MirrorCopy.deleteMirrorLegendUnknown,
+                    options: [
+                        .init(value: .leave, title: MirrorCopy.deleteMirrorLeave, hint: MirrorCopy.deleteMirrorLeaveHint),
+                        .init(value: .remove, title: MirrorCopy.deleteMirrorRemove,
+                              hint: MirrorCopy.deleteMirrorRemoveHint),
+                    ],
+                    selection: $mirrorCopy)
+                Text(MirrorCopy.deleteMirrorReadOnly)
+                    .font(.caption)
+                    .foregroundStyle(.fgSubtle)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// Deleting waits for the mirror's facts to be settled: a held copy can't be deleted, and the core's choice must
+    /// be made.
+    private var mirrorBlocks: Bool {
+        switch mirrorDeletion {
+        case .none: false
+        case .heldCopy, .orphan: true
+        case .choose: mirrorCopy == nil
+        }
+    }
+
     private func now(_ plan: WsModel.VaultRemovalPlan) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Its data is removed within moments\(deleteUpstream ? ", including the objects in the bucket," : "") and it can't be restored. Its encryption key is still kept for \(plan.keyRetentionWindow).")
@@ -193,7 +262,7 @@ struct DeleteVaultSheet: View {
 
     @ViewBuilder
     private var buttons: some View {
-        let ready = plan.value != nil && !remove.isRunning
+        let ready = plan.value != nil && !remove.isRunning && !mirrorBlocks
         HStack {
             if remove.isRunning {
                 ProgressView().controlSize(.small)
@@ -226,14 +295,20 @@ struct DeleteVaultSheet: View {
         guard let plan = plan.value?.plan else { return }
         let payload = Ws.Storage.Vault.Remove.Payload(
             id: vault.id, now: now ? true : nil,
-            deleteUpstream: plan.type == WsModel.VaultRemovalPlan.TypeValue.s3 ? .value(deleteUpstream) : nil)
+            deleteUpstream: plan.type == WsModel.VaultRemovalPlan.TypeValue.s3 ? .value(deleteUpstream) : nil,
+            mirrorCopy: mirrorDeletion == .choose ? mirrorCopy.map { .value($0) } : nil)
         // The typed name is the person's acceptance of deleting now; anything else the daemon asks is put to them.
         let accepted: Set<String> = now ? ["vault_delete_now"] : []
         if await remove.run(payload, accepting: accepted) != nil {
             onDeleted()
             dismiss()
-        } else if now, remove.confirmation == nil {
-            step = .choose
+        } else {
+            if remove.error?.code == MirrorActions.copyChoiceRequired {
+                // The vault is mirrored after all: ask, then the person sends it again.
+                mirrorChoiceRequired = true
+                Task { await mirror?.refresh() }
+            }
+            if now, remove.confirmation == nil { step = .choose }
         }
     }
 
