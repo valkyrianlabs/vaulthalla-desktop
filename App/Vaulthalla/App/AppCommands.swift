@@ -62,7 +62,7 @@ struct AppCommands: Commands {
             Divider()
 
             Menu("Go To") {
-                ForEach(NodeSection.allCases) { section in
+                ForEach(model.selectedNode.map(model.sections(for:)) ?? NodeSection.allCases) { section in
                     Button(section.title) { model.select(section) }
                 }
             }

@@ -13,7 +13,9 @@ import VHCore
 /// `-VHDebugSheet` takes `addNode` or `pair:<position>`.
 /// `-VHDebugPreviewData YES` serves the preview nodes from PREVIEW DATA (`PreviewTransport`); with it,
 /// `-VHDebugVault <id>` selects a vault and `-VHDebugDeleteVault YES` opens its delete sheet;
-/// `-VHDebugRecoveryKeys sync|restore|restore-result|restore-salvage|settings` opens a Recovery Keys sheet.
+/// `-VHDebugRecoveryKeys sync|restore|restore-result|restore-salvage|settings` opens a Recovery Keys sheet;
+/// with `1:mirroredVaults`, `-VHDebugMirror <vault id>` opens a mirror's detail and `-VHDebugMirrorsEmpty YES` empties
+/// the list.
 /// `-VHDebugRegistry <nodes.json>` uses another node list, and `-VHDebugPairing <phase>` shows the pairing sheet in a
 /// fixed phase without contacting the node (`DebugPairing`).
 /// The window renders itself to the PNG (and the sheet to `<name>.sheet.png`), then the app exits. Glass can't be
@@ -60,7 +62,9 @@ enum DebugSnapshot {
                                     display: true)
                 }
             }
-            try? await Task.sleep(for: .seconds(2.5))
+            // `-VHDebugSnapshotDelay <seconds>`: wait longer before the capture (a sheet that runs a few steps first).
+            let delay = defaults.double(forKey: "VHDebugSnapshotDelay")
+            try? await Task.sleep(for: .seconds(delay > 0 ? delay : 2.5))
             let url = URL(filePath: path)
             if let window = NSApp.windows.first(where: { $0.isVisible && $0.sheetParent == nil && $0.contentView != nil }) {
                 write(window, to: url)

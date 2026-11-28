@@ -48,6 +48,8 @@ final class AppModel {
     /// The health card a drill-down should bring forward (a dashboard card id such as "system.fuse"), set when an
     /// All Nodes alert opens a node's Overview. The Overview reads it and sets it back to nil.
     var healthFocus: String?
+    /// The mirrored vault whose detail the Mirrored Vaults page shows (``openMirror(_:on:)``); nil shows the list.
+    var mirrorFocus: MirrorFocus?
 
     var sheet: Sheet?
     /// The report being filed (the Report a Problem sheet), from a finding, a node or the Help menu.

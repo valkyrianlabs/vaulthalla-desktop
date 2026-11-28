@@ -7,12 +7,19 @@ import VHNodes
 /// back. Every figure is a node's own answer; totals add up only what the nodes reported.
 struct AllNodesView: View {
     @Environment(AppModel.self) private var model
-    /// The Link Servers sheet, and the node it was opened from.
-    @State private var linking: LinkRequest?
+    /// The Link Servers sheet (with what it was opened for), or Accept a Link Request on a node.
+    @State private var linking: LinkSheet?
 
-    private struct LinkRequest: Identifiable {
-        var node: NodeID?
-        var id: String { node?.rawValue ?? "" }
+    private enum LinkSheet: Identifiable {
+        case link(NodeID?, NodeID?, byAddress: Bool = false)
+        case accept(NodeID)
+
+        var id: String {
+            switch self {
+            case .link(let a, let b, let byAddress): "link:\(a?.rawValue ?? ""):\(b?.rawValue ?? ""):\(byAddress)"
+            case .accept(let node): "accept:\(node.rawValue)"
+            }
+        }
     }
 
     var body: some View {
@@ -23,7 +30,7 @@ struct AllNodesView: View {
                     if !model.nodes.isEmpty {
                         HStack(spacing: 8) {
                             // Always offered: the sheet says which nodes are too old to link servers.
-                            Button("Link Servers…", systemImage: "link") { linking = LinkRequest() }
+                            Button("Link Servers…", systemImage: "link") { linking = .link(nil, nil) }
                                 .controlSize(.small)
                             Button("Add Node…", systemImage: "plus") { model.presentAddNode() }
                                 .controlSize(.small)
@@ -63,7 +70,8 @@ struct AllNodesView: View {
                     }
 
                     if model.linkedServers.isVisible {
-                        LinkedServersPanel { node in linking = LinkRequest(node: node) }
+                        LinkedServersPanel(link: { first, second in linking = .link(first, second) },
+                                           accept: { node in linking = .accept(node) })
                     }
 
                     // Nodes with figures first, in sidebar order; those without (unpaired, revoked, offline before
@@ -90,15 +98,30 @@ struct AllNodesView: View {
         }
         .scrollContentBackground(.hidden)
         .task { await model.linkedServers.watch() }
-        .sheet(item: $linking) { request in
-            LinkServersSheet(preselected: request.node)
+        .sheet(item: $linking) { sheet in
+            switch sheet {
+            case .link(let first, let second, let byAddress):
+                LinkServersSheet(preselected: first, other: second, byAddress: byAddress)
+            case .accept(let node):
+                AcceptLinkSheet(node: node)
+            }
         }
         #if DEBUG
-        // `-VHDebugLinkServers YES` opens the Link Servers sheet once the nodes have answered (DebugSnapshot).
+        // `-VHDebugLinkServers YES` opens the Link Servers sheet once the nodes have answered (DebugSnapshot); `pair`
+        // with the first two nodes that link servers picked, `address` with "Another server, by address", `accept`
+        // Accept a Link Request on the first node where this Mac may link servers.
         .task {
-            guard UserDefaults.standard.bool(forKey: "VHDebugLinkServers") else { return }
-            for _ in 0..<40 where !model.linkedServers.isVisible { try? await Task.sleep(for: .milliseconds(50)) }
-            linking = LinkRequest()
+            guard let mode = UserDefaults.standard.string(forKey: "VHDebugLinkServers") else { return }
+            let linked = model.linkedServers
+            for _ in 0..<60 where linked.linkableNodes.count < 2 { try? await Task.sleep(for: .milliseconds(50)) }
+            let ids = linked.linkableNodes.map(\.id)
+            let permitted = ids.first { linked.isPermitted($0) }
+            switch mode {
+            case "pair": linking = .link(permitted, ids.first { $0 != permitted })
+            case "address": linking = .link(permitted, nil, byAddress: true)
+            case "accept": linking = permitted.map(LinkSheet.accept)
+            default: linking = .link(nil, nil)
+            }
         }
         #endif
     }

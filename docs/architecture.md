@@ -122,8 +122,8 @@ docs/                   this plan, the pairing protocol, release notes
 - One `NavigationSplitView`. The sidebar lists the nodes (status dot, an incompatibility badge when the node's
   protocol range doesn't overlap this build's, pairing state); the feature sections below it apply to the selected
   node.
-  - Feature sections: Overview/Health, Files, Vaults, Shares, Access (users, groups, roles), Sync conflicts, Cost,
-    S3 gateway, Recovery keys, Settings.
+  - Feature sections: Overview/Health, Files, Vaults, Mirrored vaults (only on a node whose `meta.hello` lists
+    `mirror.list`), Shares, Access (users, groups, roles), Sync conflicts, Cost, S3 gateway, Recovery keys, Settings.
   - "All nodes" views cover what spans deployments: overview, key backup status, devices.
   - ⌘1–9 switch nodes. A menu bar item shows the fleet's state and keeps the app running in the background
     (`docs/mac-experience.md`). The ⌘K command palette planned here is not built.
@@ -563,15 +563,51 @@ docs/                   this plan, the pairing protocol, release notes
     up to 10 s for the dialling server to record the link (then it is linked after all) or to fail; if it failed, the
     accepting server holds a row the other lacks (the server documents this), returned as `halfLinked` for the sheet to
     offer Unlink there. `LinkedServers.oneSided` finds the same from both nodes' `peer.list` for All Nodes.
-  - **UI** (All Nodes; `LinkedServersModel`, `LinkedServersPanel`, `LinkServersSheet`). Nothing shows while no node
-    reports the feature on (`LinkedServers.availability`: on, or on but not permitted; off, older and unreachable
-    nodes show nothing), polled every 15 s while All Nodes shows. With one or more: a "Linked servers" panel, marked
-    Experimental, per such node its links (connected or not and since when, which side dialled, round trip, version,
-    who compared the code) with Rename… (that node's name for it only) and Unlink… (confirmed; the other side is told
-    and unlinks too), and any one-sided link with Unlink. With two or more: Link Servers… in the header (and Link… per
-    node, pre-filled), one sheet: pick two, one confirmation ("Link vps and Mac Studio? Each will keep a pinned,
-    encrypted connection to the other, checked by key, so that later it can receive the vaults you mirror to it.
-    Nothing is mirrored yet: for now the link carries nothing."), progress, then the result or the reason.
+  - **The handshake, stated** (`VHNodes.LinkHandshake`). Trust never spreads by itself: Desktop makes a link easy to
+    find and quick to do, and the two servers still shake hands, with the boundary stated before anyone confirms.
+    Desktop relies on the servers' own refusals (every linking command needs a super admin there; agents, scoped and
+    relayed devices get `peer_forbidden`) and never works around one. What the sheet offers follows where this Mac's
+    account may link servers (`LinkedServers.plan`, by each node's `peer.list` answer):
+    - **Both** (`handshake`): one screen. Before Link is enabled it shows both servers by name and address, the key
+      this Mac pins for each (short form, as Overview's "Server key"), and per direction what the other server will
+      hold there: accounts shared as identities only; no vault mirrored until one side offers and the other accepts;
+      and its default role on vaults mirrored with it, a picker per direction that defaults to "No role"
+      (`LinkRoles.options`: `roles.vault.list` without `implicit_deny`, which the server refuses as a link default).
+      After the link, a chosen role is set on that side (`peer.policy.set`, the peer named by its pinned key); "No
+      role" sends nothing. A refusal (it needs `vault.roles.assign` on every vault) leaves the link as it is, and the
+      sheet says which role wasn't set on which server and why.
+    - **One side only, or a server not paired here** (`request`): no one-screen link. Request a Link: the person
+      gives the other server's address (pre-filled from this Mac's record when it is paired), and the server where
+      this Mac is a super admin dials it (`peer.link.start`, with `expect_spki` = this Mac's pin for the other server
+      when it has one). The sheet shows the code and that server's full key to read to the other admin, who opens
+      Accept a link there (the console's Linked servers, or Desktop's Accept a Link Request) and approves; it follows
+      `peer.link.status` while waiting and offers Cancel (`peer.link.cancel`; closing the sheet cancels too). The other
+      server's `no_pairing_window` (it reaches the dialling server as its words) becomes "B has no window open for
+      linking. Ask its admin to open Accept a link there first, then request again."
+    - **Neither**: nothing can be started from this Mac, said in a sentence.
+    - **Accepting** (`LinkAcceptance`): Accept a Link Request on a node where this Mac may link servers opens its
+      window (`peer.pairing.open`; another open window is said plainly), shows that server's key, addresses and when
+      the window closes, lists `peer.pairing.pending` with each requesting server's key, and approves one with the code
+      the person picks among its three (`peer.pairing.approve` with `expect_spki` = the key shown; a wrong code declines
+      it) or denies it (`peer.pairing.deny`). Closing the sheet closes the window (`peer.pairing.close`).
+  - **UI** (All Nodes; `LinkedServersModel`, `LinkedServersPanel`, `LinkServersSheet`, `AcceptLinkSheet`). Nothing
+    shows while no node reports the feature on (`LinkedServers.availability`: on, or on but not permitted; off, older
+    and unreachable nodes show nothing), polled every 15 s while All Nodes shows. With one or more: a "Linked servers"
+    panel, per such node its links (connected or not and since when, which side dialled, round trip, version, who
+    compared the code) with Rename… (that node's name for it only) and Unlink… (confirmed; the other side is told and
+    unlinks too), any one-sided link with Unlink, and per node where this Mac may link servers Accept a Link Request…
+    and Link… (pre-filled). Two paired nodes that link servers and that neither readable side records as linked
+    (`LinkedServers.suggestions`; at least one side must be one this Mac may act on) get a quiet row "A and B are not
+    linked" with Link…, which only opens the sheet with both picked. Link Servers… in the header is always offered.
+    The sheet picks the first server and the second (another node, or "Another server, by address"), then shows the
+    plan above, progress, and the result or the reason.
+  - **Preview** (`AllNodesPreviewData`, DEBUG, with `-VHDebugPreviewData YES`): Home lab may link servers, Studio
+    answers as an account that isn't a super admin. `-VHDebugLinkServers YES|pair|address|accept` opens the sheet (or
+    Accept a Link Request), `-VHDebugLinkStart YES` presses its button, `-VHDebugLinkBoth YES` makes Studio a super
+    admin too (the handshake then completes between the two preview transports), `-VHDebugLinkRole <name>` picks a
+    role, `-VHDebugLinkRoleRefused YES` has Studio refuse it, `-VHDebugLinkRequest waiting|nowindow|linked|denied`
+    ends a request, `-VHDebugLinkAccept busy` takes Home lab's window, and `-VHDebugSnapshotDelay <s>` waits before
+    the capture.
   - **Contract.** Vendored from server main cc41d5d4 (1.26.2): it adds the `peer.*` family with two auth levels,
     `peer_pairing` and `peer` (server-to-server only; `WsAuth.peerPairing`, `.peer`), which the generator now names in
     Swift style. The compatibility baseline is unchanged.
@@ -594,6 +630,27 @@ docs/                   this plan, the pairing protocol, release notes
        may not link there. Undo: `ServerLinkAvailability.isOn`.
     8. The sheet's wording replaces link.md's "Each will be able to receive the vaults you mirror to it" with what the
        link is today. Undo: the text in `LinkServersSheet.choose`.
+- **Mirrored vaults** (the server's design/peers/mirror.md; Vaulthalla 1.27 and newer). A node page beside Vaults,
+  listed only when the node's command set (`meta.hello`) has `mirror.list` (`AppModel.sections(for:)`; a legacy node
+  never shows it). Read-only in this version: it matches the web console's Linked servers › Mirrored vaults, whose
+  rules and wording are ported, not reinvented.
+  - **Model** (`Sources/VHNodes/Mirrors/`, pure, `MirrorModelTests` ported from the console's `model.test.ts`):
+    `MirroredVault` (one `mirror.list` / `mirror.get` row, with `advice`, `pending_changes`, `first_copy`, `link_up`,
+    `confirmed_at`, `settings`; unknown roles and states stay `.other`), `MirrorModel` (the console's `model.ts`:
+    role and state in words, advice, position, which `MirrorAction`s apply to a role and state, their labels) and
+    `MirrorCopy` (the console's `copy.ts`). A state the server didn't send reads Unknown, the link is unknown without
+    a linked server and down once it is unlinked: nothing reads healthy by guess.
+  - **Views** (`App/Vaulthalla/Features/Mirrors/`): `MirroredVaultsView` (the list: vault, other server, this server's
+    role, state, pending changes, last confirmed, link; polled every 15 s; the empty state says whether a server is
+    linked, from `peer.list`), `MirrorDetailView` (state and reason, first copy, advice, details, per-link settings
+    read-only; `mirror.detach.preview` on a held copy for copies compared, missing files and held changes; polled
+    every 5 s while something runs), and `VaultMirrorLine` ("Mirrored with <server>" in the vault inspector, opening
+    the detail through `AppModel.openMirror`).
+  - **Actions** go in `MirrorActionsBar.swift` only: it lists `MirrorModel.actions(_:)` with the console's labels as
+    disabled buttons today; each action piece wires its button there and adds its own sheet beside it.
+  - **Preview data** (`MirrorsPreviewData`): every role and state, a link down, pending changes, a first copy, a core
+    deleting its vault, a take over, starts, a detached copy; `-VHDebugMirrorsEmpty YES` empties the list and
+    `-VHDebugMirror <vault id>` opens a detail for snapshots.
 - **Signing and the shared container** (desktop#4; evidence from the desktop#2 spike). The File Provider extension
   is sandboxed and must read the same registry and device keys as the app, so signed builds share an App Group and a
   keychain access group.

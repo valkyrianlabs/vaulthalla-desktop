@@ -36,6 +36,7 @@ struct DetailView: View {
         case .overview: NodeOverviewView(node: node)
         case .files: FilesView(node: node)
         case .vaults: VaultsView(node: node)
+        case .mirroredVaults: MirroredVaultsView(node: node)
         case .credentials: SensitiveGate(title: "Credentials") { CredentialsView(node: node) }
         case .shares: SharesView(node: node)
         case .access: SensitiveGate(title: "Access") { AccessView(node: node) }
