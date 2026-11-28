@@ -84,6 +84,7 @@ struct VaultInspector: View {
                             .font(.caption)
                             .foregroundStyle(.fgSubtle)
                     }
+                    VaultMirrorLine(vaultID: vault.id, node: node, queries: queries)
                 }
             }
             if !vault.description.isEmpty {

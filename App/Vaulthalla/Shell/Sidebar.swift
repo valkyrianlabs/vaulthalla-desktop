@@ -51,7 +51,7 @@ struct Sidebar: View {
 
             if let node = model.selectedNode {
                 Section(node.displayName) {
-                    ForEach(NodeSection.allCases) { section in
+                    ForEach(model.sections(for: node)) { section in
                         Label(section.title, systemImage: section.systemImage)
                             .syncConflictsBadge(section: section, node: node)
                             .healthBadge(section: section, node: node)
