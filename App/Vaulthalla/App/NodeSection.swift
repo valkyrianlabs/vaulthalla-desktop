@@ -5,6 +5,7 @@ enum NodeSection: String, CaseIterable, Identifiable, Codable, Sendable {
     case overview
     case files
     case vaults
+    case mirroredVaults
     case credentials
     case shares
     case access
@@ -21,6 +22,7 @@ enum NodeSection: String, CaseIterable, Identifiable, Codable, Sendable {
         case .overview: "Overview"
         case .files: "Files"
         case .vaults: "Vaults"
+        case .mirroredVaults: "Mirrored Vaults"
         case .credentials: "Credentials"
         case .shares: "Shares"
         case .access: "Access"
@@ -37,6 +39,7 @@ enum NodeSection: String, CaseIterable, Identifiable, Codable, Sendable {
         case .overview: "gauge.with.dots.needle.67percent"
         case .files: "folder"
         case .vaults: "lock.rectangle.stack"
+        case .mirroredVaults: "rectangle.on.rectangle"
         case .credentials: "key.2.on.ring"
         case .shares: "link"
         case .access: "person.2.badge.key"
@@ -54,6 +57,7 @@ enum NodeSection: String, CaseIterable, Identifiable, Codable, Sendable {
         case .overview: "Health, storage and activity for this node."
         case .files: "Browse vault files, preview them with Quick Look and drag them to and from Finder."
         case .vaults: "The node's vaults: storage backends, quotas, encryption and key versions."
+        case .mirroredVaults: "Vaults kept on two linked servers: this server's role in each, how the copies stand and what to do next."
         case .credentials: "Access keys for upstream S3 and R2 storage that S3 vaults use to reach their bucket."
         case .shares: "Links and shares people use to reach vault content."
         case .access: "Users, groups and roles, and what each of them can do."

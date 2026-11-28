@@ -122,8 +122,8 @@ docs/                   this plan, the pairing protocol, release notes
 - One `NavigationSplitView`. The sidebar lists the nodes (status dot, an incompatibility badge when the node's
   protocol range doesn't overlap this build's, pairing state); the feature sections below it apply to the selected
   node.
-  - Feature sections: Overview/Health, Files, Vaults, Shares, Access (users, groups, roles), Sync conflicts, Cost,
-    S3 gateway, Recovery keys, Settings.
+  - Feature sections: Overview/Health, Files, Vaults, Mirrored vaults (only on a node whose `meta.hello` lists
+    `mirror.list`), Shares, Access (users, groups, roles), Sync conflicts, Cost, S3 gateway, Recovery keys, Settings.
   - "All nodes" views cover what spans deployments: overview, key backup status, devices.
   - ⌘1–9 switch nodes. A menu bar item shows the fleet's state and keeps the app running in the background
     (`docs/mac-experience.md`). The ⌘K command palette planned here is not built.
@@ -594,6 +594,27 @@ docs/                   this plan, the pairing protocol, release notes
        may not link there. Undo: `ServerLinkAvailability.isOn`.
     8. The sheet's wording replaces link.md's "Each will be able to receive the vaults you mirror to it" with what the
        link is today. Undo: the text in `LinkServersSheet.choose`.
+- **Mirrored vaults** (the server's design/peers/mirror.md; Vaulthalla 1.27 and newer). A node page beside Vaults,
+  listed only when the node's command set (`meta.hello`) has `mirror.list` (`AppModel.sections(for:)`; a legacy node
+  never shows it). Read-only in this version: it matches the web console's Linked servers › Mirrored vaults, whose
+  rules and wording are ported, not reinvented.
+  - **Model** (`Sources/VHNodes/Mirrors/`, pure, `MirrorModelTests` ported from the console's `model.test.ts`):
+    `MirroredVault` (one `mirror.list` / `mirror.get` row, with `advice`, `pending_changes`, `first_copy`, `link_up`,
+    `confirmed_at`, `settings`; unknown roles and states stay `.other`), `MirrorModel` (the console's `model.ts`:
+    role and state in words, advice, position, which `MirrorAction`s apply to a role and state, their labels) and
+    `MirrorCopy` (the console's `copy.ts`). A state the server didn't send reads Unknown, the link is unknown without
+    a linked server and down once it is unlinked: nothing reads healthy by guess.
+  - **Views** (`App/Vaulthalla/Features/Mirrors/`): `MirroredVaultsView` (the list: vault, other server, this server's
+    role, state, pending changes, last confirmed, link; polled every 15 s; the empty state says whether a server is
+    linked, from `peer.list`), `MirrorDetailView` (state and reason, first copy, advice, details, per-link settings
+    read-only; `mirror.detach.preview` on a held copy for copies compared, missing files and held changes; polled
+    every 5 s while something runs), and `VaultMirrorLine` ("Mirrored with <server>" in the vault inspector, opening
+    the detail through `AppModel.openMirror`).
+  - **Actions** go in `MirrorActionsBar.swift` only: it lists `MirrorModel.actions(_:)` with the console's labels as
+    disabled buttons today; each action piece wires its button there and adds its own sheet beside it.
+  - **Preview data** (`MirrorsPreviewData`): every role and state, a link down, pending changes, a first copy, a core
+    deleting its vault, a take over, starts, a detached copy; `-VHDebugMirrorsEmpty YES` empties the list and
+    `-VHDebugMirror <vault id>` opens a detail for snapshots.
 - **Signing and the shared container** (desktop#4; evidence from the desktop#2 spike). The File Provider extension
   is sandboxed and must read the same registry and device keys as the app, so signed builds share an App Group and a
   keychain access group.
