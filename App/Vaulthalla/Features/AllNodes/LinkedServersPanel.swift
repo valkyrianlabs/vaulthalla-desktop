@@ -4,9 +4,13 @@ import VHNodes
 
 /// All Nodes' "Linked servers" panel: for each node that links servers, the servers it is linked with and how each
 /// connection is doing, as the node reports it (`peer.list`), with Rename and Unlink; any link only one side records,
-/// with Unlink; and which nodes need a newer Vaulthalla. Shown once a node has said whether it links servers.
+/// with Unlink; pairs of nodes that aren't linked, as a quiet suggestion that only opens the Link Servers sheet; and
+/// which nodes need a newer Vaulthalla. Shown once a node has said whether it links servers.
 struct LinkedServersPanel: View {
-    var link: (NodeID?) -> Void
+    /// Opens the Link Servers sheet with these picked.
+    var link: (NodeID?, NodeID?) -> Void
+    /// Opens Accept a Link Request on the node.
+    var accept: (NodeID) -> Void
 
     @Environment(AppModel.self) private var model
     @State private var unlinking: (node: Node, row: LinkedServer)?
@@ -27,6 +31,21 @@ struct LinkedServersPanel: View {
                             .controlSize(.small)
                             .disabled(linked.working.contains(half.id))
                     }
+                }
+                ForEach(linked.suggestions) { suggestion in
+                    HStack(spacing: 8) {
+                        Image(systemName: "link")
+                            .foregroundStyle(.fgFaint)
+                        Text(suggestion.description)
+                            .foregroundStyle(.fgMuted)
+                        Spacer(minLength: 4)
+                        Button("Link…") { link(suggestion.first, suggestion.second) }
+                            .controlSize(.small)
+                    }
+                    .font(.callout)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 6)
+                    .background(.surface1, in: RoundedRectangle(cornerRadius: Theme.radiusControl))
                 }
                 if let problem = linked.problem {
                     Callout(tone: .danger, systemImage: "xmark.octagon") { Text(problem) }
@@ -77,12 +96,20 @@ struct LinkedServersPanel: View {
                     .foregroundStyle(.fgMuted)
                 Spacer(minLength: 4)
                 if case .on = availability {
-                    Button("Link…") { link(node.id) }
+                    Button("Accept a Link Request…") { accept(node.id) }
+                        .controlSize(.small)
+                        .buttonStyle(.borderless)
+                    Button("Link…") { link(node.id, nil) }
                         .controlSize(.small)
                         .buttonStyle(.borderless)
                 }
             }
             switch availability {
+            case .notPermitted(.notSuperAdmin(_, let why))?:
+                Text("This Mac's account here isn't a super admin (\(why)), so links with \(node.displayName) are requested from the other server, and an admin of \(node.displayName) approves them here.")
+                    .font(.callout)
+                    .foregroundStyle(.fgSubtle)
+                    .fixedSize(horizontal: false, vertical: true)
             case .notPermitted(let reason)?:
                 Text(reason.description)
                     .font(.callout)

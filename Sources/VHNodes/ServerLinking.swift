@@ -621,7 +621,7 @@ public struct ServerLinking: Sendable {
         return out.prefix(32).map { .init(host: $0.host, port: $0.port, kind: $0.kind.map { .value($0) }) }
     }
 
-    static func isLoopback(_ host: String) -> Bool {
+    public static func isLoopback(_ host: String) -> Bool {
         let lowered = host.lowercased()
         return lowered == "localhost" || lowered == "::1" || lowered.hasPrefix("127.")
     }
