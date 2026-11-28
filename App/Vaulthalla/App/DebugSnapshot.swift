@@ -62,7 +62,9 @@ enum DebugSnapshot {
                                     display: true)
                 }
             }
-            try? await Task.sleep(for: .seconds(2.5))
+            // `-VHDebugSnapshotDelay <seconds>`: wait longer before the capture (a sheet that runs a few steps first).
+            let delay = defaults.double(forKey: "VHDebugSnapshotDelay")
+            try? await Task.sleep(for: .seconds(delay > 0 ? delay : 2.5))
             let url = URL(filePath: path)
             if let window = NSApp.windows.first(where: { $0.isVisible && $0.sheetParent == nil && $0.contentView != nil }) {
                 write(window, to: url)

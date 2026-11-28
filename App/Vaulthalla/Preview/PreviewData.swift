@@ -19,8 +19,9 @@ nonisolated final class PreviewTransport: NodeTransport {
     /// The vault list; feature answers may read and change it.
     let vaults = Mutex(PreviewData.vaults)
 
-    /// Feature folders' own canned answers (`PreviewFeature`), asked in order for commands answered nowhere here.
-    static let features: [any PreviewFeature.Type] = [CostPreviewData.self, CredentialsPreviewData.self, NewVaultPreviewData.self, SyncConflictsPreviewData.self, AccessPreviewData.self, SharesPreviewData.self, DevicesPreviewData.self, GatewayPreviewData.self, RecoveryKeysPreviewData.self, AllNodesPreviewData.self, HealthPreviewData.self, MirrorsPreviewData.self]
+    /// Feature folders' own canned answers (`PreviewFeature`), asked in order for commands answered nowhere here. All
+    /// Nodes first: with `-VHDebugLinkBoth` it answers Studio's vault roles, which Access refuses for that account.
+    static let features: [any PreviewFeature.Type] = [AllNodesPreviewData.self, CostPreviewData.self, CredentialsPreviewData.self, NewVaultPreviewData.self, SyncConflictsPreviewData.self, AccessPreviewData.self, SharesPreviewData.self, DevicesPreviewData.self, GatewayPreviewData.self, RecoveryKeysPreviewData.self, HealthPreviewData.self, MirrorsPreviewData.self]
 
     init(_ scenario: Scenario) {
         self.scenario = scenario
