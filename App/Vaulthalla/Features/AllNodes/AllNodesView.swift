@@ -58,8 +58,8 @@ struct AllNodesView: View {
 
                     FleetTotals(summary: summary) { keyBackupsTile }
 
-                    if !summary.alerts.isEmpty {
-                        FleetAlertsPanel(alerts: summary.alerts)
+                    if !summary.alerts.isEmpty || !summary.silenced.isEmpty {
+                        FleetAlertsPanel(alerts: summary.alerts, silenced: summary.silenced)
                     }
 
                     if model.linkedServers.isVisible {
@@ -245,6 +245,7 @@ private struct FleetTotals<Extra: View>: View {
 /// What needs attention across every node, most severe first. Each row opens the node's panel it's about.
 private struct FleetAlertsPanel: View {
     var alerts: [FleetSummary.FleetAlert]
+    var silenced: [FleetSummary.FleetAlert] = []
 
     @Environment(AppModel.self) private var model
     @State private var showsAll = false
@@ -255,20 +256,25 @@ private struct FleetAlertsPanel: View {
         Panel(title: "Needs attention", subtitle: "Across every node, most severe first.") {
             VStack(alignment: .leading, spacing: 2) {
                 ForEach(showsAll ? alerts : Array(alerts.prefix(Self.shown))) { entry in
-                    Button {
-                        model.open(entry.alert, on: entry.node)
-                    } label: {
-                        NodeAlertRow(alert: entry.alert, node: entry.nodeName)
+                    HStack(spacing: 4) {
+                        Button {
+                            model.open(entry.alert, on: entry.node)
+                        } label: {
+                            NodeAlertRow(alert: entry.alert, node: entry.nodeName, nodeID: entry.node)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Open \(entry.alert.title) on \(entry.nodeName)")
+                        FindingActionsMenu(alert: entry.alert, node: entry.node)
                     }
-                    .buttonStyle(.plain)
-                    .help("Open \(entry.alert.title) on \(entry.nodeName)")
                     .contextMenu {
                         Button("Open") { model.open(entry.alert, on: entry.node) }
+                        if entry.alert.canManage { FindingActionItems(alert: entry.alert, node: entry.node) }
                         Button("File a Report…") {
                             model.reportRequest = ReportRequest(origin: .finding(entry.node, entry.alert))
                         }
                     }
                 }
+                if !silenced.isEmpty { SilencedFindingsList(entries: silenced) }
             }
         } actions: {
             if alerts.count > Self.shown {
@@ -283,6 +289,8 @@ private struct FleetAlertsPanel: View {
 struct NodeAlertRow: View {
     var alert: NodeDigest.Alert
     var node: String?
+    /// The node the alert is on, for its state line (who acknowledged it, or why an action was refused).
+    var nodeID: NodeID?
 
     @State private var hovering = false
 
@@ -290,7 +298,7 @@ struct NodeAlertRow: View {
         let tone = StatusTone(severity: alert.severity)
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             Image(systemName: Severity.symbol(alert.severity))
-                .foregroundStyle(tone.color)
+                .foregroundStyle(tone.color.opacity(alert.isAttended ? 0.55 : 1))
                 .frame(width: 16)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
@@ -314,6 +322,7 @@ struct NodeAlertRow: View {
                     .foregroundStyle(.fgMuted)
                     .lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
+                FindingStateLine(alert: alert, node: nodeID)
             }
             Spacer(minLength: 4)
             Image(systemName: "chevron.right")

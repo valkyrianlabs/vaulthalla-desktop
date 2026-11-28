@@ -2,16 +2,18 @@ public import VHCore
 
 /// The one thing the menu bar item says (docs/mac-experience.md §2): the worst state across the paired nodes that are
 /// not muted, and a sentence for it. Derived only from what the nodes reported and how reachable they are; a node
-/// that has not answered is "not reporting", never quiet.
+/// that has not answered is "not reporting", never quiet. A finding someone acknowledged or silenced (on any Mac or
+/// in the console) no longer raises the item, when the node reports that (§7); the health pages still show it.
 public struct FleetStatus: Sendable, Hashable {
     public enum Level: Int, Sendable, Hashable, Comparable {
         /// No node is paired, or none has answered yet.
         case notReporting
         /// Every paired node is online and none reports errors or warnings.
         case quiet
-        /// Warnings, no errors.
+        /// Unattended warnings, no unattended errors.
         case warnings
-        /// A node reports errors, is unreachable past the grace period, or revoked this Mac.
+        /// A node reports errors nobody acknowledged or silenced, is unreachable past the grace period, or revoked
+        /// this Mac.
         case attention
 
         public static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
@@ -50,6 +52,7 @@ public struct FleetStatus: Sendable, Hashable {
         var connecting = 0
         var online = 0
         var reporting = 0
+        var attended = 0
         for member in paired {
             switch member.reachability {
             case .offline: down.append(member)
@@ -61,9 +64,10 @@ public struct FleetStatus: Sendable, Hashable {
             // A node that isn't online says nothing current about its health: its last answer is not counted.
             guard member.reachability == .online, let health = member.digest.health.value else { continue }
             reporting += 1
-            if health.hasErrors {
+            attended += health.attendedCount
+            if health.needsErrorAttention {
                 errors.append(member)
-            } else if health.hasWarnings {
+            } else if health.needsWarningAttention {
                 warnings.append(member)
             }
         }
@@ -108,7 +112,12 @@ public struct FleetStatus: Sendable, Hashable {
         }
         level = .quiet
         detail = nil
-        if reporting == paired.count {
+        if attended > 0 {
+            // Findings remain, but each was acknowledged or silenced: quiet, and not "healthy".
+            headline = paired.count == 1 ? "\(paired[0].name): nothing needs attention"
+                : "\(paired.count) nodes, nothing needs attention"
+            detail = attended == 1 ? "1 finding acknowledged or silenced" : "\(attended) findings acknowledged or silenced"
+        } else if reporting == paired.count {
             headline = paired.count == 1 ? "\(paired[0].name) is healthy" : "\(paired.count) nodes, all healthy"
         } else {
             headline = paired.count == 1 ? "\(paired[0].name) is online" : "\(paired.count) nodes online"

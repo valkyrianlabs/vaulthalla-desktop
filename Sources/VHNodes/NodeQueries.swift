@@ -253,6 +253,14 @@ public final class NodeQuery<R: WsRequest> {
         await refresh()
     }
 
+    /// Shows `value` as just fetched: a mutation answered with this query's own data.
+    public func seed(_ value: R.Response) {
+        state = .loaded(value, at: .now)
+        answeredAt = .now
+        refreshError = nil
+        invalidated = false
+    }
+
     /// Marks the value stale; refetches now if a view shows it.
     public func invalidate() {
         invalidated = true

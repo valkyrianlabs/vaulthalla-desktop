@@ -52,6 +52,8 @@ final class AppModel {
     var sheet: Sheet?
     /// The report being filed (the Report a Problem sheet), from a finding, a node or the Help menu.
     var reportRequest: ReportRequest?
+    /// Acknowledge, silence or turn back on, per finding while it runs or after it was refused (`FindingActions`).
+    var findingActivity: [String: FindingActivity] = [:]
     var columnVisibility: NavigationSplitViewVisibility = .all
     var nodePendingRename: Node?
     var nodePendingRemoval: Node?
@@ -692,6 +694,9 @@ final class AppModel {
         let hub = NotificationHub.shared
         hub.activate()
         hub.onOpen = { [weak self] route in self?.follow(route) }
+        hub.onFindingAction = { [weak self] action, id, alert in
+            await self?.act(action, on: alert, node: id)?.message
+        }
         fleet.post = { hub.post($0) }
         fleet.start()
     }

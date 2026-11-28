@@ -172,7 +172,7 @@ final class FleetMonitor {
     }
 
     /// Judges shortly, once, however many things changed in the same moment.
-    private func evaluateSoon() {
+    func evaluateSoon() {
         pendingEvaluation?.cancel()
         pendingEvaluation = Task { [weak self] in
             try? await Task.sleep(for: .seconds(1))
