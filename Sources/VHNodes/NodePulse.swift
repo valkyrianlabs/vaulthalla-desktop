@@ -10,6 +10,13 @@ public import VHTransport
 /// conflict reads are the same queries the node's sections show, so opening a node shows them at once. Activity
 /// fans out over the node's vaults (``activityVaultLimit`` at most), since the daemon has no node-wide activity
 /// command.
+///
+/// **Push.** On a node that has `health.subscribe` (the server's design/health/findings.md §6) the pulse subscribes
+/// once per connection (``connectionChanged(online:)``) and refetches the findings on each `health.changed`
+/// (``healthChanged(_:)``): one refetch at a time, events that arrive meanwhile fold into one more, at most one per
+/// ``Intervals/pushRefetchFloor``. While subscribed, the health poll and the background check slow to
+/// ``Intervals/healthWhilePushed``, a safety net. On a disconnect, on a `"subscribed": false` event, on a refused
+/// subscription and on a node without the command, health is polled as before.
 @MainActor
 @Observable
 public final class NodePulse {
@@ -17,6 +24,10 @@ public final class NodePulse {
         public var health: Duration = .seconds(30)
         public var figures: Duration = .seconds(60)
         public var activity: Duration = .seconds(60)
+        /// The health poll while the node pushes `health.changed`: only a safety net then.
+        public var healthWhilePushed: Duration = .seconds(600)
+        /// Refetches for pushed events start at most this often.
+        public var pushRefetchFloor: Duration = .seconds(2)
 
         public init() {}
     }
@@ -44,6 +55,21 @@ public final class NodePulse {
     @ObservationIgnored private var checksSinceOverview = 0
     /// A full overview at least every this many checks: the numbers can stay the same while the findings change.
     public nonisolated let fullCheckEvery: Int
+
+    /// Whether the node pushes `health.changed` to this pulse on the current connection: the health poll is slow then.
+    public private(set) var isFollowingPush = false
+    /// Counts connections, so an answer to a subscription sent on an earlier one is ignored.
+    @ObservationIgnored private var connection = 0
+    @ObservationIgnored private var subscribing: Task<Void, Never>?
+    /// The newest revision this connection has seen (the subscription's answer or an event).
+    @ObservationIgnored private var revision: Int64?
+    @ObservationIgnored private var pushRefetch: (id: Int, task: Task<Void, Never>)?
+    @ObservationIgnored private var pushRefetches = 0
+    /// An event arrived while a refetch was under way: one more follows it.
+    @ObservationIgnored private var refetchAgain = false
+    @ObservationIgnored private var lastPushRefetch: ContinuousClock.Instant?
+    /// Health observers waiting for ``isFollowingPush`` to change.
+    @ObservationIgnored private var modeWaiters: [UUID: CheckedContinuation<Void, Never>] = [:]
 
     private struct HealthMark: Equatable {
         var status: String
@@ -94,15 +120,51 @@ public final class NodePulse {
     /// while the app is active. Returns when cancelled.
     public func observe() async {
         await withTaskGroup(of: Void.self) { group in
-            group.addTask { await self.overview.observe(polling: self.intervals.health) }
+            group.addTask { await self.observeHealth() }
             group.addTask { await self.storage.observe(polling: self.intervals.figures) }
             group.addTask { await self.budget.observe(polling: self.intervals.figures) }
             group.addTask { await self.conflicts.observe(polling: self.intervals.figures) }
             group.addTask { await self.pollActivity() }
-            if queries.hasHealthFindings {
-                group.addTask { await self.findings.observe(polling: self.intervals.health) }
-            }
         }
+    }
+
+    /// The overview and the findings, polled at ``Intervals/health``, or ``Intervals/healthWhilePushed`` while the
+    /// node pushes; switches when that changes.
+    private func observeHealth() async {
+        let withFindings = queries.hasHealthFindings
+        while !Task.isCancelled {
+            let following = isFollowingPush
+            let interval = following ? intervals.healthWhilePushed : intervals.health
+            let watch = Task {
+                await withTaskGroup(of: Void.self) { group in
+                    group.addTask { await self.overview.observe(polling: interval) }
+                    if withFindings { group.addTask { await self.findings.observe(polling: interval) } }
+                }
+            }
+            if following == isFollowingPush { await followingChanges() }
+            watch.cancel()
+            await watch.value
+        }
+    }
+
+    /// Returns once ``isFollowingPush`` changes, or the calling task is cancelled.
+    private func followingChanges() async {
+        let id = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+                if Task.isCancelled { continuation.resume() } else { modeWaiters[id] = continuation }
+            }
+        } onCancel: {
+            Task { @MainActor in self.modeWaiters.removeValue(forKey: id)?.resume() }
+        }
+    }
+
+    private func setFollowing(_ following: Bool) {
+        guard following != isFollowingPush else { return }
+        isFollowingPush = following
+        let waiting = modeWaiters
+        modeWaiters = [:]
+        for continuation in waiting.values { continuation.resume() }
     }
 
     /// Fetches every part now (⌘R), each on its own: returns once all have settled.
@@ -124,6 +186,11 @@ public final class NodePulse {
     /// the overview each time. Returns once settled; never polls on its own.
     public func checkHealth() async {
         guard queries.isConnected else { return }
+        // Pushed: the events keep the findings fresh; ask only when the last answer is older than the safety net.
+        if isFollowingPush, findings.error == nil, let at = findings.updatedAt,
+           Duration.seconds(Date.now.timeIntervalSince(at)) < intervals.healthWhilePushed {
+            return
+        }
         if queries.hasHealthFindings {
             await findings.refresh()
             if findings.error == nil, let now = findings.value?.health {
@@ -169,6 +236,84 @@ public final class NodePulse {
         async let spend: Void = budget.refresh()
         async let open: Void = conflicts.refresh()
         _ = await (figures, spend, open)
+    }
+
+    // MARK: Push
+
+    /// The app reports the node's connection. Online: subscribe to `health.changed` when the node has the command
+    /// (once per connection). Offline: the subscription is gone with the connection, and polling takes over.
+    public func connectionChanged(online: Bool) {
+        connection += 1
+        subscribing?.cancel()
+        subscribing = nil
+        pushRefetch?.task.cancel()
+        pushRefetch = nil
+        refetchAgain = false
+        revision = nil
+        setFollowing(false)
+        guard online, queries.supports(command: .healthSubscribe) == .yes else { return }
+        let current = connection
+        subscribing = Task { await self.subscribe(on: current) }
+    }
+
+    private func subscribe(on current: Int) async {
+        let answer: Ws.Health.Subscribe.Response
+        do {
+            answer = try await queries.transport.send(Ws.Health.Subscribe.self, payload: WsNoPayload())
+        } catch {
+            // Refused (no admin.stats.view) or unanswered: polling as before, until the next connection.
+            return
+        }
+        guard current == connection, !Task.isCancelled else { return }
+        subscribing = nil
+        revision = max(revision ?? answer.revision, answer.revision)
+        setFollowing(true)
+    }
+
+    /// A `health.changed` the node pushed. Refetches the findings (coalesced); a `"subscribed": false` event ends
+    /// following and polling takes over. An event no newer than one already seen is ignored.
+    public func healthChanged(_ change: HealthChange) {
+        guard change.subscribed else {
+            subscribing?.cancel()
+            subscribing = nil
+            setFollowing(false)
+            return
+        }
+        if let revision, change.revision <= revision { return }
+        revision = change.revision
+        guard queries.hasHealthFindings else { return }
+        if pushRefetch != nil {
+            refetchAgain = true
+            return
+        }
+        pushRefetches += 1
+        let id = pushRefetches
+        pushRefetch = (id, Task { await self.refetchPushed(id) })
+    }
+
+    private func refetchPushed(_ id: Int) async {
+        repeat {
+            refetchAgain = false
+            if let lastPushRefetch {
+                let next = lastPushRefetch + intervals.pushRefetchFloor
+                if next > .now {
+                    do { try await Task.sleep(until: next) } catch { break }
+                }
+            }
+            guard !Task.isCancelled else { break }
+            lastPushRefetch = .now
+            // A fetch already under way may have been asked before the change: let it settle, then ask again.
+            if findings.isFetching { await findings.refresh() }
+            await findings.refresh()
+            if findings.error == nil, findings.value != nil {
+                await overview.refresh()
+                if overview.refreshError == nil, let now = findings.value?.health {
+                    checkedMark = HealthMark(status: now.overallStatus, errors: now.errorCount, warnings: now.warningCount)
+                    checksSinceOverview = 0
+                }
+            }
+        } while refetchAgain && !Task.isCancelled
+        if pushRefetch?.id == id { pushRefetch = nil }
     }
 
     // MARK: Findings

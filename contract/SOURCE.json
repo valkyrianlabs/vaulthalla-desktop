@@ -1,10 +1,10 @@
 {
   "server_version": "1.27.1",
-  "server_commit": "de93fbb7",
+  "server_commit": "a7f970d9",
   "server_branch": "main",
   "source": "web/src/util/generated/wsContract.json",
   "contract_version": 3,
-  "ws_hash": "f9647cd0a3ece2f68aa8ae5f09aa77c92012bf9921247bf721e39ad45d1dd5b3",
+  "ws_hash": "5a774ba486bbcebc71656b3bcc07380313bb3244acaf31512ebbdd4a282c1654",
   "models_hash": "fb2eb50b685f7091174b75d352410329a3ab874281197b5e75237c9eacb3def9",
-  "note": "server main de93fbb7 (health.findings.*: acknowledge, silence, unsilence)"
+  "note": "server main a7f970d9 (health.subscribe, health.unsubscribe, health.changed push)"
 }

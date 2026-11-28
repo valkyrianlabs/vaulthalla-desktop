@@ -125,6 +125,13 @@ class RelaxTests(unittest.TestCase):
         with self.assertRaises(gen.ContractError):
             gen.validate(contract([], [], version=4))
 
+    def test_empty_enum_value_is_a_case(self) -> None:
+        self.assertEqual(gen.value_name(""), "empty")
+        made = gen.SwiftEnum("Default", ["", "this", "theirs"])
+        self.assertIn('    case empty = ""', made.lines(0))
+        with self.assertRaises(gen.ContractError):
+            gen.SwiftEnum("Clash", ["", "empty"])
+
     @unittest.skipUnless(shutil.which("swiftc"), "needs a Swift toolchain")
     def test_generated_type_decodes_without_the_newer_member(self) -> None:
         now = current_doc()

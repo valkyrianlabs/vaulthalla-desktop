@@ -513,6 +513,8 @@ final class AppModel {
                 nodesNeedingPairing.remove(id)
             }
             queryStores[id]?.connectionChanged(online: status == .online)
+            // Each connection subscribes to health.changed anew (where the node has it); a drop falls back to polling.
+            pulses[id]?.connectionChanged(online: status == .online)
             fleet.connectionChanged(id, online: status == .online)
             // Revocations of AI apps' devices this node still owes go out once it is back.
             if status == .online, isCredentialOwner, let keys = deviceKeys,
@@ -549,6 +551,8 @@ final class AppModel {
             node.lastAdvertisedAt = advertisedAt
             node.lastGood = lastGood
             edit { try store.update(node) }
+        case .healthChanged(let change):
+            pulses[id]?.healthChanged(change)
         }
     }
 
@@ -616,6 +620,7 @@ final class AppModel {
         if let existing = pulses[node.id], existing.queries === queries { return existing }
         let made = NodePulse(queries: queries)
         pulses[node.id] = made
+        if liveStatus[node.id] == .online { made.connectionChanged(online: true) }
         return made
     }
 

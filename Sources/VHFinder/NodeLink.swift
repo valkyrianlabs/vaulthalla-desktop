@@ -178,8 +178,8 @@ public actor NodeLink: ReplicaLink {
         case .pairingRequired:
             let reason = if case .offline(let why) = status { why } else { "Pair this Mac with the node again." }
             _ = fail(.notAuthenticated(reason))
-        case .identity, .recordChanged, .protocolNegotiated, .route, .endpointsChanged:
-            // A consumer: routes are the session's to choose and never saved from here.
+        case .identity, .recordChanged, .protocolNegotiated, .route, .endpointsChanged, .healthChanged:
+            // A consumer: routes are the session's to choose and never saved from here. It never subscribes to health.
             // ws calls on an incompatible node are refused by the session itself; lanes check it in `withLanes`.
             break
         }

@@ -98,8 +98,11 @@ Everything in the panel is a figure a node reported or a state the app is in. No
   - only when that answer differs from the last one does it fetch the full overview and compare findings;
   - sync conflicts and storage are refreshed every five minutes;
   - with the window visible, the views poll as they do today and the monitor reads the same cache.
-  Stage 2 replaces the 60-second question with a push (`health.changed`) where the node supports it, and keeps
-  the poll as the fallback for older nodes.
+  Stage 2 (done) adds the push: on a node with `health.subscribe` (the server's design/health/findings.md §6)
+  `NodePulse` subscribes once per connection and refetches `health.findings.list` (then the overview) on each
+  `health.changed`, one refetch at a time with the newest event winning, at most one every 2 seconds. While
+  subscribed, the 60-second check and the pulse's health poll slow to a 10-minute safety net. A disconnect, a
+  `"subscribed": false` event, a refused subscription or an older node keeps the poll exactly as before.
 - **Updates.** With no window open, Sparkle must not pop a dialog from nowhere. The app implements Sparkle's
   gentle reminders: a scheduled update that arrives in the background shows as "Update ready" in the panel and
   as one notification; clicking either opens Sparkle's normal dialog.

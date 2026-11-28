@@ -141,7 +141,10 @@ UNUSABLE_MEMBERS = {"self", "Self", "init", "Type"}
 
 def value_name(value: str) -> str:
     """A Swift case or constant for an enum string: "email_validated" -> emailValidated, "Backblaze B2" ->
-    backblazeB2, "AWS" -> aws, "model:glb" -> modelGlb."""
+    backblazeB2, "AWS" -> aws, "model:glb" -> modelGlb, "" -> empty (a value the daemon gives a meaning, such as
+    "the core's" in mirror.relink.plan)."""
+    if value == "":
+        return "empty"
     ws = [w for w in re.split(r"[^A-Za-z0-9]+", value) if w]
     if not ws:
         raise ContractError(f"enum value {value!r} does not make a Swift identifier")
