@@ -46,6 +46,9 @@ struct VaulthallaApp: App {
             if UserDefaults.standard.bool(forKey: "VHDebugNotify") {
                 NotificationHub.shared.activate()
                 NotificationHub.shared.onOpen = { [weak model] route in model?.follow(route) }
+                NotificationHub.shared.onFindingAction = { [weak model] action, id, alert in
+                    await model?.act(action, on: alert, node: id)?.message
+                }
                 model.fleet.post = { NotificationHub.shared.post($0) }
             }
             model.fleet.start()

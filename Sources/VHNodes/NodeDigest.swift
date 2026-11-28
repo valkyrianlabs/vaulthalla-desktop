@@ -65,28 +65,54 @@ public struct NodeDigest: Sendable, Hashable {
 
     // MARK: Health
 
-    /// The overview's overall status and what needs attention, in the daemon's order of importance.
+    /// The overview's overall status and what needs attention, in the daemon's order of importance. With the node's
+    /// findings (`health.findings.list`), each alert carries its state, and the unattended counts say what still asks
+    /// for a person; the severity and the counts stay the truth either way.
     public struct Health: Sendable, Hashable {
         public var severity: String
         public var errorCount: Int64
         public var warningCount: Int64
+        /// The counts without acknowledged and silenced findings; nil when the node doesn't report them.
+        public var unattendedErrorCount: Int64?
+        public var unattendedWarningCount: Int64?
         public var checkedAt: Date
         /// Every attention item, most severe first (errors, warnings, unknown, info), then the daemon's order.
         public var alerts: [Alert]
+        /// Silences set for classes that are not active now (only with the node's findings).
+        public var silences: [HealthFindings.Mark]
+        /// Whether the paired account may acknowledge and silence findings.
+        public var canManageFindings: Bool
         /// Each area's worst severity on the node's cards (FUSE, database, storage, sync), for the at-a-glance row.
         public var areas: [Area: String]
 
-        public init(_ overview: WsModel.DashboardOverview) {
+        public init(_ overview: WsModel.DashboardOverview, findings: HealthFindings? = nil) {
             severity = overview.overallStatus
             errorCount = overview.errorCount
             warningCount = overview.warningCount
+            unattendedErrorCount = overview.unattendedErrorCount
+            unattendedWarningCount = overview.unattendedWarningCount
             checkedAt = Date(timeIntervalSince1970: TimeInterval(overview.checkedAt))
-            alerts = overview.attention.enumerated()
+            var listed = overview.attention.map(Alert.init)
+            silences = []
+            canManageFindings = false
+            if let findings {
+                // The findings are the attention list with its state, and asked for more often than the overview.
+                severity = findings.overallStatus
+                errorCount = findings.errorCount
+                warningCount = findings.warningCount
+                unattendedErrorCount = findings.unattendedErrorCount
+                unattendedWarningCount = findings.unattendedWarningCount
+                checkedAt = max(checkedAt, findings.checkedAt)
+                listed = findings.findings.map { Alert($0, canManage: findings.canManage) }
+                silences = findings.silences
+                canManageFindings = findings.canManage
+            }
+            alerts = listed.enumerated()
                 .sorted { lhs, rhs in
                     let (left, right) = (SeverityRank.of(lhs.element.severity), SeverityRank.of(rhs.element.severity))
                     return left != right ? left < right : lhs.offset < rhs.offset
                 }
-                .map { Alert($0.element) }
+                .map(\.element)
             var areas: [Area: String] = [:]
             for card in overview.cards {
                 let area = Area(cardID: card.id)
@@ -100,32 +126,75 @@ public struct NodeDigest: Sendable, Hashable {
         /// Whether the daemon reports errors (a red node).
         public var hasErrors: Bool { errorCount > 0 || SeverityRank.of(severity) == 0 }
         public var hasWarnings: Bool { warningCount > 0 || SeverityRank.of(severity) == 1 }
+
+        /// Whether errors still ask for a person: none is left once each is acknowledged or silenced. Without the
+        /// unattended counts, whether there are errors at all.
+        public var needsErrorAttention: Bool { unattendedErrorCount.map { $0 > 0 } ?? hasErrors }
+        public var needsWarningAttention: Bool { unattendedWarningCount.map { $0 > 0 } ?? hasWarnings }
+
+        /// Findings someone acknowledged or silenced.
+        public var attendedCount: Int { alerts.filter { $0.state != .active }.count }
     }
 
-    /// One attention item of the overview, with the area it belongs to.
+    /// One attention item of the overview, with the area it belongs to, and, from the node's findings, its state,
+    /// whether it is worth a notification and what can be done about it.
     public struct Alert: Sendable, Hashable, Identifiable {
+        /// The finding's class.
         public var code: String
+        /// "" for the whole server.
+        public var subject: String
         public var severity: String
         public var cardID: String
         public var title: String
         public var message: String
         public var area: Area
+        public var href: String?
+        public var metricKey: String?
+        public var state: HealthFindings.State
+        public var mark: HealthFindings.Mark?
+        /// The server's opinion of whether the class deserves a notification; nil when the node doesn't say.
+        public var notifies: Bool?
+        public var remedies: [HealthFindings.Remedy]
+        /// Whether the paired account may acknowledge and silence it: only from the node's findings.
+        public var canManage: Bool
 
-        public var id: String { "\(cardID)|\(code)" }
+        public var id: String { subject.isEmpty ? "\(cardID)|\(code)" : "\(cardID)|\(code)|\(subject)" }
 
-        public init(code: String, severity: String, cardID: String, title: String, message: String) {
+        public init(code: String, subject: String = "", severity: String, cardID: String, title: String,
+                    message: String, href: String? = nil, metricKey: String? = nil,
+                    state: HealthFindings.State = .active, mark: HealthFindings.Mark? = nil, notifies: Bool? = nil,
+                    remedies: [HealthFindings.Remedy] = [], canManage: Bool = false) {
             self.code = code
+            self.subject = subject
             self.severity = severity
             self.cardID = cardID
             self.title = title
             self.message = message
+            self.href = href
+            self.metricKey = metricKey
+            self.state = state
+            self.mark = mark
+            self.notifies = notifies
+            self.remedies = remedies
+            self.canManage = canManage
             area = Area(cardID: cardID, code: code)
         }
 
         init(_ item: WsModel.DashboardOverview.AttentionItem) {
             self.init(code: item.code, severity: item.severity, cardID: item.cardID, title: item.title,
-                      message: item.message)
+                      message: item.message, href: item.href, metricKey: item.metricKey,
+                      state: HealthFindings.State(item.state))
         }
+
+        public init(_ finding: HealthFindings.Finding, canManage: Bool) {
+            self.init(code: finding.findingClass, subject: finding.subject, severity: finding.severity,
+                      cardID: finding.cardID, title: finding.title, message: finding.message, href: finding.href,
+                      metricKey: finding.metricKey, state: finding.state, mark: finding.mark,
+                      notifies: finding.notifies, remedies: finding.remedies, canManage: canManage)
+        }
+
+        /// A finding that isn't asking for anyone: acknowledged or silenced.
+        public var isAttended: Bool { state != .active }
     }
 
     /// Where an alert or card belongs, by its card id (`system.fuse`, `system.pricing_budget`).

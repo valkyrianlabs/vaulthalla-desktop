@@ -127,6 +127,12 @@ nonisolated enum HealthRoute: Equatable {
         }
     }
 
+    /// A remedy's route, only when this build has a place for it: an unmapped route is not offered.
+    init?(remedy href: String) {
+        guard let route = Self.parse(href) else { return nil }
+        self = route
+    }
+
     private static func parse(_ href: String) -> HealthRoute? {
         let parts = href.split(separator: "#", maxSplits: 1).map(String.init)
         let path = parts.first ?? ""

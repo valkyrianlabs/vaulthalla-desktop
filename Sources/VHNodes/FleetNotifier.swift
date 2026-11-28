@@ -10,17 +10,21 @@ public enum FleetNotice: String, Sendable, Hashable, Codable, CaseIterable {
     case nodeRevoked = "node.revoked"
     case nodeIncompatible = "node.incompatible"
     case healthError = "health.error"
+    /// A warning whose class the node says is worth a notification (Vaulthalla 1.28 and later).
+    case healthNotableWarning = "health.warning.notable"
+    /// Any warning from a node that doesn't say which are worth it.
     case healthWarning = "health.warning"
     case healthCleared = "health.cleared"
     case syncConflicts = "sync.conflicts"
 
-    /// Warnings are off until the server says which ones are worth it: one of them fires during every upload.
+    /// A node that doesn't say which warnings are worth it raises one during every upload: those are off by default.
     public var enabledByDefault: Bool { self != .healthWarning }
 
     public var playsSound: Bool {
         switch self {
         case .nodeUnreachable, .nodeRevoked, .healthError: true
-        case .nodeReachable, .nodeIncompatible, .healthWarning, .healthCleared, .syncConflicts: false
+        case .nodeReachable, .nodeIncompatible, .healthNotableWarning, .healthWarning, .healthCleared, .syncConflicts:
+            false
         }
     }
 
@@ -31,7 +35,8 @@ public enum FleetNotice: String, Sendable, Hashable, Codable, CaseIterable {
         case .nodeRevoked: "A node revokes this Mac"
         case .nodeIncompatible: "A node needs a different version"
         case .healthError: "A node reports an error"
-        case .healthWarning: "A node reports a warning"
+        case .healthNotableWarning: "A node reports a warning worth telling"
+        case .healthWarning: "A node reports any other warning"
         case .healthCleared: "A node's errors have cleared"
         case .syncConflicts: "New sync conflicts"
         }
@@ -284,8 +289,11 @@ public struct FleetNotifier: Sendable {
     private func findings(_ node: FleetObservation, _ state: inout FleetNoticeMemory.Node, _ moment: Moment,
                           _ posts: inout [FleetNotification]) {
         // Only an online node's answer is current, and only an answer says anything: unknown is not "cleared".
-        guard node.reachability == .online, let reported = node.findings else { return }
-        let active = reported.filter { SeverityRank.of($0.severity) <= 1 }
+        guard node.reachability == .online, let findings = node.findings else { return }
+        let reported = findings.filter { SeverityRank.of($0.severity) <= 1 }
+        // What someone acknowledged or silenced, and a class the node says isn't worth interrupting anyone for, is
+        // not told. An attended finding is forgotten like a cleared one, so it speaks again once its silence ends.
+        let active = reported.filter { !$0.isAttended && $0.notifies != false }
         var fresh: [NodeDigest.Alert] = []
         for alert in active {
             let rank = SeverityRank.of(alert.severity)
@@ -310,16 +318,20 @@ public struct FleetNotifier: Sendable {
         let errors = fresh.filter { SeverityRank.of($0.severity) == 0 }
         let warnings = fresh.filter { SeverityRank.of($0.severity) == 1 }
         post(errors, as: .healthError, node, &posts)
-        post(warnings, as: .healthWarning, node, &posts)
+        post(warnings.filter { $0.notifies == true }, as: .healthNotableWarning, node, &posts)
+        post(warnings.filter { $0.notifies == nil }, as: .healthWarning, node, &posts)
         if !errors.isEmpty { state.errorsNotified = true }
 
-        let stillErrors = active.contains { SeverityRank.of($0.severity) == 0 }
+        // An error someone acknowledged is still an error: its "cleared" waits until it is gone.
+        let stillErrors = reported.contains { SeverityRank.of($0.severity) == 0 }
+        let unattended = reported.filter { !$0.isAttended }
         if state.errorsNotified, !stillErrors {
             state.errorsNotified = false
             posts.append(FleetNotification(
                 id: "\(node.id.rawValue)|health.cleared", notice: .healthCleared, node: node.id,
                 title: "\(node.name) is no longer reporting errors",
-                body: active.isEmpty ? "Nothing needs attention." : "\(Self.count(active.count, "warning")) remain.",
+                body: unattended.isEmpty ? "Nothing needs attention."
+                    : "\(Self.count(unattended.count, "warning")) remain.",
                 sound: FleetNotice.healthCleared.playsSound, target: .node(node.id)))
         }
     }
@@ -343,6 +355,11 @@ public struct FleetNotifier: Sendable {
                 title: "\(node.name): \(alert.title)", body: alert.message,
                 sound: notice.playsSound, target: .finding(node.id, alert)))
         }
+    }
+
+    /// Every notification a finding may have been told under, so they can be taken back once someone dealt with it.
+    public static func notificationIDs(for alert: NodeDigest.Alert, on node: NodeID) -> [String] {
+        [FleetNotice.healthError, .healthNotableWarning, .healthWarning].map { "\(node.rawValue)|\($0.rawValue)|\(alert.id)" }
     }
 
     // MARK: Conflicts

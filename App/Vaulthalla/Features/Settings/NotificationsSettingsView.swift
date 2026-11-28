@@ -84,7 +84,8 @@ struct NotificationsSettingsView: View {
     private static func note(_ notice: FleetNotice) -> String? {
         switch notice {
         case .nodeUnreachable: "After two minutes, and never while this Mac itself is offline."
-        case .healthWarning: "Off by default: a node raises a warning during every upload."
+        case .healthNotableWarning: "Nodes on Vaulthalla 1.28 or later say which warnings are worth a notification."
+        case .healthWarning: "For older nodes, which don't say: off by default, since they raise one during every upload."
         case .healthError, .nodeReachable, .nodeRevoked, .nodeIncompatible, .healthCleared, .syncConflicts: nil
         }
     }

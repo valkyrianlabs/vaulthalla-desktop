@@ -1,7 +1,7 @@
 public import Foundation
 public import Observation
 public import VHContract
-import VHTransport
+public import VHTransport
 
 /// One node's figures for the All Nodes dashboard (``NodeDigest``), kept fresh on the node's own ``NodeQueries``.
 ///
@@ -32,6 +32,9 @@ public final class NodePulse {
     public let storage: NodeQuery<Ws.Stats.System.Storage>
     public let budget: NodeQuery<Ws.Stats.Pricing.Budget>
     public let conflicts: NodeQuery<Ws.Sync.Conflicts.Summary>
+    /// The findings with their state (`health.findings.list`), on a node that has the command: the background check
+    /// asks it instead of the four numbers, since it carries them too.
+    public let findings: NodeQuery<Ws.Health.Findings.List>
 
     public private(set) var activity: NodeDigest.Part<NodeDigest.Activity> = .loading
     public private(set) var isFetchingActivity = false
@@ -59,12 +62,20 @@ public final class NodePulse {
         storage = queries.query(Ws.Stats.System.Storage.self)
         budget = queries.query(Ws.Stats.Pricing.Budget.self, .init())
         conflicts = queries.query(Ws.Sync.Conflicts.Summary.self)
+        findings = queries.healthFindings()
+    }
+
+    /// The node's findings as last reported, when it has the command; nil otherwise (older Vaulthalla, no answer).
+    public var healthFindings: HealthFindings? {
+        guard queries.hasHealthFindings, let value = findings.value else { return nil }
+        return HealthFindings(value.health)
     }
 
     /// The node's figures as they stand.
     public var digest: NodeDigest {
         NodeDigest(
-            health: .init(overview.value.map { NodeDigest.Health($0.stats) }, error: overview.error),
+            health: .init(overview.value.map { NodeDigest.Health($0.stats, findings: healthFindings) },
+                          error: overview.error),
             storage: .init(storage.value.map { NodeDigest.Storage($0.stats) }, error: storage.error),
             cost: .init(budget.value.map { NodeDigest.Cost($0.stats) }, error: budget.error),
             conflicts: .init(conflicts.value?.total, error: conflicts.error),
@@ -88,6 +99,9 @@ public final class NodePulse {
             group.addTask { await self.budget.observe(polling: self.intervals.figures) }
             group.addTask { await self.conflicts.observe(polling: self.intervals.figures) }
             group.addTask { await self.pollActivity() }
+            if queries.hasHealthFindings {
+                group.addTask { await self.findings.observe(polling: self.intervals.health) }
+            }
         }
     }
 
@@ -97,7 +111,8 @@ public final class NodePulse {
         async let figures: Void = storage.refresh()
         async let spend: Void = budget.refresh()
         async let open: Void = conflicts.refresh()
-        _ = await (health, figures, spend, open)
+        async let marked: Void = refreshFindings()
+        _ = await (health, figures, spend, open, marked)
         await refreshActivity()
     }
 
@@ -109,6 +124,15 @@ public final class NodePulse {
     /// the overview each time. Returns once settled; never polls on its own.
     public func checkHealth() async {
         guard queries.isConnected else { return }
+        if queries.hasHealthFindings {
+            await findings.refresh()
+            if findings.error == nil, let now = findings.value?.health {
+                await refreshOverviewIfChanged(HealthMark(status: now.overallStatus, errors: now.errorCount,
+                                                          warnings: now.warningCount))
+                return
+            }
+            // Refused or unanswered: the four numbers decide, as on a node without the command.
+        }
         if queries.supports(command: .statsDashboardSeverity) == .no {
             await overview.refresh()
             return
@@ -124,7 +148,11 @@ public final class NodePulse {
             }
             return
         }
-        let mark = HealthMark(status: now.overallStatus, errors: now.errorCount, warnings: now.warningCount)
+        await refreshOverviewIfChanged(HealthMark(status: now.overallStatus, errors: now.errorCount,
+                                                  warnings: now.warningCount))
+    }
+
+    private func refreshOverviewIfChanged(_ mark: HealthMark) async {
         checksSinceOverview += 1
         guard mark != checkedMark || overview.value == nil || checksSinceOverview >= fullCheckEvery else { return }
         await overview.refresh()
@@ -141,6 +169,25 @@ public final class NodePulse {
         async let spend: Void = budget.refresh()
         async let open: Void = conflicts.refresh()
         _ = await (figures, spend, open)
+    }
+
+    // MARK: Findings
+
+    private func refreshFindings() async {
+        guard queries.hasHealthFindings else { return }
+        await findings.refresh()
+    }
+
+    /// Runs a person's action on a finding (``NodeQueries/perform(_:findingClass:subject:)``) and shows its answer
+    /// at once. Returns why the node refused, nil on success.
+    public func perform(_ action: HealthFindingAction, findingClass: String, subject: String = "") async -> WsError? {
+        switch await queries.perform(action, findingClass: findingClass, subject: subject) {
+        case .success(let health):
+            findings.seed(.init(health: health))
+            return nil
+        case .failure(let error):
+            return error
+        }
     }
 
     // MARK: Activity

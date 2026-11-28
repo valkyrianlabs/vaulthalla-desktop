@@ -450,6 +450,13 @@ public actor MCPBridge {
                     + "Vaulthalla (All Nodes), or `vh peer` in a terminal on the node.",
                 isError: true))
         }
+        if let command = forwarded["command"]?.stringValue, ToolCatalog.isFindingState(commandLine: command) {
+            log(.warning, "refused a health finding acknowledge/silence command for \(node.id)")
+            return .success(RPC.toolResult(
+                text: "Whether a health finding has been dealt with is decided by a person, never through MCP: "
+                    + "acknowledge or silence it in Vaulthalla, or with `vh health` in a terminal on the node.",
+                isError: true))
+        }
         if let command = forwarded["command"]?.stringValue, ToolCatalog.isMirroring(commandLine: command) {
             log(.warning, "refused a mirrored-vaults command for \(node.id)")
             return .success(RPC.toolResult(
