@@ -16,6 +16,8 @@ struct HealthPages: View {
 
     var body: some View {
         let overview = queries.query(Ws.Stats.Dashboard.Overview.self, .init())
+        // The findings with their state, on a node that has them (with what each class means, for the Silenced list).
+        let findings = queries.hasHealthFindings ? queries.healthFindings(includeCatalog: true) : nil
         ScrollViewReader { proxy in
             Group {
                 if let problem = overview.error.map(QueryProblem.init), case .denied = problem {
@@ -25,7 +27,8 @@ struct HealthPages: View {
                     switch page {
                     case .summary:
                         QueryContent(query: overview, node: node, subject: "health") { response in
-                            HealthDashboard(overview: response.stats, query: overview)
+                            HealthDashboard(overview: response.stats, query: overview, node: node.id,
+                                            findings: findings?.value.map { HealthFindings($0.health) })
                         }
                     case .runtime: RuntimeHealthPage(queries: queries, overview: overview.value?.stats)
                     case .filesystem: FilesystemHealthPage(queries: queries, overview: overview.value?.stats)
@@ -42,6 +45,7 @@ struct HealthPages: View {
             }
         }
         .observing(overview, polling: HealthPolling.overview)
+        .task(id: findings.map(ObjectIdentifier.init)) { await findings?.observe(polling: HealthPolling.overview) }
     }
 }
 
@@ -50,11 +54,16 @@ struct HealthPages: View {
 struct HealthDashboard: View {
     var overview: WsModel.DashboardOverview
     var query: NodeQuery<Ws.Stats.Dashboard.Overview>?
+    var node: NodeID?
+    /// The node's findings with their state; nil on a node without them (the attention list is shown as before).
+    var findings: HealthFindings?
 
     var body: some View {
         VStack(alignment: .leading, spacing: Theme.stackSpacing) {
             HealthHero(overview: overview, query: query)
-            if !overview.attention.isEmpty {
+            if let findings, let node {
+                FindingsPanels(findings: findings, node: node)
+            } else if !overview.attention.isEmpty {
                 AttentionPanel(items: overview.attention)
             }
             // Sections side by side once the window is wide enough for two, each in the column with the most room.

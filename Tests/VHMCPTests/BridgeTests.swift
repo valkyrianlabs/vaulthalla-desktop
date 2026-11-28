@@ -246,6 +246,37 @@ import VHCore
         #expect(!ToolCatalog.isServerLinking(commandLine: "vault list") && !ToolCatalog.isServerLinking(commandLine: ""))
     }
 
+    /// Whether a health finding has been dealt with is decided by a person (the server's design/health/findings.md
+    /// §7): no tool that acknowledges or silences one is listed, and no command line doing it reaches a node.
+    /// Reading findings still works.
+    @Test func findingStateNeverReachesANode() async throws {
+        defer { registry.remove() }
+        let stateTools: [JSONValue] = ["health_ack", "health_silence", "health_unsilence", "health_finding_acknowledge"]
+            .map {
+                ["name": .string($0), "description": "Health findings.", "inputSchema": ["type": "object"],
+                 "annotations": Catalog.annotations("write", title: $0)]
+            }
+        alpha.set { $0.tools = Catalog.standard + stateTools }
+        let client = try client()
+        try await client.initialize()
+        let tools = try await client.tools()
+        #expect(JSONValue.array(tools).toolNames == ["nodes_list", "vh_read", "vh_run", "vaults_delete"])
+
+        for command in ["health ack system.db.warning", "vh health silence system.db.warning --for 24h",
+                        "HEALTH UNSILENCE system.db.warning", "health.finding.acknowledge"] {
+            for tool in ["vh_run", "vh_read"] {
+                let reply = try await client.call(tool, ["node": "Alpha", "command": .string(command)])
+                #expect(reply["result"]?["isError"] == true, "\(tool) \(command)")
+                #expect(reply["result"]?.text.contains("decided by a person") == true)
+            }
+        }
+        #expect(alpha.calls.isEmpty)
+        let list = try await client.call("vh_read", ["node": "Alpha", "command": "health"])
+        #expect(list["result"]?["isError"] == false)
+        #expect(!ToolCatalog.isFindingState(toolName: "health_list") && !ToolCatalog.isFindingState(toolName: "status"))
+        #expect(!ToolCatalog.isFindingState(commandLine: "health.findings.list"))
+    }
+
     @Test func cancellationStopsTheRequestAndSuppressesTheAnswer() async throws {
         defer { registry.remove() }
         let client = try client()

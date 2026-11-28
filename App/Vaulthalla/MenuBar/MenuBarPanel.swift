@@ -25,6 +25,7 @@ struct MenuBarPanel: View {
 
     static let width: CGFloat = 340
     private static let shownAlerts = 5
+    private static let shownSilenced = 3
     private static let shownNodes = 8
 
     var body: some View {
@@ -40,6 +41,10 @@ struct MenuBarPanel: View {
             if !summary.alerts.isEmpty {
                 divider
                 attention(summary.alerts)
+            }
+            if !summary.silenced.isEmpty {
+                divider
+                silenced(summary.silenced)
             }
             divider
             nodes
@@ -168,15 +173,34 @@ struct MenuBarPanel: View {
     private func attention(_ alerts: [FleetSummary.FleetAlert]) -> some View {
         section("Needs attention") {
             ForEach(alerts.prefix(Self.shownAlerts)) { entry in
-                PanelRow(systemImage: Severity.symbol(entry.alert.severity),
-                         tone: StatusTone(severity: entry.alert.severity),
-                         title: entry.alert.title, subtitle: "\(entry.nodeName) · \(entry.alert.message)") {
+                PanelFindingRow(entry: entry, subtitle: "\(entry.nodeName) · \(entry.alert.message)") {
                     open { model.open(entry.alert, on: entry.node) }
+                } openRemedy: { navigate in
+                    open(navigate)
                 }
             }
             if alerts.count > Self.shownAlerts {
                 PanelRow(systemImage: "ellipsis", tone: nil,
                          title: "and \(alerts.count - Self.shownAlerts) more", subtitle: nil) {
+                    open { model.showAllNodes() }
+                }
+            }
+        }
+    }
+
+    /// Findings someone silenced: who and until when, and Turn Back On, without raising the item.
+    private func silenced(_ entries: [FleetSummary.FleetAlert]) -> some View {
+        section("Silenced") {
+            ForEach(entries.prefix(Self.shownSilenced)) { entry in
+                PanelFindingRow(entry: entry, subtitle: entry.nodeName) {
+                    open { model.open(entry.alert, on: entry.node) }
+                } openRemedy: { navigate in
+                    open(navigate)
+                }
+            }
+            if entries.count > Self.shownSilenced {
+                PanelRow(systemImage: "ellipsis", tone: nil,
+                         title: "and \(entries.count - Self.shownSilenced) more", subtitle: nil) {
                     open { model.showAllNodes() }
                 }
             }
@@ -376,6 +400,52 @@ private struct PanelRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .onHover { hovering = $0 }
+    }
+}
+
+/// A finding in the panel: its severity, title and a line, its state (who acknowledged or silenced it, until when),
+/// and its menu (the remedies, and for an account that may, Acknowledge, Silence and Turn Back On).
+private struct PanelFindingRow: View {
+    var entry: FleetSummary.FleetAlert
+    var subtitle: String
+    var action: () -> Void
+    /// Opens the main window after the navigation it is given (the panel closes as the window comes forward).
+    var openRemedy: (() -> Void) -> Void
+
+    @Environment(AppModel.self) private var model
+    @State private var hovering = false
+
+    var body: some View {
+        let alert = entry.alert
+        HStack(alignment: .firstTextBaseline, spacing: 9) {
+            Button(action: action) {
+                HStack(alignment: .firstTextBaseline, spacing: 9) {
+                    Image(systemName: alert.state == .silenced ? "bell.slash" : Severity.symbol(alert.severity))
+                        .foregroundStyle(alert.isAttended ? Color.fgSubtle : StatusTone(severity: alert.severity).color)
+                        .frame(width: 16)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(alert.title)
+                            .foregroundStyle(alert.isAttended ? Color.fgMuted : Color.fg)
+                            .lineLimit(1)
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundStyle(.fgMuted)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        FindingStateLine(alert: alert, node: entry.node)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            FindingActionsMenu(alert: alert, node: entry.node, opening: openRemedy)
+        }
+        .font(.callout)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 5)
+        .background(hovering ? Color.surface2 : .clear, in: RoundedRectangle(cornerRadius: Theme.radiusControl))
         .onHover { hovering = $0 }
     }
 }

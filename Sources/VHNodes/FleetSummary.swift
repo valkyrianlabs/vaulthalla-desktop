@@ -62,12 +62,15 @@ public struct FleetSummary: Sendable {
     public var bytesAdded24h: Int64 = 0
     public var lastActivity: (node: NodeID, at: Date)?
 
-    /// Every node's alerts, most severe first; within a severity, in node order.
+    /// Every node's alerts that aren't silenced: those nobody attended to first, then the acknowledged; most severe
+    /// first within each, then in node order.
     public var alerts: [FleetAlert] = []
+    /// Active findings someone silenced, most severe first.
+    public var silenced: [FleetAlert] = []
 
     public init(_ members: [Member]) {
         nodeCount = members.count
-        var ranked: [(rank: Int, order: Int, alert: FleetAlert)] = []
+        var ranked: [(state: HealthFindings.State, rank: Int, order: Int, alert: FleetAlert)] = []
         for member in members {
             switch member.reachability {
             case .online: onlineCount += 1
@@ -82,7 +85,7 @@ public struct FleetSummary: Sendable {
                     nodesWithWarnings.append(member.id)
                 }
                 for alert in health.alerts {
-                    ranked.append((SeverityRank.of(alert.severity), ranked.count,
+                    ranked.append((alert.state, SeverityRank.of(alert.severity), ranked.count,
                                    FleetAlert(node: member.id, nodeName: member.name, alert: alert)))
                 }
             } else if member.reachability == .online {
@@ -112,7 +115,12 @@ public struct FleetSummary: Sendable {
                 }
             }
         }
-        alerts = ranked.sorted { $0.rank != $1.rank ? $0.rank < $1.rank : $0.order < $1.order }.map(\.alert)
+        let sorted = ranked.sorted {
+            if $0.state != $1.state { return $0.state < $1.state }
+            return $0.rank != $1.rank ? $0.rank < $1.rank : $0.order < $1.order
+        }
+        alerts = sorted.filter { $0.state != .silenced }.map(\.alert)
+        silenced = sorted.filter { $0.state == .silenced }.map(\.alert)
     }
 
     /// Nodes that need someone to look: errors, or not reachable while paired.
