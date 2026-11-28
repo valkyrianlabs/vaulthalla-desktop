@@ -108,9 +108,18 @@ enum PreviewSamples {
         contract: .init(contractVersion: WsContract.contractVersion, contractHash: "preview", wsHash: WsContract.wsHash,
                         modelsHash: WsContract.modelsHash))
 
+    /// PREVIEW DATA: "Home lab" as a Vaulthalla without `health.findings.*`.
+    static var withoutFindings: NodeProtocol {
+        var older = negotiated
+        older.commands = older.commands?.filter { !$0.hasPrefix("health.") }
+        return older
+    }
+
     static func liveModel(selecting id: NodeID? = nil) -> AppModel {
         let model = model(selecting: id)
-        model.usePreviewData(for: nodes[1].id, transport: PreviewTransport(.full), negotiated: negotiated)
+        // `-VHDebugFindingsOlder YES`: "Home lab" as a Vaulthalla without the findings commands (before 1.28).
+        let homeLab = UserDefaults.standard.bool(forKey: "VHDebugFindingsOlder") ? withoutFindings : negotiated
+        model.usePreviewData(for: nodes[1].id, transport: PreviewTransport(.full), negotiated: homeLab)
         model.usePreviewData(for: nodes[3].id, transport: PreviewTransport(.restricted), negotiated: .legacy)
         model.usePreviewRoute(homeLabRoute, stats: TransferStats(
             throughputUp: 41_200_000, throughputDown: 87_500_000, partBytes: 64 << 20, partsInFlight: 3, tuning: true,

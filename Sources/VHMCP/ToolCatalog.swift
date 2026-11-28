@@ -16,6 +16,9 @@ import VHCore
 /// or exporting secrets: the daemon never offers those over MCP (D4), and the bridge wouldn't pass them on if one did.
 /// Nor any tool about linked servers (`peer_*`): linking servers is decided by a person in the app, never by an agent
 /// (the server's design/peers/link.md, "Who may link servers"; the node refuses agents with `peer_forbidden` anyway).
+/// Nor any tool that acknowledges, silences or turns back on a health finding: whether a warning has been dealt with
+/// is decided by a person (the server's design/health/findings.md §7; the node excludes those commands from MCP too).
+/// Reading findings stays open.
 struct ToolCatalog: Equatable, Sendable {
     struct Entry: Equatable, Sendable {
         /// The name the client calls.
@@ -108,7 +111,7 @@ struct ToolCatalog: Equatable, Sendable {
     static func isListable(_ tool: JSONValue) -> Bool {
         guard let name = tool["name"]?.stringValue else { return false }
         if name == nodesListName || isKeyMaterial(toolName: name) || isServerLinking(toolName: name)
-            || isMirroring(toolName: name) { return false }
+            || isFindingState(toolName: name) || isMirroring(toolName: name) { return false }
         if tool["inputSchema"]?["properties"]?[nodeArgument] != nil { return false }
         return true
     }
@@ -145,6 +148,27 @@ struct ToolCatalog: Equatable, Sendable {
         if words.first == "vh" { words.removeFirst() }
         guard let first = words.first else { return false }
         return first == "peer" || first == "peers" || first.hasPrefix("peer.")
+    }
+
+    private static let findingStateVerbs: Set<String> = ["ack", "acknowledge", "silence", "unsilence", "unack"]
+
+    /// Tool names that change a health finding's state: `health_ack`, `health_silence`, `health_finding_unsilence`, ...
+    static func isFindingState(toolName: String) -> Bool {
+        let words = Set(toolName.lowercased().split(whereSeparator: { !$0.isLetter && !$0.isNumber }).map(String.init))
+        return (words.contains("health") || words.contains("finding") || words.contains("findings"))
+            && !words.isDisjoint(with: findingStateVerbs)
+    }
+
+    /// A command line that changes a health finding's state: `health ack …`, `health silence …`, `health unsilence …`
+    /// (with or without a leading `vh`), or the ws command `health.finding.*`. Listing (`vh health`) still runs.
+    static func isFindingState(commandLine: String) -> Bool {
+        var words = commandLine.lowercased().split(whereSeparator: { $0.isWhitespace || $0 == "\"" || $0 == "'" })
+            .map(String.init)
+        if words.first == "vh" { words.removeFirst() }
+        guard let first = words.first else { return false }
+        if first.hasPrefix("health.finding.") { return true }
+        guard first == "health" || first == "findings" else { return false }
+        return words.dropFirst().contains { findingStateVerbs.contains($0) }
     }
 
     /// Tool names about mirrored vaults: `mirror_list`, `mirrors_switch`, `mirror_detach_copy`, ... Which servers hold a

@@ -1,10 +1,10 @@
 {
   "server_version": "1.27.1",
-  "server_commit": "05547196",
+  "server_commit": "de93fbb7",
   "server_branch": "main",
   "source": "web/src/util/generated/wsContract.json",
   "contract_version": 3,
-  "ws_hash": "2d929ea0319172a28adf80a6156ada78111213be91e7140752130dfb8cd5a876",
-  "models_hash": "22ee63a7649f4d3e730bfe38c9e071777204f292e084265c7a867a3729b941e6",
-  "note": "server main 05547196 (v1.27.1: linked servers and mirroring on for everyone; peer.status and peers_experimental gone; mirror.*)"
+  "ws_hash": "f9647cd0a3ece2f68aa8ae5f09aa77c92012bf9921247bf721e39ad45d1dd5b3",
+  "models_hash": "fb2eb50b685f7091174b75d352410329a3ab874281197b5e75237c9eacb3def9",
+  "note": "server main de93fbb7 (health.findings.*: acknowledge, silence, unsilence)"
 }

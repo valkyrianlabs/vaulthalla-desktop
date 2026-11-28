@@ -173,9 +173,9 @@ it); a node that is not paired; a figure that is merely loading; info-level find
 **Settings ▸ Notifications** (new tab): a master switch, one switch per row of the table above, per-node mute,
 and the permission state.
 
-**Stage 2 adds** notification actions (Acknowledge, Silence for a day, the finding's first remedy, Open), each
-of which runs the same server command as the panel's menu, and stops notifying for findings the server reports as
-acknowledged or silenced, by anyone, on any Mac or in the console.
+**Stage 2 adds** notification actions (Acknowledge, Silence for a day, Open; built without the remedy action),
+each of which runs the same server command as the panel's menu, and stops notifying for findings the server reports
+as acknowledged or silenced, by anyone, on any Mac or in the console (§12).
 
 ## 7. Acting on findings (stage 2)
 
@@ -184,12 +184,14 @@ The state is the server's, so the console and every Mac agree. The server docume
 - **Reads** `health.findings.list`: every active finding with its class, severity, state (active, acknowledged,
   silenced), who set that and until when, whether a notification is worth it, and its remedies.
 - **Acknowledge** and **Silence** in the panel, on All Nodes, in a node's Overview and on a notification. Silence
-  asks for how long (1 hour, 24 hours, 7 days, until turned back on). Both are refused by the server unless the
-  paired account has the permission; Desktop then shows them disabled with the reason.
+  asks for how long (1 hour, 24 hours, 7 days, until turned back on). Both need the paired account's
+  `admin.stats.manage`; the server says whether it has it (`can_manage`), and without it Desktop leaves the actions
+  out (they are not shown disabled). A refusal anyway is shown on the finding.
 - **A Silenced list** in each node's Overview: class, who, when, until, and "Turn back on".
 - **Remedies** are whatever the server lists for the finding. Each is one existing command or a place to open.
   Desktop runs a command through `NodeQueries.perform`, so the usual confirmation sheet and permission errors
-  apply. It has no remedy logic of its own.
+  apply. It has no remedy logic of its own. (As built, only remedies that open a place are offered; command
+  remedies are not run yet.)
 - **Agents cannot do any of this** through Desktop: the MCP bridge offers no tool for it, and the server refuses
   the commands on agent paths (server document §7).
 
@@ -290,3 +292,27 @@ severity, card, title and message.
 "open at login" by default, never ask for notification permission at launch (only from Settings), and previews keep
 favourites, mutes and notification switches in a throwaway preferences suite.
 
+## 12. Stage 2 as built (acting on findings)
+
+| Piece | Code |
+| --- | --- |
+| Typed findings, the three actions, silence durations | `Sources/VHNodes/HealthFindings.swift` |
+| Findings in the background check (asked instead of the four numbers), an action's answer shown at once | `NodePulse.checkHealth()`, `NodePulse.perform(_:findingClass:subject:)` |
+| State on each alert, unattended counts | `NodeDigest.Health`, `NodeDigest.Alert` |
+| The item's level, the panel's lists | `FleetStatus` (unattended counts), `FleetSummary.alerts` / `.silenced` |
+| What notifies | `FleetNotifier`: attended findings and `notifies: false` classes never; hinted warnings under `health.warning.notable` (on by default), un-hinted ones under `health.warning` (off) |
+| Menus, state lines, remedies, the Silenced list | `App/Vaulthalla/Features/Overview/FindingActions.swift`, `FindingsPanels.swift` (Overview), `MenuBarPanel.swift`, `AllNodesView.swift` |
+| Notification actions (Acknowledge, Silence for a Day; refusals as a follow-up) | `NotificationHub` (`sh.vaulthalla.fleet.finding`), `AppModel.act(_:on:node:)` |
+| Preview answers | `FindingsPreviewData.swift`; `-VHDebugFindingsManage NO`, `-VHDebugFindingsOlder YES` |
+
+- A node is asked for `health.findings.list` only when its `meta.hello` lists the command; a node without it (or a
+  legacy one) is judged and shown exactly as before. A node on a newer server that answers the overview with
+  `state` and `unattended_*` counts is followed even without the list, but offers no actions.
+- Only a click reaches the three commands. The MCP bridge lists no tool that acknowledges or silences and refuses
+  `vh health ack|silence|unsilence` and `health.finding.*` command lines before they reach a node
+  (`ToolCatalog.isFindingState`); the server excludes them from MCP and scoped devices too.
+- An attended finding is forgotten by the notifier like a cleared one, so a silence that ends speaks again; an
+  acknowledged error does not post "no longer reporting errors" until it is really gone. A successful action takes
+  back that finding's delivered notification.
+- Remedies of kind `open` map the console route through `HealthRoute(remedy:)`; a route this build has no place
+  for is not offered. Command remedies are not run in this piece.

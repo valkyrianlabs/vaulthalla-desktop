@@ -81,6 +81,11 @@
       "since": "1.17.0"
     },
     {
+      "description": "Health findings carry a state operators set (health.findings.list; health.finding.acknowledge, .silence and .unsilence with admin.stats.manage), and stats.dashboard.overview and .severity answer unattended_error_count and unattended_warning_count: the counts without acknowledged and silenced findings (design/health/findings.md).",
+      "name": "health.findings",
+      "since": "1.28.0"
+    },
+    {
       "description": "PUT /upload/content: a streaming conditional create (If-None-Match) or replace (If-Match) on the web and device listeners.",
       "name": "http.upload.content",
       "since": "1.17.0"
@@ -3412,6 +3417,23 @@
           ]
         },
         {
+          "description": "Warnings no operator acknowledged or silenced (health.findings.list): what still asks for a person.",
+          "minimum": 0,
+          "name": "unattended_warning_count",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "unattended_error_count",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
           "description": "When the figures were taken (epoch seconds).",
           "minimum": 0,
           "name": "checked_at",
@@ -3471,6 +3493,19 @@
               "types": [
                 "string",
                 "null"
+              ]
+            },
+            {
+              "description": "What an operator said about the finding; the severity is never changed by it.",
+              "enum": [
+                "active",
+                "acknowledged",
+                "silenced"
+              ],
+              "name": "state",
+              "required": true,
+              "types": [
+                "string"
               ]
             }
           ],
@@ -3742,6 +3777,23 @@
         {
           "minimum": 0,
           "name": "warning_count",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Errors no operator acknowledged or silenced.",
+          "minimum": 0,
+          "name": "unattended_error_count",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "unattended_warning_count",
           "required": true,
           "types": [
             "integer"
@@ -5355,6 +5407,428 @@
         }
       ],
       "name": "GroupMember"
+    },
+    {
+      "description": "An active health finding with its state (core/src/health/Findings.cpp to_json).",
+      "fields": [
+        {
+          "name": "class",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "subject",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "card_id",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "enum": [
+            "warning",
+            "error"
+          ],
+          "name": "severity",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "The card's title.",
+          "name": "title",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "What this class of finding means.",
+          "name": "class_title",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "message",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "href",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "name": "metric_key",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "Whether the class is worth interrupting someone for.",
+          "name": "notifies",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "enum": [
+            "active",
+            "acknowledged",
+            "silenced"
+          ],
+          "name": "state",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "The mark behind the state; null while active.",
+          "model": "HealthFindingMark",
+          "name": "mark",
+          "required": true,
+          "types": [
+            "object",
+            "null"
+          ]
+        },
+        {
+          "items": "object",
+          "model": "HealthRemedy",
+          "name": "remedies",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        }
+      ],
+      "name": "HealthFinding"
+    },
+    {
+      "description": "A class of health finding (core/src/health/Catalog.cpp to_json).",
+      "fields": [
+        {
+          "name": "class",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "card_id",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "title",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "enum": [
+            "warning",
+            "error"
+          ],
+          "name": "max_severity",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "notifies",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "items": "object",
+          "model": "HealthRemedy",
+          "name": "remedies",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        }
+      ],
+      "name": "HealthFindingClass"
+    },
+    {
+      "description": "What an operator said about a finding class (core/src/health/Findings.cpp to_json; health_finding_state).",
+      "fields": [
+        {
+          "name": "class",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "\"\" for the whole server.",
+          "name": "subject",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "enum": [
+            "acknowledged",
+            "silenced"
+          ],
+          "name": "state",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "The highest severity the mark covers.",
+          "enum": [
+            "warning",
+            "error"
+          ],
+          "name": "severity",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "The account's id; null once the account is gone.",
+          "minimum": 0,
+          "name": "set_by",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "name": "set_by_name",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Epoch seconds.",
+          "minimum": 0,
+          "name": "set_at",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Epoch seconds; null: until the finding clears (acknowledged) or until turned back on (silenced).",
+          "minimum": 0,
+          "name": "expires_at",
+          "required": true,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "name": "note",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        }
+      ],
+      "name": "HealthFindingMark"
+    },
+    {
+      "description": "The health answer (ops::health::list): the dashboard's status and counts as they are, the counts without acknowledged and silenced findings, the findings and the silences that are set for classes not active now.",
+      "fields": [
+        {
+          "name": "overall_status",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "error_count",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "warning_count",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "Errors no mark covers: what still asks for a person.",
+          "minimum": 0,
+          "name": "unattended_error_count",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "minimum": 0,
+          "name": "unattended_warning_count",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "description": "When the figures were taken (epoch seconds).",
+          "minimum": 0,
+          "name": "checked_at",
+          "required": true,
+          "types": [
+            "integer"
+          ]
+        },
+        {
+          "items": "object",
+          "model": "HealthFinding",
+          "name": "findings",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "items": "object",
+          "model": "HealthFindingMark",
+          "name": "silences",
+          "required": true,
+          "types": [
+            "array"
+          ]
+        },
+        {
+          "description": "Whether this account may acknowledge and silence (admin.stats.manage).",
+          "name": "can_manage",
+          "required": true,
+          "types": [
+            "boolean"
+          ]
+        },
+        {
+          "description": "With include_catalog: every class.",
+          "items": "object",
+          "model": "HealthFindingClass",
+          "name": "catalog",
+          "required": false,
+          "types": [
+            "array"
+          ]
+        }
+      ],
+      "name": "HealthFindings"
+    },
+    {
+      "description": "Something a person can do about a finding (core/src/health/Catalog.cpp to_json). It only names a place or an existing command: running it goes through that command's own permission check and confirmation.",
+      "fields": [
+        {
+          "description": "Stable within its class.",
+          "name": "id",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "name": "label",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "enum": [
+            "open",
+            "command"
+          ],
+          "name": "kind",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "kind open: the console's route (\"/cost#budget-alerts\").",
+          "name": "href",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "kind command: an existing ws command.",
+          "name": "command",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "kind command: its payload.",
+          "name": "payload",
+          "required": true,
+          "types": [
+            "object",
+            "null"
+          ]
+        },
+        {
+          "description": "kind command: the command's effect.",
+          "enum": [
+            "read",
+            "write",
+            "destructive"
+          ],
+          "name": "effect",
+          "required": true,
+          "types": [
+            "string",
+            "null"
+          ]
+        }
+      ],
+      "name": "HealthRemedy"
     },
     {
       "description": "http_preview_server.* (Config.cpp to_json(HttpPreviewConfig)).",
@@ -24554,7 +25028,7 @@
       "name": "WebsocketServerConfig"
     }
   ],
-  "models_hash": "22ee63a7649f4d3e730bfe38c9e071777204f292e084265c7a867a3729b941e6",
+  "models_hash": "fb2eb50b685f7091174b75d352410329a3ab874281197b5e75237c9eacb3def9",
   "protocol": {
     "min": 1,
     "version": 1
@@ -37743,6 +38217,276 @@
           "required": true,
           "types": [
             "array"
+          ]
+        }
+      ],
+      "response_model": null,
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "health.finding.acknowledge",
+      "confirmations": [],
+      "description": "\"I have seen this occurrence\": marks an active finding acknowledged. The mark ends when the finding clears or its severity rises. Refused (conflict) when the class is not active or is silenced. Needs admin.stats.manage; recorded in the audit trail. Never available to agents or scoped devices.",
+      "effect": "write",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "The finding's class: the code its dashboard card raises it under (\"system.fuse.error_rate_high\").",
+          "generator": {
+            "kind": "pattern",
+            "pattern": "system.fuse.error_rate_high"
+          },
+          "name": "class",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "What the finding is about when it is not the whole server. Every finding today is about the whole server: leave it out.",
+          "name": "subject",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "Up to 500 characters, shown with the mark.",
+          "name": "note",
+          "required": false,
+          "types": [
+            "string",
+            "null"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "HealthFindings",
+          "name": "health",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "response_model": null,
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "health.finding.silence",
+      "confirmations": [],
+      "description": "\"Do not tell me about this class\": silences a finding class, active or not, for a time or until it is turned back on. A silence does not cover a severity above the one it was set for. Needs admin.stats.manage; recorded in the audit trail. Never available to agents or scoped devices.",
+      "effect": "write",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "The finding's class: the code its dashboard card raises it under (\"system.fuse.error_rate_high\").",
+          "generator": {
+            "kind": "pattern",
+            "pattern": "system.fuse.error_rate_high"
+          },
+          "name": "class",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "What the finding is about when it is not the whole server. Every finding today is about the whole server: leave it out.",
+          "name": "subject",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "How long, from now (one minute to 366 days). Neither this nor until: until turned back on.",
+          "maximum": 31622400,
+          "minimum": 60,
+          "name": "for_seconds",
+          "required": false,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "When it ends (epoch seconds), instead of for_seconds.",
+          "minimum": 0,
+          "name": "until",
+          "required": false,
+          "types": [
+            "integer",
+            "null"
+          ]
+        },
+        {
+          "description": "The highest severity it covers. Default: the class's severity now, or the worst it can have when it is not active.",
+          "enum": [
+            "warning",
+            "error"
+          ],
+          "name": "severity",
+          "required": false,
+          "types": [
+            "string",
+            "null"
+          ]
+        },
+        {
+          "description": "Up to 500 characters, shown with the mark.",
+          "name": "note",
+          "required": false,
+          "types": [
+            "string",
+            "null"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "HealthFindings",
+          "name": "health",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "response_model": null,
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "health.finding.unsilence",
+      "confirmations": [],
+      "description": "Turns a finding class back on: removes its silence or acknowledgement. Refused (not_found) when it has neither. Needs admin.stats.manage; recorded in the audit trail. Never available to agents or scoped devices.",
+      "effect": "write",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "The finding's class: the code its dashboard card raises it under (\"system.fuse.error_rate_high\").",
+          "generator": {
+            "kind": "pattern",
+            "pattern": "system.fuse.error_rate_high"
+          },
+          "name": "class",
+          "required": true,
+          "types": [
+            "string"
+          ]
+        },
+        {
+          "description": "What the finding is about when it is not the whole server. Every finding today is about the whole server: leave it out.",
+          "name": "subject",
+          "required": false,
+          "types": [
+            "string"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "invalid",
+        "not_found",
+        "conflict",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "HealthFindings",
+          "name": "health",
+          "required": true,
+          "types": [
+            "object"
+          ]
+        }
+      ],
+      "response_model": null,
+      "untyped_refusals": [],
+      "variants": []
+    },
+    {
+      "auth": "human",
+      "client_timeout_ms": 15000,
+      "command": "health.findings.list",
+      "confirmations": [],
+      "description": "The health findings that are active now, each with what an operator said about it (active, acknowledged, silenced), whether it is worth a notification, and its remedies; the silences whose class is not active; and the counts with and without acknowledged and silenced findings. Severity is never changed by a mark. Needs admin.stats.view.",
+      "effect": "read",
+      "input": "payload",
+      "operation": null,
+      "payload": [
+        {
+          "description": "Also return every finding class (`catalog`).",
+          "name": "include_catalog",
+          "required": false,
+          "types": [
+            "boolean"
+          ]
+        }
+      ],
+      "refusal_codes": [
+        "denied",
+        "unauthorized"
+      ],
+      "refusal_kinds": [
+        "denied",
+        "unauthorized"
+      ],
+      "response": [
+        {
+          "model": "HealthFindings",
+          "name": "health",
+          "required": true,
+          "types": [
+            "object"
           ]
         }
       ],
@@ -72952,5 +73696,5 @@
       "variants": []
     }
   ],
-  "ws_hash": "2d929ea0319172a28adf80a6156ada78111213be91e7140752130dfb8cd5a876"
+  "ws_hash": "f9647cd0a3ece2f68aa8ae5f09aa77c92012bf9921247bf721e39ad45d1dd5b3"
 }
